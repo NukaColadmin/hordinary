@@ -126,6 +126,7 @@ modèle écrit, il ne décide pas — est la même contrainte que celle déjà p
 | Qualité, critères d'acceptation & Definition of Done | [D-qualite-et-definition-of-done.md](./D-qualite-et-definition-of-done.md) | Contraintes de code, critères d'acceptation du MVP, priorités, DoD |
 | README attendu | [E-readme-attendu.md](./E-readme-attendu.md) | Contenu obligatoire du README du projet |
 | Direction artistique & prompts | [F-direction-artistique-et-prompts.md](./F-direction-artistique-et-prompts.md) | Registre graphique, charte technique, palette, et un prompt par sprite des livrables 11 à 13 |
+| Export PDDL & validation tierce | [G-export-pddl.md](./G-export-pddl.md) | Traduction de `planner_domain.json` en PDDL valide, résolu par Fast Downward et validé par VAL. Ne change rien au jeu : outil de vérification, à faire après le livrable 11 |
 
 ## Priorité en cas de contrainte de temps
 
