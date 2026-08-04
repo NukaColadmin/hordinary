@@ -1,16 +1,39 @@
-Ressources artistiques de Hordinary — Tous droits reserves
-Copyright (c) 2026 Ouformer
+Hordinary — Art assets and game content
+All rights reserved / Tous droits réservés
+
+Copyright (c) 2026 Raphaël JANSON
+Contact: jansonraph@gmail.com
+
+--------------------------------------------------------------------------
+ENGLISH
+--------------------------------------------------------------------------
+
+This directory (`Assets/`) is NOT covered by the MIT License that applies to
+the source code at the repository root.
+
+All rights reserved. No permission is granted to copy, modify, distribute or
+otherwise use these assets — images, sprites, tilesets, sounds — outside of
+running Hordinary as distributed by its author.
+
+This exclusion also covers:
+  - editorial content: missions, texts, dialogue, names;
+  - art direction and associated prompts (`Specs/F-*.md`).
+
+Any reuse requires prior written permission.
+
+--------------------------------------------------------------------------
+FRANÇAIS
+--------------------------------------------------------------------------
 
 Ce dossier (`Assets/`) N'EST PAS couvert par la licence MIT du code source
-situee a la racine du depot.
+située à la racine du dépôt.
 
-Tous droits reserves. Aucune autorisation n'est accordee de copier, modifier,
+Tous droits réservés. Aucune autorisation n'est accordée de copier, modifier,
 distribuer, ou utiliser ces ressources — images, sprites, tilesets, sons — en
-dehors de l'execution du jeu Hordinary tel que distribue par son auteur.
+dehors de l'exécution du jeu Hordinary tel que distribué par son auteur.
 
-Cette exclusion couvre egalement :
-  - le contenu editorial : missions, textes, dialogues, noms ;
-  - la direction artistique et les prompts associes (`Specs/F-*.md`).
+Cette exclusion couvre également :
+  - le contenu éditorial : missions, textes, dialogues, noms ;
+  - la direction artistique et les prompts associés (`Specs/F-*.md`).
 
-Toute reutilisation necessite une autorisation ecrite prealable.
-Contact : tech@ouformer.com
+Toute réutilisation nécessite une autorisation écrite préalable.
