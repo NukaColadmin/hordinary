@@ -1,0 +1,19 @@
+{
+  "tile_size": 16,
+
+  "//": "Cle = 'source:x,y' : identifiant de source du TileSet, puis coordonnees dans son atlas.",
+  "//sources": "0 = Assets/atlas.png, 1 = Lists/Door_Closed.png, 2 = Lists/Door_Open.png.",
+  "//verrou": "Aucune tuile 'porte verrouillee' : le verrouillage est un etat d'execution.",
+
+  "tiles": {
+    "0:2,0": "Medicine",
+    "0:3,0": "WindowBroken",
+    "0:4,0": "Window",
+    "0:5,0": "Wall",
+    "0:6,0": "FloorIndoor",
+    "0:7,0": "FloorOutdoor",
+
+    "1:0,0": "DoorClosed",
+    "2:0,0": "DoorOpen"
+  }
+}

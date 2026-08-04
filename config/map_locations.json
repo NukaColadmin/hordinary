@@ -1,0 +1,52 @@
+{
+  "//": "Lieux de la carte, en coordonnees de tuiles (celles affichees par l'editeur Godot).",
+  "//2": "min et max sont inclusifs. kind : Start, Pharmacy, Extraction, Building, Street, Alley, Other.",
+  "//3": "Le camp est le point de DEPART et de RETOUR : une mission commence et finit au meme endroit. La zone d'extraction est donc posee sur la zone de depart, aux memes coordonnees. Les deux entrees restent distinctes parce que le domaine de planification connait la sortie sous le nom « extraction » et le briefing sous le nom « start » : les fondre en une seule ligne obligerait a renommer l'un des deux vocabulaires.",
+
+  "stamp_cell_types": true,
+
+  "zones": [
+    {
+      "name": "Camp",
+      "kind": "Start",
+      "min": [-1, -8],
+      "max": [3, -7]
+    },
+    {
+      "name": "Camp (retour de mission)",
+      "kind": "Extraction",
+      "min": [-1, -8],
+      "max": [3, -7]
+    },
+    {
+      "name": "Pharmacie",
+      "kind": "Pharmacy",
+      "min": [7, -5],
+      "max": [11, 4]
+    },
+    {
+      "name": "Entrepot ouest",
+      "kind": "Building",
+      "min": [-7, -5],
+      "max": [-1, 3]
+    },
+    {
+      "name": "Hangar sud",
+      "kind": "Building",
+      "min": [-5, 13],
+      "max": [10, 17]
+    },
+    {
+      "name": "Rue principale",
+      "kind": "Street",
+      "min": [-10, 6],
+      "max": [15, 11]
+    },
+    {
+      "name": "Ruelle",
+      "kind": "Alley",
+      "min": [1, -6],
+      "max": [5, 4]
+    }
+  ]
+}

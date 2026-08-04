@@ -1,0 +1,73 @@
+// Les missions proposees au joueur avant le depart.
+//
+// Comme les survivants, une mission est une donnee : aucun endroit de Hordinary.Core ne nomme
+// « Ravitaillement pharmacie ». Ajouter une mission, en durcir une autre ou deplacer un objectif se
+// fait ici, sans recompilation.
+//
+// Lecture d'une mission :
+//   id / name      identifiant technique et nom affiche dans l'ecran de preparation.
+//   description    briefing du joueur — vraie propriete JSON, pas un commentaire "//" : elle est
+//                  affichee telle quelle au moment du choix.
+//   difficulty     etiquette lisible. Elle ne regle rien : c'est zombie_count qui fait la
+//                  difficulte, et l'etiquette qui l'annonce. Les deux doivent rester d'accord.
+//   objective      type de zone (config/map_locations.json) ou sont posees les caisses.
+//   objective_zone nom exact du lieu, quand plusieurs zones partagent le meme type — la carte livree
+//                  compte deux batiments. Absent, la premiere zone du type sert.
+//   camp           point de DEPART et de RETOUR. Les agents commencent et finissent la mission au
+//                  meme endroit : la mission est terminee quand la caisse revient au camp, et la
+//                  partie quand tout le monde y est rentre.
+//   supplies       nombre de caisses posees dans la zone d'objectif. Une seule suffit a gagner ;
+//                  au-dela, le groupe a droit a l'erreur (une caisse consommee pour soigner).
+//   zombie_count   taille de la horde. Absent, c'est zombies.count de config/game_config.json.
+//   recommended_team nombre d'agents conseille. Indicatif : l'ecran de preparation l'affiche mais
+//                  ne l'impose pas — partir seul sur la troisieme est un choix, pas une erreur.
+{
+  "missions": [
+    {
+      "id": "pharmacie",
+      "name": "Ravitaillement pharmacie",
+      "difficulty": "Facile",
+      "description": "La pharmacie est a deux rues du camp, derriere une porte fermee. Rapportez une caisse de medicaments et rentrez. La rue principale est calme a cette heure-ci — ce qui ne veut pas dire vide.",
+
+      "objective": "Pharmacy",
+      "camp": "Start",
+      "item": "Medicine",
+      "supplies": 2,
+
+      "zombie_count": 5,
+      "recommended_team": 2
+    },
+
+    {
+      "id": "entrepot",
+      "name": "Fouille de l'entrepot ouest",
+      "difficulty": "Moyenne",
+      "description": "L'entrepot n'a pas ete ouvert depuis la premiere semaine. Il reste forcement quelque chose sur les etageres. Deux entrees, aucune facile, et assez de recoins pour ne pas voir venir ce qui vous voit.",
+
+      "objective": "Building",
+      "objective_zone": "Entrepot ouest",
+      "camp": "Start",
+      "item": "Medicine",
+      "supplies": 1,
+
+      "zombie_count": 12,
+      "recommended_team": 3
+    },
+
+    {
+      "id": "hangar",
+      "name": "Traversee du hangar sud",
+      "difficulty": "Difficile",
+      "description": "Le hangar est a l'autre bout de la rue principale, et la rue principale est a decouvert sur toute sa longueur. Personne n'en est revenu sans courir. Prenez de quoi tenir : le retour est aussi long que l'aller.",
+
+      "objective": "Building",
+      "objective_zone": "Hangar sud",
+      "camp": "Start",
+      "item": "Medicine",
+      "supplies": 1,
+
+      "zombie_count": 20,
+      "recommended_team": 3
+    }
+  ]
+}

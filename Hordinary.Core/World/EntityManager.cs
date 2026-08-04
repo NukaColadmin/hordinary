@@ -1,0 +1,195 @@
+using Hordinary.AI.Zombies;
+using Hordinary.Agents;
+using Hordinary.Config;
+
+namespace Hordinary.World;
+
+/// <summary>
+/// Gere la population de zombies (specification section A, <c>World/EntityManager</c>) : leur
+/// apparition, leur cadence de decision et le deplacement de leurs corps.
+///
+/// Les deux rythmes de la section A sont separes : <see cref="Advance"/> fait glisser les corps a
+/// chaque frame, <see cref="Think"/> fait percevoir et decider 2 a 5 fois par seconde.
+/// </summary>
+public sealed class EntityManager : IHorde
+{
+    private readonly List<Zombie> _zombies = [];
+    private readonly WorldState _world;
+    private readonly PerceptionSystem _perception;
+    private readonly ZombieStateMachine _brain;
+    private readonly HordeBehaviour _horde;
+    private readonly KnowledgeSettings _knowledgeSettings;
+
+    public ZombieSettings Settings { get; }
+
+    public IReadOnlyList<Zombie> Zombies => _zombies;
+
+    /// <summary>Emis quand un zombie change d'etat. Alimente le journal des decisions.</summary>
+    public event Action<Zombie, ZombieDecision>? StateChanged;
+
+    /// <summary>Emis a chaque coup porte. Les degats arrivent avec la sante (section 19).</summary>
+    public event Action<Zombie, string>? Attacked;
+
+    public EntityManager(
+        WorldState world,
+        ZombieSettings? zombies = null,
+        KnowledgeSettings? knowledge = null,
+        PerceptionSettings? perception = null)
+    {
+        _world = world ?? throw new ArgumentNullException(nameof(world));
+        Settings = zombies ?? ZombieSettings.Default;
+        _knowledgeSettings = knowledge ?? new KnowledgeSettings();
+
+        // Les zombies voient moins loin et moins large que les survivants : leurs propres reglages
+        // priment sur la section « perception » du fichier de configuration.
+        _perception = new PerceptionSystem(new PerceptionSettings
+        {
+            VisionRange = Settings.VisionRange,
+            FieldOfViewDegrees = Settings.FieldOfViewDegrees,
+            UpdateInterval = perception?.UpdateInterval ?? Settings.UpdateInterval,
+        });
+
+        _brain = new ZombieStateMachine(Settings);
+        _horde = new HordeBehaviour(Settings);
+    }
+
+    // --- Apparition -----------------------------------------------------------------------
+
+    public Zombie Spawn(string id, GridPosition cell)
+    {
+        // Comme tout agent, un zombie nait sans rien savoir du terrain : seules ses dimensions.
+        var knowledge = new AgentKnowledge(
+            id, _world.Grid.Width, _world.Grid.Height, _world.Grid.Origin, _knowledgeSettings);
+
+        var zombie = new Zombie(id, knowledge, Settings, Settings.Seed + _zombies.Count);
+        zombie.PlaceAt(cell);
+        zombie.Follower.Speed = Settings.WanderSpeed;
+
+        _zombies.Add(zombie);
+        _world.SetEntity(id, EntityKind.Zombie, cell);
+        return zombie;
+    }
+
+    /// <summary>
+    /// Repartit <see cref="ZombieSettings.Count"/> zombies sur des cases praticables distinctes, a
+    /// bonne distance du point de depart des survivants. Le tirage suit
+    /// <see cref="ZombieSettings.Seed"/> : la meme carte donne toujours la meme horde.
+    /// </summary>
+    public int SpawnHorde(GridPosition awayFrom, int? count = null)
+    {
+        int wanted = count ?? Settings.Count;
+        if (wanted <= 0) return 0;
+
+        var rng = new Random(Settings.Seed);
+
+        var candidates = _world.Grid.AllPositions()
+            .Where(_world.Grid.IsWalkable)
+            .Where(cell => Distance(cell, awayFrom) >= Settings.MinimumSpawnDistance)
+            .ToList();
+
+        for (int i = candidates.Count - 1; i > 0; i--)
+        {
+            int j = rng.Next(i + 1);
+            (candidates[i], candidates[j]) = (candidates[j], candidates[i]);
+        }
+
+        int spawned = 0;
+        foreach (var cell in candidates)
+        {
+            if (spawned >= wanted) break;
+
+            Spawn($"zombie-{spawned + 1}", cell);
+            spawned++;
+        }
+
+        return spawned;
+    }
+
+    public Zombie? Find(string id)
+        => _zombies.FirstOrDefault(zombie => zombie.Id.Equals(id, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Retire un zombie mis a terre (livrable 8). Il quitte la horde <b>et</b> le monde : sans le
+    /// second, la perception continuerait a le voir la ou il est tombe, et les survivants
+    /// contourneraient un cadavre pendant le reste de la partie.
+    ///
+    /// Ce que les agents en ont deja memorise n'est pas efface pour autant — une croyance perimee
+    /// s'oublie toute seule, et c'est le comportement voulu.
+    /// </summary>
+    public bool Remove(string id)
+    {
+        if (Find(id) is not { } zombie) return false;
+
+        _zombies.Remove(zombie);
+        _world.RemoveEntity(zombie.Id);
+        Removed?.Invoke(zombie);
+        return true;
+    }
+
+    /// <summary>Emis quand un zombie quitte le jeu. La couche moteur y retire son noeud d'affichage.</summary>
+    public event Action<Zombie>? Removed;
+
+    // --- Boucle ---------------------------------------------------------------------------
+
+    /// <summary>Deplace les corps. A appeler a chaque frame.</summary>
+    public void Advance(float delta)
+    {
+        foreach (var zombie in _zombies)
+        {
+            zombie.Follower.Advance(delta, _world.Grid.IsWalkable);
+            _world.SetEntity(zombie.Id, EntityKind.Zombie, zombie.Position);
+        }
+    }
+
+    /// <summary>
+    /// Une passe de reflexion : chaque zombie regarde, ecoute, choisit un etat puis un pas.
+    /// A appeler 2 a 5 fois par seconde.
+    /// </summary>
+    public void Think(double now)
+    {
+        foreach (var zombie in _zombies)
+        {
+            _perception.Observe(zombie, _world, now);
+            _perception.Listen(zombie, _world, zombie.Rng, now);
+            zombie.Knowledge.ForgetFadedNoises(now);
+
+            var decision = _brain.Decide(zombie, now);
+            Apply(zombie, decision, now);
+        }
+    }
+
+    private void Apply(Zombie zombie, ZombieDecision decision, double now)
+    {
+        if (decision.State != zombie.State) StateChanged?.Invoke(zombie, decision);
+
+        zombie.State = decision.State;
+        zombie.Reason = decision.Reason;
+        zombie.Destination = decision.Destination;
+        zombie.Follower.Speed = Settings.SpeedFor(decision.State);
+
+        if (decision.State == ZombieState.Attack)
+        {
+            zombie.Follower.Clear();
+
+            if (now - zombie.LastAttackAt >= Settings.AttackInterval)
+            {
+                zombie.LastAttackAt = now;
+                Attacked?.Invoke(zombie, zombie.TargetId ?? "?");
+            }
+
+            return;
+        }
+
+        var step = _horde.ChooseStep(zombie, decision.Destination, _zombies, _world.Grid);
+
+        if (step is { } cell) zombie.Follower.SetPath([zombie.Position, cell]);
+        else zombie.Follower.Clear();
+    }
+
+    private static float Distance(GridPosition a, GridPosition b)
+    {
+        float dx = a.X - b.X;
+        float dy = a.Y - b.Y;
+        return MathF.Sqrt(dx * dx + dy * dy);
+    }
+}

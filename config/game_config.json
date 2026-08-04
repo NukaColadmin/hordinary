@@ -1,0 +1,196 @@
+﻿{
+  "navigation": {
+    "known_cell_cost": 1,
+    "unknown_cell_cost": 4,
+    "suspected_danger_cell_cost": 8,
+    "dangerous_cell_cost": 15,
+    "closed_door_cost": 3,
+    "allow_diagonal": true,
+    "max_explored_nodes": 4000
+  },
+
+  "perception": {
+    "vision_range": 8,
+    "field_of_view_degrees": 180,
+    "update_interval": 0.15
+  },
+
+  "noise": {
+    "walk": 1,
+    "run": 3,
+    "open_door": 2,
+    "force_door": 6,
+    "break_window": 8,
+    "distraction": 10,
+
+    "obstacle_attenuation": 2,
+    "lifetime": 6,
+    "hearing_threshold": 0.5,
+
+    "localisation_error_factor": 0.35,
+    "max_localisation_error": 4
+  },
+
+  "survivor": {
+    "max_health": 100,
+    "walk_speed": 4,
+    "run_speed": 7,
+
+    "panic_rise_per_second": 0.5,
+    "panic_decay_per_second": 0.15,
+    "panic_per_wound": 2.5,
+    "search_radius": 3,
+    "heal_amount": 45,
+    "calm_amount": 0.4,
+
+    "max_sanity": 200,
+    "sanity_drain_per_second": 6,
+    "sanity_recovery_per_second": 3,
+    "sanity_per_wound": 0.5,
+
+    "melee_range": 1,
+    "push_back_distance": 3,
+
+    "rear_glance_threshold": 0.15,
+    "rear_glance_interval": 1.5,
+    "rear_glance_duration": 0.3,
+
+    "personality": {
+      "courage": 0.5,
+      "loyalty": 0.7,
+      "caution": 0.8
+    }
+  },
+
+  "zombies": {
+    "count": 5,
+    "seed": 20260728,
+    "minimum_spawn_distance": 9,
+
+    "vision_range": 6,
+    "field_of_view_degrees": 140,
+    "update_interval": 0.3,
+    "sight_memory": 0.5,
+
+    "wander_speed": 1.1,
+    "alert_speed": 1.8,
+    "chase_speed": 2.4,
+    "wander_radius": 6,
+    "idle_chance": 0.3,
+    "idle_duration": 2,
+    "roam_repick_interval": 5,
+
+    "search_duration": 8,
+    "search_radius": 3,
+    "attack_interval": 1.2,
+    "attack_damage": 8,
+    "max_health": 30,
+
+    "attraction_weight": 1,
+    "separation_weight": 1.5,
+    "separation_radius": 1,
+    "cohesion_weight": 0.3,
+    "cohesion_radius": 5
+  },
+
+  "utility_ai": {
+    "evaluation_interval": 0.75,
+    "switch_threshold": 0.15,
+    "minimum_score": 0.05,
+
+    "danger_radius": 8,
+    "distance_scale": 12,
+    "noise_danger_weight": 0.5,
+    "loud_noise_intensity": 6,
+    "flee_travel_penalty": 0.25,
+    "player_order_priority": 0.7
+  },
+
+  "planner": {
+    "max_nodes": 1000,
+    "max_depth": 20,
+    "max_time_ms": 50,
+
+    "unsatisfied_weight": 1,
+    "distance_weight": 0.6,
+    "danger_weight": 1.5,
+    "noise_weight": 0.4,
+    "distance_scale": 12,
+    "noise_scale": 10,
+
+    "danger_threshold": 0.25,
+    "ally_wounded_threshold": 0.6,
+    "ally_panic_threshold": 0.5,
+    "door_link_radius": 4,
+    "arrival_radius": 1,
+    "exploration_fallback_goal": "ExploreUnknownArea"
+  },
+
+  "exploration": {
+    "information_radius": 4,
+    "information_weight": 1,
+    "distance_weight": 0.5,
+    "danger_weight": 0.8,
+    "duplication_weight": 0.9,
+    "duplication_radius": 8,
+    "max_candidates": 24
+  },
+
+  "replanning": {
+    "check_interval": 0.5,
+    "minimum_interval": 0.4,
+
+    "danger_threshold": 0.6,
+    "danger_hysteresis": 0.1,
+    "ally_danger_threshold": 0.25,
+
+    "journal_capacity": 200,
+    "watch_plan_validity": true
+  },
+
+  "//mission": "Ce qui se passe une fois l'objectif rempli. Une mission commence et finit au camp : la caisse rentre, le groupe est rappele, et la partie ne s'arrete que lorsque tout le monde est revenu. recall_priority est le poids de l'ordre de retour dans les scores Utility AI — plus eleve que player_order_priority, parce que plus rien au-dehors ne vaut la peine, mais toujours un poids et non une laisse : un survivant poursuivi fuit d'abord. abandon_at_zero_sanity a true fait rentrer de lui-meme un survivant a bout de motivation ; a false, la jauge SANITY redevient un simple indicateur.",
+  "mission": {
+    "recall_priority": 0.9,
+    "recall_reroute": 3,
+    "camp_radius": 1,
+    "abandon_at_zero_sanity": true
+  },
+
+  "//debug": "Reglages d'observation, pas de jeu : ils retirent une variable pour rendre les autres lisibles. Ils se reglent ici et nulle part ailleurs, pour qu'une partie se deroule entierement dans le meme regime. enabled est l'interrupteur general : a false, plus de console, plus de touches de debug, plus de texte d'inspection ni d'overlay, quelles que soient les lignes suivantes — on livre le jeu ainsi et on le developpe a true. console_output : le journal (plans, replanifications, bruits, ordres, partages). commands : les touches d'observation F1 a F7, le danger pose a la main, la distraction — pas les commandes du joueur. hud_text : les trois panneaux de texte ; sans eux il reste la carte et la barre d'agents, qui est l'interface du joueur. panic_enabled a false neutralise la panique et le stress (livrable 8) : la panique reste a zero et cesse d'influencer les scores Utility AI, ce qui laisse observer la planification et la navigation seules. Les trois overlays fixent l'etat de depart de F1, F2 et F3.",
+  "debug": {
+    "enabled": true,
+    "console_output": true,
+    "commands": false,
+    "hud_text": false,
+    "skip_setup": false,
+
+    "panic_enabled": false,
+    "show_navigation": false,
+    "show_mental_map": false,
+    "show_noise": false
+  },
+
+  "knowledge": {
+    "zombie_confidence_decay": 0.08,
+    "communication_range": 5,
+    "sharing_interval": 1,
+    "radio_enabled": false,
+    "intent_memory": 20,
+    "ally_confidence_decay": 0.05,
+    "door_state_confidence_decay": 0.02,
+    "noise_confidence_decay": 0.1,
+    "minimum_confidence": 0.05,
+    "shared_confidence_penalty": 0.2,
+
+    "prediction_horizon": 3,
+    "heading_memory": 2,
+    "heading_smoothing": 0.5,
+    "maximum_tracked_speed": 3,
+
+    "danger_spread_radius": 4,
+    "danger_decay_per_second": 0.08,
+    "danger_noise_weight": 0.5,
+    "danger_suspected_threshold": 0.2,
+    "danger_confirmed_threshold": 0.6
+  }
+}

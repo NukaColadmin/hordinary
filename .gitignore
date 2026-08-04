@@ -1,0 +1,28 @@
+# Godot 4 — cache local, regenere a l'ouverture du projet
+.godot/
+/android/
+
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Exports
+/build/
+/export/
+*.pck
+*.exe
+*.zip
+
+# Editeurs
+.vs/
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini

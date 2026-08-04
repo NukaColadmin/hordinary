@@ -1,0 +1,225 @@
+// Objectifs de la Utility AI (specification section 11.2, livrable 4).
+//
+// Un objectif est une donnee : un nom, une cible, des preconditions et des considerations ponderees.
+// Le code ne connait que les entrees primitives (perceived_danger, health_ratio, panic, distance_to,
+// personality.*, ...) et les courbes de reponse (linear, quadratic, inverse, threshold).
+// Ajouter, retirer ("enabled": false) ou repondérer un objectif se fait ici, sans recompilation.
+//
+// Lecture d'une consideration :
+//   input     entree primitive lue dans la memoire du survivant, toujours entre 0 et 1
+//   curve     forme de la reponse ; "exponent" durcit linear/quadratic/inverse
+//   min/max   plage de sortie. min = 0 donne un droit de veto (la consideration peut annuler
+//             l'objectif) ; min > 0 en fait un simple modulateur.
+// Les considerations sont multipliees par defaut : une seule a 0 annule le score.
+//
+// "description" (nouveau champ, livrable 9) : phrase courte destinee a un lecteur humain ou a
+// l'atelier de creation base sur un LLM local. C'est une vraie propriete JSON, pas un commentaire
+// "//" : elle survit a une reecriture programmatique du fichier et peut etre affichee en jeu
+// (ex. liste des missions ou des techniques enseignables).
+{
+  "goals": [
+    {
+      "name": "CompletePlayerMission",
+      "description": "L'ordre du joueur. Il ne s'impose pas : la securite le fait fondre vite (courbe quadratique). Un ordre rempli cesse d'etre un objectif : sans cette precondition, un survivant arrive a destination resterait plante la au lieu de passer a ce que la consigne impliquait.",
+      "target": "mission",
+      "preconditions": [ { "input": "mission_reached", "max": 0.5 } ],
+      "considerations": [
+        { "input": "player_priority", "curve": "linear" },
+        { "input": "plan_confidence", "curve": "linear", "min": 0.3 },
+        { "input": "personal_safety", "curve": "quadratic" }
+      ],
+      "combine": "multiply"
+    },
+
+    {
+      "name": "ExploreUnknownArea",
+      "description": "Decouvrir le terrain quand rien de plus urgent ne se presente. La cible « frontier » n'est plus la frontiere la plus proche mais la mieux notee (livrable 7) : gain d'information attendu, moins le trajet, le danger et ce qu'un allie explore deja. C'est ce dernier terme qui repartit les trois survivants au lieu de les envoyer au meme endroit. L'aptitude fait le reste : Alice explore parce que c'est son metier, Claire parce qu'il n'y a personne d'autre.",
+      "target": "frontier",
+      "considerations": [
+        { "input": "unexplored_ratio", "curve": "linear" },
+        { "input": "personal_safety", "curve": "linear" },
+        { "input": "personality.courage", "curve": "linear", "min": 0.4 },
+        { "input": "aptitude(exploration)", "curve": "linear", "min": 0.5 }
+      ],
+      "weight": 0.55
+    },
+
+    {
+      "name": "FleeDanger",
+      "description": "flee_score de la section 11.3. La pression ressentie garde son droit de veto ; sante, panique et prudence ne font que moduler : un survivant calme et en pleine forme fuit quand meme une horde a trois cases.",
+      "target": "away_from_danger",
+      "considerations": [
+        { "input": "threat_pressure", "curve": "linear" },
+        { "input": "health_ratio", "curve": "inverse", "min": 0.7 },
+        { "input": "panic", "curve": "linear", "min": 0.7 },
+        { "input": "personality.caution", "curve": "linear", "min": 0.6 }
+      ],
+      "combine": "multiply"
+    },
+
+    {
+      "name": "HelpAlly",
+      "description": "help_ally_score de la section 11.3.",
+      "target": "ally",
+      "preconditions": [ { "input": "has_ally", "min": 0.5 } ],
+      "considerations": [
+        { "input": "ally_danger", "curve": "linear" },
+        { "input": "personality.loyalty", "curve": "linear", "min": 0.2 },
+        { "input": "distance_to(ally)", "curve": "inverse", "min": 0.2 },
+        { "input": "personal_safety", "curve": "linear", "min": 0.2 }
+      ],
+      "combine": "multiply"
+    },
+
+    {
+      "name": "HealSelf",
+      "description": "Se soigner : il faut de quoi le faire, etre blesse, et un moment de repit.",
+      "preconditions": [
+        { "input": "has_medicine", "min": 0.5 },
+        { "input": "health_ratio", "max": 0.6 }
+      ],
+      "considerations": [
+        { "input": "health_ratio", "curve": "inverse", "exponent": 2 },
+        { "input": "personal_safety", "curve": "linear" },
+        { "input": "panic", "curve": "inverse", "min": 0.3 }
+      ],
+      "weight": 0.9
+    },
+
+    {
+      "name": "HealAlly",
+      "description": "Soigner un allie blesse. « ally_wounded » est une precondition et non une simple consideration : depuis le livrable 7 la sante d'un allie est une croyance, et elle n'arrive que par la parole. Un survivant qui n'a parle a personne ne part donc jamais soigner quelqu'un — il ne sait pas qu'il y a un blesse. C'est Claire qui obtient le score le plus haut, par son aptitude et par sa loyaute.",
+      "target": "ally",
+      "preconditions": [
+        { "input": "has_medicine", "min": 0.5 },
+        { "input": "has_ally", "min": 0.5 },
+        { "input": "ally_wounded", "min": 0.25 }
+      ],
+      "considerations": [
+        { "input": "ally_wounded", "curve": "linear" },
+        { "input": "distance_to(ally)", "curve": "inverse", "min": 0.2 },
+        { "input": "personality.loyalty", "curve": "linear", "min": 0.3 },
+        { "input": "aptitude(support)", "curve": "linear", "min": 0.4 },
+        { "input": "personal_safety", "curve": "linear" }
+      ],
+      "weight": 1.1
+    },
+
+    {
+      "name": "CalmAlly",
+      "description": "Rassurer un allie terrifie — l'action speciale de Claire. Comme la sante, la panique d'autrui ne s'observe pas : elle se raconte. L'objectif ne demande pas de medicaments, seulement d'etre pres de quelqu'un qui a peur et de ne pas etre soi-meme en train de courir.",
+      "target": "ally",
+      "preconditions": [
+        { "input": "has_ally", "min": 0.5 },
+        { "input": "ally_panicking", "min": 0.3 }
+      ],
+      "considerations": [
+        { "input": "ally_panicking", "curve": "linear" },
+        { "input": "distance_to(ally)", "curve": "inverse", "min": 0.2 },
+        { "input": "personality.loyalty", "curve": "linear", "min": 0.3 },
+        { "input": "aptitude(support)", "curve": "linear", "min": 0.3 },
+        { "input": "personal_safety", "curve": "linear" }
+      ],
+      "weight": 0.7
+    },
+
+    {
+      "name": "SearchForMedicine",
+      "description": "Chercher les medicaments tant qu'on ignore ou ils sont.",
+      "target": "pharmacy",
+      "preconditions": [
+        { "input": "has_medicine", "max": 0.5 },
+        { "input": "medicine_known", "max": 0.5 }
+      ],
+      "considerations": [
+        { "input": "player_priority", "curve": "linear", "min": 0.4 },
+        { "input": "personal_safety", "curve": "linear" },
+        { "input": "unexplored_ratio", "curve": "linear", "min": 0.4 }
+      ],
+      "weight": 0.8
+    },
+
+    {
+      "name": "PickUpMedicine",
+      "description": "Les medicaments sont reperes : aller les prendre passe devant la consigne generale.",
+      "target": "medicine",
+      "preconditions": [
+        { "input": "has_medicine", "max": 0.5 },
+        { "input": "medicine_known", "min": 0.5 }
+      ],
+      "considerations": [
+        { "input": "player_priority", "curve": "linear", "min": 0.4 },
+        { "input": "distance_to(medicine)", "curve": "inverse", "min": 0.4 },
+        { "input": "personal_safety", "curve": "linear" }
+      ],
+      "weight": 1.3
+    },
+
+    {
+      "name": "ReachExtraction",
+      "description": "Medicaments en poche : sortir. La securite reste un modulateur fort.",
+      "target": "extraction",
+      "preconditions": [ { "input": "has_medicine", "min": 0.5 } ],
+      "considerations": [
+        { "input": "player_priority", "curve": "linear", "min": 0.5 },
+        { "input": "personal_safety", "curve": "linear", "min": 0.3 }
+      ],
+      "weight": 1.1
+    },
+
+    {
+      "name": "Hide",
+      "description": "Se terrer plutot que courir : demande un abri connu tout proche. Se cacher marche contre ce qui ne vous a pas vu, pas contre ce qui vous suit : « pursued » divise le score par trois quand un zombie vient droit sur elle, et la fuite reprend la main.",
+      "target": "cover",
+      "considerations": [
+        { "input": "perceived_danger", "curve": "linear" },
+        { "input": "distance_to(cover)", "curve": "inverse" },
+        { "input": "personality.caution", "curve": "linear", "min": 0.4 },
+        { "input": "panic", "curve": "linear", "min": 0.5 },
+        { "input": "pursued", "curve": "inverse", "min": 0.3 }
+      ],
+      "weight": 0.9
+    },
+
+    {
+      "name": "Regroup",
+      "description": "Rejoindre le groupe : d'autant plus tentant qu'on est loin, loyal, paniqué et peu temeraire.",
+      "target": "group",
+      "preconditions": [ { "input": "has_ally", "min": 0.5 } ],
+      "considerations": [
+        { "input": "distance_to(group)", "curve": "linear" },
+        { "input": "personality.loyalty", "curve": "linear", "min": 0.3 },
+        { "input": "panic", "curve": "linear", "min": 0.4 },
+        { "input": "personality.courage", "curve": "inverse", "min": 0.5 }
+      ],
+      "weight": 0.7
+    },
+
+    {
+      "name": "FightZombie",
+      "description": "Se battre quand fuir n'est plus une option (livrable 8). « pursued » est la precondition : un zombie loin ne se combat pas, il s'evite — et il n'existe aucune action pour aller au contact. La sante en courbe inverse est ce qui fait la difference : un survivant en pleine forme prefere partir, un survivant acule et blesse se retourne. C'est l'affaire de Bob, le plus courageux et le plus resistant.",
+      "target": "danger",
+      "preconditions": [ { "input": "pursued", "min": 0.35 } ],
+      "considerations": [
+        { "input": "pursued", "curve": "linear" },
+        { "input": "health_ratio", "curve": "inverse", "min": 0.3 },
+        { "input": "personality.courage", "curve": "linear" },
+        { "input": "personality.caution", "curve": "inverse", "min": 0.3 }
+      ],
+      "weight": 0.85
+    },
+
+    {
+      "name": "CreateDistraction",
+      "description": "Attirer la horde loin d'un allie en danger — a condition de ne pas etre soi-meme au contact. Sans cible : on ne se deplace pas pour distraire, on fait du bruit. C'est l'affaire de Bob : il est le plus courageux, le plus resistant, et son aptitude au fracas divise par deux le cout de l'action cote planificateur.",
+      "considerations": [
+        { "input": "ally_danger", "curve": "linear" },
+        { "input": "personality.courage", "curve": "linear", "min": 0.2 },
+        { "input": "aptitude(breaching)", "curve": "linear", "min": 0.5 },
+        { "input": "perceived_danger", "curve": "inverse", "min": 0.2 },
+        { "input": "distance_to(danger)", "curve": "inverse", "min": 0.3 }
+      ],
+      "weight": 0.8
+    }
+  ]
+}

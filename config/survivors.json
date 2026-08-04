@@ -1,0 +1,121 @@
+// Les trois survivants du MVP (specification, livrable 7).
+//
+// Alice, Bob et Claire ne sont pas trois classes du code : ce sont trois entrees de ce fichier.
+// Aucun endroit de Hordinary.Core ne les nomme. Ajouter un quatrieme survivant, echanger deux roles
+// ou desequilibrer volontairement l'equipe le temps d'un essai se fait ici, sans recompilation.
+//
+// Lecture d'un profil :
+//   id / name        identifiant technique et nom affiche.
+//   role             etiquette lisible (eclaireuse, bricoleur, secouriste).
+//   description      phrase courte destinee a un lecteur humain — vraie propriete JSON, pas un
+//                    commentaire "//" : elle survit a une reecriture du fichier et peut etre
+//                    affichee en jeu (fiche de personnage, debrief du livrable 9).
+//   personality      courage / loyalty / caution. Ces trois coefficients ponderent les scores de la
+//                    Utility AI (config/utility_goals.json) et les couts A* : un survivant prudent
+//                    paie plus cher les cases inconnues et dangereuses.
+//   max_sanity       motivation maximale, la jauge SANITY de la fiche de personnage. La sante dit ce
+//                    que le corps encaisse pendant une mission, la motivation ce que la tete encaisse
+//                    sur la duree : elle se vide a proportion de la panique et se refait plus
+//                    lentement qu'elle ne se vide. A zero, le survivant rentre au camp de lui-meme
+//                    (voir mission.abandon_at_zero_sanity dans config/game_config.json).
+//   caracteristiques toute valeur absente signifie « comme tout le monde », c'est-a-dire la section
+//                    "survivor" de config/game_config.json. Un profil ne redit que ce qui le
+//                    distingue.
+//   noise_multiplier discretion : multiplie le bruit des PAS du survivant, ceux du plan comme ceux
+//                    de son simple deplacement. Elle ne touche pas au bareme de la section 18.1 —
+//                    une vitre brisee par Alice fait le bruit d'une vitre brisee. Ce qu'un survivant
+//                    fait moins bruyamment sur une action precise se dit dans ses "skills".
+//   skills           par nom d'action de config/planner_domain.json. Les trois coefficients
+//                    multiplient le cout, le bruit et la duree de cette action pour ce survivant.
+//                    GBFS minimise le cout : c'est ainsi que Bob « sait » forcer les portes, sans
+//                    qu'aucun code ne teste son identite. "enabled": false retire l'action de son
+//                    repertoire.
+//   aptitudes        lues par la Utility AI via la consideration aptitude(nom). Le vocabulaire est
+//                    libre : il n'appartient qu'a ce fichier et a config/utility_goals.json, qui
+//                    doivent s'accorder. Une aptitude non declaree vaut 0,5 (ni douee ni maladroite).
+{
+  "survivors": [
+    {
+      "id": "alice",
+      "name": "Alice",
+      "role": "Eclaireuse",
+      "description": "Rapide, bonne vision, peu bruyante, mais fragile. Elle part devant, voit loin et rentre avant que la horde ait compris. Un coup encaisse lui coute beaucoup plus qu'aux autres : sa securite tient a sa discretion, pas a sa resistance.",
+
+      "personality": { "courage": 0.5, "loyalty": 0.7, "caution": 0.8 },
+
+      "max_health": 80,
+      "max_sanity": 180,
+      "walk_speed": 5,
+      "run_speed": 8.5,
+      "vision_range": 11,
+      "field_of_view_degrees": 200,
+      "noise_multiplier": 0.6,
+
+      "skills": {
+        "MoveToLocation": { "description": "Se deplacer vite. Sa discretion est portee par noise_multiplier ci-dessus, qui s'applique a tous ses pas — y compris ceux qu'aucun plan n'a demandes.", "cost": 0.7, "duration": 0.7 },
+        "Explore": { "description": "Exploration efficace : c'est son metier, elle va au bord du connu pour moins cher que les autres.", "cost": 0.5, "duration": 0.6 },
+        "Observe": { "description": "Observer une zone, regarder par une fenetre : instantane pour elle.", "cost": 0.4, "duration": 0.5 },
+        "ForceDoor": { "description": "Elle n'a ni les outils ni les epaules : forcer une porte lui coute le double.", "cost": 2, "duration": 1.6 },
+        "HealAlly": { "description": "Elle sait poser un pansement, pas soigner.", "cost": 1.5, "duration": 1.4 }
+      },
+
+      "aptitudes": { "exploration": 0.95, "support": 0.25, "breaching": 0.2, "stealth": 0.9 }
+    },
+
+    {
+      "id": "bob",
+      "name": "Bob",
+      "role": "Bricoleur",
+      "description": "Vitesse moyenne, bruit moyen, resistant. Il ouvre ce qui est ferme — porte forcee, vitre brisee — et sait faire assez de vacarme pour attirer une horde loin d'un allie. C'est le seul du groupe qui puisse encaisser une erreur.",
+
+      "personality": { "courage": 0.8, "loyalty": 0.5, "caution": 0.4 },
+
+      "max_health": 120,
+      "max_sanity": 240,
+      "walk_speed": 4,
+      "run_speed": 7,
+      "noise_multiplier": 1,
+
+      "skills": {
+        "OpenDoor": { "description": "Ouvrir une porte verrouillee ou coincee : il sait s'y prendre, et sans forcer le bois.", "cost": 0.6, "noise": 0.6, "duration": 0.5 },
+        "ForceDoor": { "description": "Forcer une porte : deux fois moins cher et deux fois plus vite que pour les autres. C'est ce prix, et lui seul, qui fait que GBFS lui propose la porte plutot que le detour.", "cost": 0.5, "duration": 0.5 },
+        "BreakWindow": { "description": "L'autre entree possible, aussi bruyante mais bien plus rapide entre ses mains.", "cost": 0.6, "duration": 0.6 },
+        "CreateNoiseDistraction": { "description": "Creer une distraction sonore : personne ne fait autant de bruit sur commande.", "cost": 0.5, "noise": 1.2 },
+        "HealAlly": { "description": "Il fait ce qu'il peut, c'est-a-dire pas grand-chose.", "cost": 2, "duration": 1.6 }
+      },
+
+      "heal_amount": 25,
+
+      "aptitudes": { "exploration": 0.5, "support": 0.3, "breaching": 0.95, "stealth": 0.3 }
+    },
+
+    {
+      "id": "claire",
+      "name": "Claire",
+      "role": "Secouriste",
+      "description": "Vitesse moyenne, bon soutien, faible efficacite au combat. Elle transporte les medicaments mieux que quiconque, remet un blesse debout et fait redescendre la panique. Elle ne force rien et ne brise rien : ce qu'elle apporte, c'est que les autres tiennent.",
+
+      "personality": { "courage": 0.4, "loyalty": 0.9, "caution": 0.7 },
+
+      "max_health": 100,
+      "walk_speed": 4,
+      "run_speed": 6.5,
+      "search_radius": 4,
+      "heal_amount": 90,
+      "calm_amount": 0.6,
+      "noise_multiplier": 0.9,
+
+      "skills": {
+        "HealAlly": { "description": "Soigner un survivant : deux fois plus vite et pour un tiers du cout. Le montant du soin, lui, vient de heal_amount ci-dessus.", "cost": 0.35, "duration": 0.5 },
+        "HealSelf": { "description": "Elle se soigne comme elle soigne les autres.", "cost": 0.5, "duration": 0.6 },
+        "CalmAlly": { "description": "Reduire la panique d'un allie : elle seule sait vraiment le faire.", "cost": 0.4, "duration": 0.6 },
+        "HelpAlly": { "description": "Se porter au contact de qui a besoin d'elle.", "cost": 0.6 },
+        "SearchRoom": { "description": "Transporter les medicaments plus efficacement commence par savoir les trouver.", "cost": 0.7, "duration": 0.8 },
+        "ForceDoor": { "description": "Ce n'est pas son role, et son epaule s'en souvient.", "cost": 2.5, "duration": 2 },
+        "BreakWindow": { "description": "Elle ne brise pas les vitres : trop de bruit pour ce que ca rapporte a quelqu'un qui ne court pas vite.", "enabled": false }
+      },
+
+      "aptitudes": { "exploration": 0.35, "support": 0.95, "breaching": 0.1, "stealth": 0.5 }
+    }
+  ]
+}

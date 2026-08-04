@@ -1,0 +1,357 @@
+// Domaine de planification GBFS (specification, livrable 5).
+//
+// Il n'existe volontairement aucune classe C# par action. Les dix-sept actions executables de la
+// specification sont des *instances* de six verbes primitifs — toPos, take, put, setFlag, wait,
+// damage — decrites ici. Ajouter une action au jeu, en retirer une pour isoler un comportement
+// ("enabled": false) ou reequilibrer son cout se fait dans ce fichier, sans recompilation.
+//
+// Lecture d'une action :
+//   name           identifiant unique de l'action.
+//   description    phrase courte destinee a un lecteur humain (ou a l'atelier de creation base sur
+//                   un LLM local, voir livrable 9) : pourquoi cette action existe, ce qu'elle
+//                   modelise. Ce champ est une vraie propriete JSON, pas un commentaire "//" : il
+//                   survit a une reecriture programmatique du fichier et peut etre affiche en jeu
+//                   (ex. menu "enseigner une technique").
+//   verb           verbe primitif execute par le moteur (Hordinary.AI.Planning.ActionVerbs)
+//   params         parametres du verbe. Une valeur "?x" est remplacee par la liaison de la variable x.
+//   parameters     variables de l'action et leur type d'objet : location, door, window, item, ally, threat.
+//                  Une action sans "parameters" est deja concrete ; sinon elle est declinee sur tous
+//                  les objets connus de l'agent.
+//   preconditions  faits qui doivent etre vrais. "!" nie : ce qui est absent de l'etat est faux.
+//   effects        faits poses ou retires. "!at(agent, *)" retire toute position memorisee ; les
+//                  suppressions sont appliquees avant les ajouts.
+//   cost           cout fixe. "distance_cost" y ajoute un cout par cellule parcourue.
+//   noise_level    bareme de la section 18.1 : marche 1, porte 2, course 3, porte forcee 6,
+//                  vitre brisee 8, distraction 10. Le plan choisit aussi sa discretion.
+//   duration       secondes d'execution.
+//
+// Les objets ne sont pas declares ici : ils sont derives de la memoire du survivant
+// (SymbolicStateBuilder). Une porte jamais vue n'existe pas pour le planificateur.
+{
+  "actions": [
+    {
+      "name": "MoveToLocation",
+      "description": "Se rendre a un lieu connu. Le trajet lui-meme est l'affaire d'A* (livrable 1) : le plan dit ou aller, pas par ou passer. Etre a un endroit, c'est ne plus etre ailleurs, d'ou le joker.",
+      "verb": "toPos",
+      "parameters": { "location": "location" },
+      "params": { "location": "?location" },
+      "preconditions": [ "known(?location)", "!at(agent, ?location)" ],
+      "effects": [ "!at(agent, *)", "at(agent, ?location)" ],
+      "cost": 1,
+      "distance_cost": 0.5,
+      "noise_level": 1,
+      "noise_action": "Walk",
+      "duration": 2
+    },
+
+    {
+      "name": "OpenDoor",
+      "description": "Ouvrir une porte simplement fermee : peu cher, un peu bruyant.",
+      "verb": "setFlag",
+      "parameters": { "door": "door", "location": "location" },
+      "params": { "condition": "door_open(?door)", "value": true, "target": "?door" },
+      "preconditions": [ "at(agent, ?location)", "door_of(?door, ?location)", "door_closed(?door)" ],
+      "effects": [ "!door_closed(?door)", "door_open(?door)", "accessible(?location)" ],
+      "cost": 1,
+      "noise_level": 2,
+      "noise_action": "OpenDoor",
+      "duration": 0.5
+    },
+
+    {
+      "name": "ForceDoor",
+      "description": "La reponse adaptee a une porte verrouillee. Trois fois plus chere et trois fois plus bruyante qu'une ouverture : le planificateur ne la choisit que s'il n'a pas mieux.",
+      "verb": "setFlag",
+      "parameters": { "door": "door", "location": "location" },
+      "params": { "condition": "door_open(?door)", "value": true, "target": "?door" },
+      "preconditions": [ "at(agent, ?location)", "door_of(?door, ?location)", "door_locked(?door)" ],
+      "effects": [ "!door_locked(?door)", "door_open(?door)", "accessible(?location)" ],
+      "cost": 3,
+      "noise_level": 6,
+      "noise_action": "ForceDoor",
+      "duration": 3
+    },
+
+    {
+      "name": "BreakWindow",
+      "description": "L'autre entree possible, la plus bruyante de toutes.",
+      "verb": "setFlag",
+      "parameters": { "window": "window", "location": "location" },
+      "params": { "condition": "window_broken(?window)", "value": true, "target": "?window" },
+      "preconditions": [ "at(agent, ?location)", "window_of(?window, ?location)", "window_intact(?window)" ],
+      "effects": [ "!window_intact(?window)", "window_broken(?window)", "accessible(?location)" ],
+      "cost": 4,
+      "noise_level": 8,
+      "noise_action": "BreakWindow",
+      "duration": 2
+    },
+
+    {
+      "name": "SearchRoom",
+      "description": "Fouiller demande d'etre entre : c'est cette precondition qui oblige a traiter la porte avant.",
+      "verb": "setFlag",
+      "parameters": { "location": "location" },
+      "params": { "condition": "searched(?location)", "value": true },
+      "preconditions": [ "at(agent, ?location)", "accessible(?location)", "!searched(?location)" ],
+      "effects": [ "searched(?location)" ],
+      "cost": 2,
+      "noise_level": 1,
+      "duration": 4
+    },
+
+    {
+      "name": "LocateMedicine",
+      "description": "« Localiser les medicaments » de l'exemple de plan de la specification : fouiller la pharmacie est ce qui apprend ou ils sont. Le planificateur est optimiste — s'ils n'y sont pas, l'action echoue a l'execution et le livrable 6 replanifie. « !searched_in_vain » est ce qui empeche la replanification de redemander la meme fouille : une fouille infructueuse entre dans la memoire du survivant, et redevient un fait ici.",
+      "verb": "setFlag",
+      "params": { "condition": "medicine_found", "value": true },
+      "preconditions": [ "at(agent, pharmacy)", "searched(pharmacy)", "!medicine_found", "!searched_in_vain(pharmacy)" ],
+      "effects": [ "medicine_found", "item_at(medicine, pharmacy)" ],
+      "cost": 1,
+      "noise_level": 0,
+      "duration": 1
+    },
+
+    {
+      "name": "PickUpMedicine",
+      "description": "Ramasser les medicaments une fois leur emplacement connu a la pharmacie.",
+      "verb": "take",
+      "params": { "item": "medicine" },
+      "preconditions": [ "at(agent, pharmacy)", "medicine_found", "!has(agent, medicine)" ],
+      "effects": [ "has(agent, medicine)", "medicine_collected" ],
+      "cost": 1,
+      "noise_level": 0,
+      "duration": 1
+    },
+
+    {
+      "name": "PickUpSpottedMedicine",
+      "description": "Meme action, mais pour des medicaments apercus ailleurs qu'a la pharmacie : « medicine_spot » est l'endroit ou le survivant croit les voir. Deux entrees de configuration, aucun code en plus.",
+      "verb": "take",
+      "params": { "item": "medicine" },
+      "preconditions": [ "at(agent, medicine_spot)", "medicine_found", "!has(agent, medicine)" ],
+      "effects": [ "has(agent, medicine)", "medicine_collected" ],
+      "cost": 1,
+      "noise_level": 0,
+      "duration": 1
+    },
+
+    {
+      "name": "DropItem",
+      "description": "Deposer un objet porte a un endroit donne.",
+      "verb": "put",
+      "parameters": { "item": "item", "location": "location" },
+      "params": { "item": "?item", "location": "?location" },
+      "preconditions": [ "has(agent, ?item)", "at(agent, ?location)" ],
+      "effects": [ "!has(agent, ?item)", "!medicine_collected", "item_at(?item, ?location)" ],
+      "cost": 1,
+      "noise_level": 1,
+      "duration": 0.5
+    },
+
+    {
+      "name": "ReachExtraction",
+      "description": "La sortie. Elle n'a de sens qu'avec les medicaments : c'est la condition de victoire.",
+      "verb": "toPos",
+      "params": { "location": "extraction" },
+      "preconditions": [ "extraction_known", "has(agent, medicine)", "!extracted" ],
+      "effects": [ "!at(agent, *)", "at(agent, extraction)", "extracted" ],
+      "cost": 1,
+      "distance_cost": 0.5,
+      "noise_level": 1,
+      "noise_action": "Walk",
+      "duration": 2
+    },
+
+    {
+      "name": "EscapeLocation",
+      "description": "Quitter un endroit devenu dangereux pour le refuge que la carte mentale designe.",
+      "verb": "toPos",
+      "parameters": { "location": "location" },
+      "params": { "location": "away_from_danger" },
+      "preconditions": [ "at(agent, ?location)", "zombie_near(?location)", "known(away_from_danger)" ],
+      "effects": [ "!at(agent, *)", "at(agent, away_from_danger)", "escaped" ],
+      "cost": 1,
+      "distance_cost": 0.4,
+      "noise_level": 3,
+      "noise_action": "Run",
+      "duration": 1.5
+    },
+
+    {
+      "name": "Hide",
+      "description": "Se terrer dans une cachette connue plutot que fuir a decouvert.",
+      "verb": "toPos",
+      "params": { "location": "cover" },
+      "preconditions": [ "known(cover)", "!hidden" ],
+      "effects": [ "!at(agent, *)", "at(agent, cover)", "hidden" ],
+      "cost": 1,
+      "distance_cost": 0.4,
+      "noise_level": 1,
+      "noise_action": "Walk",
+      "duration": 1.5
+    },
+
+    {
+      "name": "Explore",
+      "description": "Aller voir ce qu'il y a au bord du connu. C'est aussi le plan de repli quand aucun autre objectif ne se laisse planifier (planner.exploration_fallback_goal).",
+      "verb": "toPos",
+      "params": { "location": "frontier" },
+      "preconditions": [ "known(frontier)", "!explored" ],
+      "effects": [ "!at(agent, *)", "at(agent, frontier)", "explored" ],
+      "cost": 2,
+      "distance_cost": 0.5,
+      "noise_level": 1,
+      "noise_action": "Walk",
+      "duration": 3
+    },
+
+    {
+      "name": "Observe",
+      "description": "S'arreter et regarder : gratuit, silencieux, et cela met a jour la carte mentale.",
+      "verb": "wait",
+      "parameters": { "location": "location" },
+      "preconditions": [ "at(agent, ?location)", "!observed(?location)" ],
+      "effects": [ "observed(?location)" ],
+      "cost": 1,
+      "noise_level": 0,
+      "duration": 1
+    },
+
+    {
+      "name": "PushBackZombie",
+      "description": "« Repousser un zombie » (livrable 8). Le degager de quelques cases sans le blesser : cela n'attire presque personne et ne coute rien, mais le zombie revient. C'est la reponse d'un survivant qui veut partir, pas gagner — et comme elle est moins chere et moins bruyante que l'attaque, GBFS la choisit spontanement quand la fuite reste possible.",
+      "verb": "setFlag",
+      "parameters": { "threat": "threat" },
+      "params": { "condition": "pushed_back(?threat)", "value": true, "target": "?threat" },
+      "preconditions": [ "zombie_adjacent(?threat)", "!pushed_back(?threat)" ],
+      "effects": [ "pushed_back(?threat)", "threat_handled" ],
+      "cost": 1,
+      "noise_level": 2,
+      "duration": 0.5
+    },
+
+    {
+      "name": "AttackZombie",
+      "description": "« Effectuer une attaque simple » (livrable 8). Trois fois plus chere et trois fois plus bruyante qu'une poussee, mais elle regle le probleme definitivement. Il n'existe volontairement aucune action pour REJOINDRE un zombie : on ne planifie pas une chasse, on repond a ce qui est deja sur soi — d'ou la precondition d'adjacence, qu'aucune action du domaine ne sait rendre vraie.",
+      "verb": "damage",
+      "parameters": { "threat": "threat" },
+      "params": { "target": "?threat", "amount": 15 },
+      "preconditions": [ "zombie_adjacent(?threat)", "!threat_down(?threat)" ],
+      "effects": [ "threat_down(?threat)", "threat_handled" ],
+      "cost": 3,
+      "noise_level": 6,
+      "duration": 1
+    },
+
+    {
+      "name": "HelpAlly",
+      "description": "Se porter au contact d'un allie en danger.",
+      "verb": "toPos",
+      "parameters": { "ally": "ally" },
+      "params": { "location": "?ally" },
+      "preconditions": [ "ally_in_danger(?ally)" ],
+      "effects": [ "!at(agent, *)", "at(agent, ally)", "helped(?ally)", "ally_helped" ],
+      "cost": 2,
+      "distance_cost": 0.5,
+      "noise_level": 2,
+      "noise_action": "Run",
+      "duration": 2
+    },
+
+    {
+      "name": "HealAlly",
+      "description": "Soigner un allie avec les medicaments transportes. « ally_wounded » n'est pas une precondition comme les autres : elle ne peut devenir vraie que si l'interesse a DIT qu'il etait blesse (livrable 7). Une blessure ne se lit pas a distance, et sans partage de connaissances cette action reste donc inaccessible — ce qui est exactement le comportement voulu.",
+      "verb": "setFlag",
+      "parameters": { "ally": "ally" },
+      "params": { "condition": "healed(?ally)", "value": true, "target": "?ally" },
+      "preconditions": [ "has(agent, medicine)", "at(agent, ally)", "ally_wounded(?ally)", "!healed(?ally)" ],
+      "effects": [ "!has(agent, medicine)", "!medicine_collected", "healed(?ally)", "ally_healed" ],
+      "cost": 1,
+      "noise_level": 0,
+      "duration": 3
+    },
+
+    {
+      "name": "CalmAlly",
+      "description": "Reduire la panique d'un allie — l'action speciale de Claire (livrable 7). Elle ne coute rien et ne soigne rien : elle rend a un survivant terrifie la marge de decision que la peur lui prenait, ce qui suffit souvent a lui faire lacher la fuite. Comme pour le soin, la panique d'autrui ne s'observe pas : seul le partage de connaissances rend « ally_panicking » vrai.",
+      "verb": "setFlag",
+      "parameters": { "ally": "ally" },
+      "params": { "condition": "calmed(?ally)", "value": true, "target": "?ally" },
+      "preconditions": [ "at(agent, ally)", "ally_panicking(?ally)", "!calmed(?ally)" ],
+      "effects": [ "calmed(?ally)", "ally_calmed" ],
+      "cost": 1,
+      "noise_level": 1,
+      "duration": 2
+    },
+
+    {
+      "name": "HealSelf",
+      "description": "Se soigner soi-meme avec les medicaments transportes.",
+      "verb": "setFlag",
+      "params": { "condition": "healed(agent)", "value": true },
+      "preconditions": [ "has(agent, medicine)", "!healed(agent)" ],
+      "effects": [ "!has(agent, medicine)", "!medicine_collected", "healed(agent)" ],
+      "cost": 1,
+      "noise_level": 0,
+      "duration": 3
+    },
+
+    {
+      "name": "CreateNoiseDistraction",
+      "description": "Attirer la horde ailleurs. Le verbe est un simple wait : c'est le noise_level qui fait la distraction — toute action executee emet son bruit, celle-ci n'est faite que pour cela.",
+      "verb": "wait",
+      "preconditions": [ "!distraction_created" ],
+      "effects": [ "distraction_created" ],
+      "cost": 1,
+      "noise_level": 10,
+      "noise_action": "Distraction",
+      "duration": 0.5
+    },
+
+    {
+      "name": "ShareKnowledge",
+      "description": "Aller dire a un allie ce qu'on a vu (livrable 7). Le partage se fait deja tout seul des que deux survivants passent a moins de cinq cases l'un de l'autre : cette action-ci est le cas ou l'information vaut le detour, et ou le survivant se deplace expres pour la porter. Au retour a la base, le partage devient automatique et sans limite de portee (voir livrable 9).",
+      "verb": "setFlag",
+      "parameters": { "ally": "ally" },
+      "params": { "condition": "shared_with(?ally)", "value": true, "target": "?ally" },
+      "preconditions": [ "at(agent, ally)", "!shared_with(?ally)" ],
+      "effects": [ "shared_with(?ally)", "knowledge_shared" ],
+      "cost": 1,
+      "noise_level": 1,
+      "duration": 1
+    },
+
+    {
+      "name": "Wait",
+      "description": "Ne rien faire pendant un tour.",
+      "verb": "wait",
+      "preconditions": [ "!waited" ],
+      "effects": [ "waited" ],
+      "cost": 1,
+      "noise_level": 0,
+      "duration": 1
+    }
+  ],
+
+  // A quoi reconnait-on qu'un objectif de config/utility_goals.json est atteint. Les noms font le
+  // lien entre le livrable 4 (choisir un objectif) et le livrable 5 (le realiser). La description
+  // de chaque objectif proprement dite vit dans config/utility_goals.json ; celle-ci ne repete que
+  // la condition de reussite, cote planificateur.
+  "goals": [
+    { "name": "PickUpMedicine", "description": "Reussi quand l'agent porte les medicaments.", "conditions": [ "has(agent, medicine)" ] },
+    { "name": "SearchForMedicine", "description": "Reussi quand l'emplacement des medicaments est connu.", "conditions": [ "medicine_found" ] },
+    { "name": "ReachExtraction", "description": "Reussi quand l'agent a atteint la zone d'extraction avec les medicaments.", "conditions": [ "extracted" ] },
+    { "name": "CompletePlayerMission", "description": "Reussi quand l'agent a atteint le lieu designe par la consigne du joueur.", "conditions": [ "at(agent, mission)" ] },
+    { "name": "ExploreUnknownArea", "description": "Reussi quand la frontiere visee a ete atteinte et observee.", "conditions": [ "explored" ] },
+    { "name": "FleeDanger", "description": "Reussi quand l'agent a rejoint un point hors de portee du danger percu.", "conditions": [ "at(agent, away_from_danger)" ] },
+    { "name": "Hide", "description": "Reussi quand l'agent est arrive dans une cachette connue.", "conditions": [ "hidden" ] },
+    { "name": "HelpAlly", "description": "Reussi quand l'agent a rejoint un allie en danger.", "conditions": [ "ally_helped" ] },
+    { "name": "HealAlly", "description": "Reussi quand un allie a ete soigne.", "conditions": [ "ally_healed" ] },
+    { "name": "CalmAlly", "description": "Reussi quand la panique d'un allie a ete apaisee.", "conditions": [ "ally_calmed" ] },
+    { "name": "ShareKnowledge", "description": "Reussi quand un allie a recu ce que le survivant savait.", "conditions": [ "knowledge_shared" ] },
+    { "name": "HealSelf", "description": "Reussi quand l'agent s'est soigne lui-meme.", "conditions": [ "healed(agent)" ] },
+    { "name": "Regroup", "description": "Reussi quand l'agent a rejoint le groupe.", "conditions": [ "at(agent, group)" ] },
+    { "name": "CreateDistraction", "description": "Reussi quand une distraction sonore a ete creee.", "conditions": [ "distraction_created" ] },
+    { "name": "FightZombie", "description": "Reussi quand la menace au contact a ete traitee — repoussee ou mise a terre. Un seul objectif pour deux actions : c'est GBFS qui arbitre entre la poussee, moins chere et plus discrete, et l'attaque, qui regle le probleme mais s'entend de loin.", "conditions": [ "threat_handled" ] }
+  ]
+}
