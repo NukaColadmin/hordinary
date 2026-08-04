@@ -10,6 +10,11 @@ mais un vrai domaine de planification.
 **Dépendances** : livrable 5 (le domaine), livrable 11 (qui est le dernier à faire bouger
 `planner_domain.json`).
 
+**Ce document est un prérequis dur du [livrable 15](./15-instructions-tactiques.md)**, qui compile ses
+contraintes dans le domaine PDDL et non dans le JSON. Cela ne change pas son périmètre, mais cela impose
+la forme de sa sortie : voir [Ce que l'export doit exposer](#ce-que-lexport-doit-exposer). Il doit être
+terminé avant que le livrable 15 commence.
+
 **Budget : un week-end.** Cette limite fait partie de la spécification, voir [Hors périmètre](#hors-périmètre).
 
 ---
@@ -69,8 +74,14 @@ Certaines préconditions nomment des objets en dur (`at(agent, pharmacy)`,
 
 ### Prédicats
 
-Extraits mécaniquement des `preconditions` et `effects` des 23 actions. L'arité et les types se
-déduisent des `parameters`.
+Extraits mécaniquement des `preconditions` et `effects` de **toutes les actions du fichier**. L'arité et
+les types se déduisent des `parameters`.
+
+Le nombre d'actions n'est jamais écrit en dur, ni ici ni dans un test : `planner_domain.json` en compte
+23 aujourd'hui, et le livrable 11 en ajoute sept (`PickUpItem`, `UseItem`, `EquipWeapon`,
+`AttackWithWeapon`, `ThrowFirecracker`, `PushHeavyObject`, `BarricadeDoor`). Comme l'export se fait
+**après** ce livrable, la seule formulation qui ne périme pas est « autant d'actions que le fichier en
+déclare, moins celles à `"enabled": false` ».
 
 ### Les six verbes ne se traduisent pas
 
@@ -81,6 +92,32 @@ Les champs `verb`, `params`, `duration` et `noise_action` ne sont donc simplemen
 C'est un point à écrire noir sur blanc dans le README : cette séparation entre schéma d'action et
 implémentation du verbe est exactement ce que fait un exécuteur PDDL en robotique. Elle n'a pas été
 faite pour ça, mais elle tient.
+
+## Ce que l'export doit exposer
+
+Trois exigences de forme, demandées par le [livrable 15](./15-instructions-tactiques.md), qui doit
+**transformer** ce domaine à chaque instruction et pas seulement le lire. Aucune n'élargit le périmètre
+ni le budget : elles disent où le code vit et sous quelle forme il garde ce qu'il a déjà construit.
+
+1. **L'exportateur vit dans `Hordinary.Core`**, sous `AI/Planning/Pddl/`, et non dans un script de
+   `tools/`. Le dossier `tools/pddl/` reste ce qu'il est : la **sortie**, versionnée.
+2. **L'export passe par une représentation intermédiaire explicite** — `PddlDomain`, `PddlAction`,
+   `PddlFormula` — plutôt que par une concaténation de chaînes. `PddlWriter` rend le texte à partir de
+   cette structure. C'est le seul vrai ajout, de l'ordre de la demi-journée : l'exportateur construit
+   déjà cette information, il la garde au lieu de l'aplatir tout de suite.
+3. **L'export est appelable sur un domaine en mémoire**, pas seulement sur `config/planner_domain.json`
+   lu depuis le disque.
+
+**Ce n'est pas un import PDDL**, et l'exclusion de la section [Hors périmètre](#hors-périmètre) tient :
+rien ne lit du texte PDDL. Le chemin est
+`planner_domain.json → PddlDomain → { texte pour Fast Downward, PlanningDomain pour GBFS }`, et la
+seconde flèche est un rendu en mémoire, pas une analyse syntaxique.
+
+Le rendu `PddlDomain → PlanningDomain` n'est **pas** demandé par ce document — il appartient au livrable
+15, qui en a besoin pour que le jeu change de comportement. Ce qui est demandé ici, c'est que la
+structure existe et soit atteignable depuis `Hordinary.Core`. Sans elle, le livrable 15 devrait
+maintenir deux compilateurs d'accord, et le portillon 3 finirait par vérifier autre chose que ce que le
+jeu exécute.
 
 ---
 
@@ -192,23 +229,25 @@ mesurer, celui de la sous-optimalité assumée de GBFS.
 
 | Test | Ce qu'il vérifie |
 |---|---|
-| `Le_domaine_exporte_declare_toutes_les_actions_activees` | 23 actions, moins celles à `"enabled": false` |
+| `Le_domaine_exporte_declare_toutes_les_actions_activees` | Autant d'actions que `planner_domain.json` en déclare, moins celles à `"enabled": false` — le compte se lit dans le fichier, il n'est pas écrit dans le test |
 | `Chaque_predicat_utilise_est_declare` | Aucun prédicat n'apparaît en précondition ou en effet sans figurer dans `:predicates` |
 | `Le_deplacement_exporte_un_effet_universel` | Le joker `*` produit bien un `forall`, pour toute action qui en contient un |
+| `Le_texte_rendu_correspond_a_la_representation` | `PddlWriter` ne perd ni n'invente rien par rapport au `PddlDomain` qu'on lui donne — le test qui rend la représentation intermédiaire utile plutôt que décorative |
 | `Un_objet_jamais_percu_n_apparait_pas_dans_le_probleme` | L'observabilité partielle survit à l'export — c'est le test qui compte |
 | `Deux_agents_produisent_deux_problemes_differents` | Trois croyances divergentes, trois `:init` distincts, un seul domaine |
 | `Le_probleme_exporte_est_resolu_par_le_planificateur_tiers` | Test d'intégration, ignoré si l'exécutable est absent |
 
-Les cinq premiers tournent sans rien installer : ils lisent la chaîne produite. Seul le sixième
-demande Fast Downward, et il se marque `Skip` s'il ne le trouve pas — la suite de tests ne doit pas
-devenir dépendante d'un binaire externe.
+Les six premiers tournent sans rien installer : ils lisent la structure et la chaîne produites. Seul le
+septième demande Fast Downward, et il se marque `Skip` s'il ne le trouve pas — la suite de tests ne doit
+pas devenir dépendante d'un binaire externe.
 
 ## Hors périmètre
 
 Ces exclusions ne sont pas des « pas encore », ce sont les bords du week-end. Elles existent parce que
 ce document est un détour de crédibilité, pas un changement de cap.
 
-* **Pas d'import.** On n'écrit pas de parseur PDDL. L'export est à sens unique.
+* **Pas d'import.** On n'écrit pas de parseur PDDL. L'export est à sens unique — y compris avec la
+  représentation intermédiaire, qui se construit depuis le JSON et jamais depuis du texte PDDL.
 * **Pas de remplacement de GBFS.** Aucun planificateur externe ne tourne pendant une partie. Le jeu
   n'acquiert aucune dépendance.
 * **Pas de ROS, pas de Gazebo, pas de nœud PlanSys2.** C'est la pente savonneuse à refuser
@@ -220,7 +259,8 @@ ce document est un détour de crédibilité, pas un changement de cap.
 
 ## Livrable
 
-Un dossier `tools/pddl/` :
+Du code dans `Hordinary.Core/AI/Planning/Pddl/` (`PddlDomain`, `PddlAction`, `PddlFormula`,
+`PddlWriter`, et l'exportateur de problème), et un dossier `tools/pddl/` qui n'est plus que la sortie :
 
 ```text
 tools/pddl/
@@ -242,3 +282,12 @@ détail ; le README porte la phrase qui se vérifie.
   lieux. C'est fidèle au jeu, et déroutant pour qui lit le problème sans le savoir.
 * Le domaine exporté décrit ce que le planificateur peut faire, pas ce que l'Utility AI choisira de
   vouloir. La sélection d'objectif ne se modélise pas en PDDL et n'a pas à l'être.
+* **Le domaine n'est pas le moteur, et Fast Downward ne voit que le domaine.** Certains prédicats sont
+  posés par le runtime (`WorldPlanRuntime`, la perception, le moteur de bruit) et par aucune action du
+  fichier ; d'autres actions portent en C# des conditions qui n'apparaissent nulle part dans les
+  `preconditions`. Un planificateur tiers peut donc déclarer inatteignable un prédicat que le jeu établit
+  très bien, et inversement produire un plan dont une action échouera systématiquement à l'exécution.
+  C'est une classe de **faux positifs et de faux négatifs connue**, elle ne se corrige pas depuis
+  l'export, et elle vaut aussi pour le portillon 3 du
+  [livrable 15](./15-instructions-tactiques.md) — qui s'appuie sur ce document pour ne pas la
+  redocumenter.

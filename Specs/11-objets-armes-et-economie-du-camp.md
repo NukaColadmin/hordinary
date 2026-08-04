@@ -19,15 +19,16 @@ des expéditions textuelles pour le ravitailler sans jouer une mission complète
 
 Ce livrable ne démarre pas tant que les tuiles listées dans le **catalogue de tuiles** ci-dessous ne
 sont pas livrées, au format des existantes (`Medikit.png` + `.import` dans `Assets/Lists/`, ou une
-entrée de plus dans `Assets/atlas.png`).
+entrée de plus dans `Assets/atlas.png`) — mais **en 32 × 32**, y compris les huit tuiles déjà livrées,
+qui sont à refaire.
 
 Le registre graphique, la charte technique, la palette et **un prompt de génération par tuile** sont
 dans [F-direction-artistique-et-prompts.md](./F-direction-artistique-et-prompts.md), section 4.
 
-S'y ajoutent, hors tuiles de carte, les **icônes d'inventaire** : chacun des 10 objets et des 5 armes a
-besoin d'une seconde image, lisible dans un emplacement d'inventaire du panneau latéral (livrable 12).
-Une tuile posée au sol et une icône d'inventaire ne se dessinent pas pareil — la première est vue de
-dessus, la seconde de trois quarts ou de profil.
+S'y ajoutent, hors tuiles de carte, les **icônes d'inventaire en 48 × 48 px** : chacun des 10 objets et
+des 5 armes a besoin d'une seconde image, lisible dans un emplacement d'inventaire du panneau latéral
+(livrable 12). Une tuile posée au sol et une icône d'inventaire ne se dessinent pas pareil — la première
+est vue de dessus en 32 × 32, la seconde de trois quarts en 48 × 48.
 
 Tant que ces images manquent, le code peut être écrit et testé (les tests de ce livrable ne dépendent
 d'aucun visuel), mais le livrable n'est **pas** considéré comme terminé : la Definition of Done exige
@@ -35,9 +36,15 @@ que la fonctionnalité soit visible en jeu (voir [D-qualite-et-definition-of-don
 
 ## Catalogue de tuiles
 
-`tile_size` est de **16 px** ([tile_legend.json](../config/tile_legend.json)). Toute tuile ajoutée doit
-être déclarée dans ce fichier, sous la clé `source:x,y`, et rattachée soit à un `CellType`
-([CellType.cs](../Hordinary.Core/World/CellType.cs)), soit à un `id` du catalogue d'objets ou d'armes.
+`tile_size` vaut encore `16` dans [tile_legend.json](../config/tile_legend.json) et **passe à 32 px**
+avec ce livrable — c'est sa première étape, et c'est l'unique commutateur de géométrie du projet. Toute
+tuile ajoutée doit être déclarée dans ce même fichier, sous la clé `source:x,y`, et rattachée soit à un
+`CellType` ([CellType.cs](../Hordinary.Core/World/CellType.cs)), soit à un `id` du catalogue d'objets ou
+d'armes.
+
+**Toutes les tuiles de ce catalogue font 32 × 32 px**, y compris les calques de barricade. Les seules
+images du livrable qui n'en font pas sont les icônes d'inventaire, en 48 × 48 — voir
+[F-direction-artistique-et-prompts.md](./F-direction-artistique-et-prompts.md), sections 2 et 4.
 
 Deux règles héritées de la légende existante, à ne pas enfreindre :
 
@@ -47,18 +54,24 @@ Deux règles héritées de la légende existante, à ne pas enfreindre :
 * **une tuile de sol ne change rien au jeu.** Les variantes de sol ci-dessous sont toutes des
   `CellType.Floor` : elles servent à lire la carte, jamais à la modifier.
 
-### Déjà livré (rappel)
+### Déjà livré — **à refaire en 32 × 32**
 
-| Tuile | `CellType` | Source |
-|-------|-----------|--------|
-| `Wall` | `Wall` | `0:5,0` |
-| `FloorIndoor` | `Floor` | `0:6,0` |
-| `FloorOutdoor` | `Floor` | `0:7,0` |
-| `Window` | `Window` | `0:4,0` |
-| `WindowBroken` | `Floor` | `0:3,0` |
-| `DoorClosed` | `DoorClosed` | `1:0,0` |
-| `DoorOpen` | `DoorOpen` | `2:0,0` |
-| `Medicine` | — (objet) | `0:2,0` |
+Ces huit images existent en 16 × 16 et sont à reprendre avec le reste : une carte qui mélange deux
+échelles de tuile n'est pas jouable.
+
+| Tuile | `CellType` | Source | Dimensions |
+|-------|-----------|--------|-----------|
+| `Wall` | `Wall` | `0:5,0` | **32 × 32** |
+| `FloorIndoor` | `Floor` | `0:6,0` | **32 × 32** raccordable |
+| `FloorOutdoor` | `Floor` | `0:7,0` | **32 × 32** raccordable |
+| `Window` | `Window` | `0:4,0` | **32 × 32** |
+| `WindowBroken` | `Floor` | `0:3,0` | **32 × 32** |
+| `DoorClosed` | `DoorClosed` | `1:0,0` | **32 × 32** |
+| `DoorOpen` | `DoorOpen` | `2:0,0` | **32 × 32** |
+| `Medicine` | — (objet) | `0:2,0` | **32 × 32** |
+
+Les clés `source:x,y` sont des **coordonnées de cellule** et ne changent pas. Le `tile_map_data` de
+`Scenes/Main.tscn` non plus : la carte dessinée à la main survit intacte au changement d'échelle.
 
 ### À produire — décor bloquant
 
@@ -66,70 +79,77 @@ Deux règles héritées de la légende existante, à ne pas enfreindre :
 aucune tuile : c'est le manque le plus criant du jeu de tuiles actuel. Cinq variantes, pour qu'un
 obstacle ait toujours l'air d'être quelque chose.
 
-| Tuile | Ce qu'on voit | Bloque déplacement | Bloque vue |
-|-------|---------------|--------------------|------------|
-| `ObstacleCarWreck` | Épave de voiture, portières ouvertes | oui | oui |
-| `ObstacleRubble` | Tas de gravats, poutres | oui | oui |
-| `ObstacleCounter` | Comptoir, banque d'accueil | oui | oui |
-| `ObstacleShelfFull` | Rayonnage plein, encore garni | oui | oui |
-| `ObstacleBin` | Benne, conteneur à ordures | oui | oui |
+| Tuile | Dimensions | Ce qu'on voit | Bloque déplacement | Bloque vue |
+|-------|-----------|---------------|--------------------|------------|
+| `ObstacleCarWreck` | **32 × 32** | Épave de voiture, portières ouvertes | oui | oui |
+| `ObstacleRubble` | **32 × 32** | Tas de gravats, poutres | oui | oui |
+| `ObstacleCounter` | **32 × 32** | Comptoir, banque d'accueil | oui | oui |
+| `ObstacleShelfFull` | **32 × 32** | Rayonnage plein, encore garni | oui | oui |
+| `ObstacleBin` | **32 × 32** | Benne, conteneur à ordures | oui | oui |
 
 ### À produire — variantes de sol (5)
 
 Toutes `CellType.Floor`. Purement visuelles, et c'est ce qui permet de distinguer une rue d'une pièce
 sans lire une légende.
 
-| Tuile | Usage |
-|-------|-------|
-| `FloorAsphalt` | Chaussée |
-| `FloorSidewalk` | Trottoir |
-| `FloorGrass` | Herbe, terrain vague, parc |
-| `FloorTiled` | Carrelage : pharmacie, commerce |
-| `FloorDirty` | Sol souillé, papiers, traces — signale une pièce déjà visitée par d'autres |
+Le raccord se fait sur 32 px : un motif conçu pour 16 puis agrandi produit une période deux fois plus
+visible, et sur une chaussée entière ça se voit.
+
+| Tuile | Dimensions | Usage |
+|-------|-----------|-------|
+| `FloorAsphalt` | **32 × 32** raccordable | Chaussée |
+| `FloorSidewalk` | **32 × 32** raccordable | Trottoir |
+| `FloorGrass` | **32 × 32** raccordable | Herbe, terrain vague, parc |
+| `FloorTiled` | **32 × 32** raccordable | Carrelage : pharmacie, commerce |
+| `FloorDirty` | **32 × 32** raccordable | Sol souillé, papiers, traces — signale une pièce déjà visitée par d'autres |
 
 ### À produire — sols de zone (2)
 
-| Tuile | `CellType` | Usage |
-|-------|-----------|-------|
-| `FloorPharmacy` | `Pharmacy` | Marque la zone d'objectif à l'œil |
-| `FloorCamp` | `Extraction` | Zone de dépose et de retour |
+| Tuile | Dimensions | `CellType` | Usage |
+|-------|-----------|-----------|-------|
+| `FloorPharmacy` | **32 × 32** raccordable | `Pharmacy` | Marque la zone d'objectif à l'œil |
+| `FloorCamp` | **32 × 32** raccordable | `Extraction` | Zone de dépose et de retour |
 
 ### À produire — objets au sol (14)
 
 Une tuile par entrée des catalogues d'objets et d'armes, avec le même `id`. `medikit` réutilise
 `Medikit.png`, déjà livré.
 
-| Tuile | `id` | Catalogue |
-|-------|------|-----------|
-| `ItemCannedFood` | `canned_food` | Objet 1 |
-| `ItemWaterCan` | `water_can` | Objet 2 |
-| `ItemBandage` | `bandage` | Objet 3 |
-| *(livré)* | `medikit` | Objet 4 |
-| `ItemFuelCan` | `fuel_can` | Objet 5 |
-| `ItemAmmoBox` | `ammo_box` | Objet 6 |
-| `ItemFlashlight` | `flashlight` | Objet 7 |
-| `ItemRadio` | `radio` | Objet 8 |
-| `ItemFirecracker` | `firecracker` | Objet 9 |
-| `ItemToolbox` | `toolbox` | Objet 10 |
-| `WeaponRevolver` | `revolver` | Arme à feu 1 |
-| `WeaponShotgun` | `shotgun` | Arme à feu 2 |
-| `WeaponBaseballBat` | `baseball_bat` | Corps à corps 1 |
-| `WeaponCrowbar` | `crowbar` | Corps à corps 2 |
-| `WeaponMachete` | `machete` | Corps à corps 3 |
+| Tuile | Dimensions | `id` | Catalogue | Icône d'inventaire |
+|-------|-----------|------|-----------|--------------------|
+| `ItemCannedFood` | **32 × 32** | `canned_food` | Objet 1 | 48 × 48 |
+| `ItemWaterCan` | **32 × 32** | `water_can` | Objet 2 | 48 × 48 |
+| `ItemBandage` | **32 × 32** | `bandage` | Objet 3 | 48 × 48 |
+| *(à refaire)* | **32 × 32** | `medikit` | Objet 4 | 48 × 48 |
+| `ItemFuelCan` | **32 × 32** | `fuel_can` | Objet 5 | 48 × 48 |
+| `ItemAmmoBox` | **32 × 32** | `ammo_box` | Objet 6 | 48 × 48 |
+| `ItemFlashlight` | **32 × 32** | `flashlight` | Objet 7 | 48 × 48 |
+| `ItemRadio` | **32 × 32** | `radio` | Objet 8 | 48 × 48 |
+| `ItemFirecracker` | **32 × 32** | `firecracker` | Objet 9 | 48 × 48 |
+| `ItemToolbox` | **32 × 32** | `toolbox` | Objet 10 | 48 × 48 |
+| `WeaponRevolver` | **32 × 32** | `revolver` | Arme à feu 1 | 48 × 48 |
+| `WeaponShotgun` | **32 × 32** | `shotgun` | Arme à feu 2 | 48 × 48 |
+| `WeaponBaseballBat` | **32 × 32** | `baseball_bat` | Corps à corps 1 | 48 × 48 |
+| `WeaponCrowbar` | **32 × 32** | `crowbar` | Corps à corps 2 | 48 × 48 |
+| `WeaponMachete` | **32 × 32** | `machete` | Corps à corps 3 | 48 × 48 |
+
+Les cinq armes ont une **troisième** image, le sprite tenu en 32 × 16 vu de profil, qui appartient au
+livrable 12 (section 5.1 de la spec F). Trois cadrages, trois tailles, le même objet.
 
 Contrainte de lisibilité : un objet posé au sol doit rester identifiable sur `FloorIndoor` comme sur
 `FloorAsphalt`. Un liseré sombre d'un pixel autour de chaque objet suffit, et c'est la seule convention
-imposée.
+imposée. **Il reste à 1 px malgré le passage à 32** : un contour deux fois plus fin à l'écran est
+précisément ce qu'on est allé chercher.
 
 ### À produire — objets lourds (5 images)
 
-| Tuile | `kind` | `mass` | Bloque vue | Note |
-|-------|--------|--------|------------|------|
-| `HeavyCrate` | `crate` | 2 | non | Déplaçable par un survivant seul |
-| `HeavyShelf` | `shelf` | 3 | oui | La limite du survivant seul |
-| `HeavyDumpster` | `dumpster` | 5 | oui | Exige deux survivants adjacents — c'est la tuile qui justifie la règle |
-| `BarricadeDoor` | — | — | oui | **Calque** posé sur une porte, jamais une tuile de cellule |
-| `BarricadeWindow` | — | — | oui | **Calque** posé sur une fenêtre |
+| Tuile | Dimensions | `kind` | `mass` | Bloque vue | Note |
+|-------|-----------|--------|--------|------------|------|
+| `HeavyCrate` | **32 × 32** | `crate` | 2 | non | Déplaçable par un survivant seul |
+| `HeavyShelf` | **32 × 32** | `shelf` | 3 | oui | La limite du survivant seul |
+| `HeavyDumpster` | **32 × 32** | `dumpster` | 5 | oui | Exige deux survivants adjacents — c'est la tuile qui justifie la règle |
+| `BarricadeDoor` | **32 × 32** calque | — | — | oui | **Calque** posé sur une porte, jamais une tuile de cellule |
+| `BarricadeWindow` | **32 × 32** calque | — | — | oui | **Calque** posé sur une fenêtre |
 
 ### À produire — camp (12 images)
 
@@ -137,46 +157,54 @@ Le camp cesse d'être une zone vide dès qu'il a un stock. Trois réserves, **ch
 directement dans `config/camp.json`** : `plein` (> 60 % de la capacité), `bas` (10 à 60 %), `vide`
 (< 10 %).
 
-| Tuile | États | Ce qu'elle montre |
-|-------|-------|-------------------|
-| `CampFoodStore` | plein / bas / vide | Étagère de conserves |
-| `CampWaterStore` | plein / bas / vide | Citerne, bidons |
-| `CampFuelStore` | plein / bas / vide | Jerricans alignés |
-| `CampFire` | — | Feu, point de regroupement |
-| `CampTent` | — | Couchages |
-| `CampWorkbench` | — | Établi, où l'on répare une arme usée |
+| Tuile | Dimensions | États | Ce qu'elle montre |
+|-------|-----------|-------|-------------------|
+| `CampFoodStore` | **32 × 32** × 3 | plein / bas / vide | Étagère de conserves |
+| `CampWaterStore` | **32 × 32** × 3 | plein / bas / vide | Citerne, bidons |
+| `CampFuelStore` | **32 × 32** × 3 | plein / bas / vide | Jerricans alignés |
+| `CampFire` | **32 × 32** | — | Feu, point de regroupement |
+| `CampTent` | **32 × 32** | — | Couchages |
+| `CampWorkbench` | **32 × 32** | — | Établi, où l'on répare une arme usée |
 
 Ces trois jauges à trois états sont ce qui fait exister la faim autrement que par un chiffre : le joueur
-voit l'étagère se vider avant de lire le compteur.
+voit l'étagère se vider avant de lire le compteur. Les trois états d'une même réserve doivent être
+**superposables au pixel près** — même cadrage, même empreinte, seul le contenu change.
 
 ### À produire — zones (6)
 
 Les six tuiles réclamées par le catalogue de zones plus bas. Deux d'entre elles ont un effet mécanique,
 et il est déclaré ici plutôt que déduit du dessin.
 
-| Tuile | Zone | `CellType` | Effet mécanique |
-|-------|------|-----------|-----------------|
-| `FuelPump` | Station-service | `Obstacle` | Aucun. Bloque la vue, ce qui donne le seul couvert de l'esplanade |
-| `FuelPumpEmpty` | Station-service | `Obstacle` | État visuel : pompe déjà vidée |
-| `WindowBarred` | Poste de police | `Wall` | **`BreakWindow` indisponible** — c'est toute la difficulté de la zone |
-| `ShutterHalf` | Quincaillerie | `DoorClosed` | Entrée unique et étroite ; ouvrable, jamais forçable |
-| `Cot` | Centre d'accueil | `Obstacle` | Lit de camp. Fouillable : porte du butin dispersé |
-| `Locker` | Centre d'accueil | `Obstacle` | Casiers. Fouillables, bloquent la vue |
+| Tuile | Dimensions | Zone | `CellType` | Effet mécanique |
+|-------|-----------|------|-----------|-----------------|
+| `FuelPump` | **32 × 32** | Station-service | `Obstacle` | Aucun. Bloque la vue, ce qui donne le seul couvert de l'esplanade |
+| `FuelPumpEmpty` | **32 × 32** | Station-service | `Obstacle` | État visuel : pompe déjà vidée |
+| `WindowBarred` | **32 × 32** | Poste de police | `Wall` | **`BreakWindow` indisponible** — c'est toute la difficulté de la zone |
+| `ShutterHalf` | **32 × 32** | Quincaillerie | `DoorClosed` | Entrée unique et étroite ; ouvrable, jamais forçable |
+| `Cot` | **32 × 32** | Centre d'accueil | `Obstacle` | Lit de camp. Fouillable : porte du butin dispersé |
+| `Locker` | **32 × 32** | Centre d'accueil | `Obstacle` | Casiers. Fouillables, bloquent la vue |
 
 ### Récapitulatif
 
-| Groupe | Tuiles | Images |
-|--------|--------|--------|
-| Décor bloquant | 5 | 5 |
-| Variantes de sol | 5 | 5 |
-| Sols de zone | 2 | 2 |
-| Objets au sol | 14 | 14 |
-| Objets lourds et barricades | 5 | 5 |
-| Camp | 6 | 12 |
-| Zones | 6 | 6 |
-| **Total** | **43** | **49** |
+| Groupe | Dimensions | Tuiles | Images |
+|--------|-----------|--------|--------|
+| Décor bloquant | 32 × 32 | 5 | 5 |
+| Variantes de sol | 32 × 32 raccordable | 5 | 5 |
+| Sols de zone | 32 × 32 raccordable | 2 | 2 |
+| Objets au sol | 32 × 32 | 14 | 14 |
+| Objets lourds et barricades | 32 × 32 | 5 | 5 |
+| Camp | 32 × 32 | 6 | 12 |
+| Zones | 32 × 32 | 6 | 6 |
+| Déjà livré, à refaire | 32 × 32 | 8 | 8 |
+| **Total** | | **51** | **57** |
 
-Plus les 15 icônes d'inventaire mentionnées dans les prérequis, qui ne sont pas des tuiles.
+Plus les 15 icônes d'inventaire mentionnées dans les prérequis, en **48 × 48**, qui ne sont pas des
+tuiles.
+
+Cinquante-sept images de 32 × 32 tiennent dans un atlas **256 × 256** en grille 8 × 8, avec sept
+emplacements de marge. Voir la section 4.10 de
+[F-direction-artistique-et-prompts.md](./F-direction-artistique-et-prompts.md) pour la géométrie
+d'atlas et le retrait de la séparation d'1 px.
 
 Le livrable 13 ajoute son propre jeu de tuiles pour les bords de quartier (ceinture, terminaisons de
 rue, décor) — voir [13-generation-de-cartes.md](./13-generation-de-cartes.md). Aucun recouvrement avec
@@ -339,6 +367,12 @@ Aucun nouveau verbe primitif n'est nécessaire pour l'essentiel ; deux le sont p
 
 `AttackWithWeapon` ne remplace pas `AttackZombie` : les deux coexistent, et GBFS arbitre par le coût.
 Un survivant sans arme garde exactement le comportement du MVP.
+
+Ces sept actions portent le domaine de **23 à 30 schémas**, et c'est la dernière fois qu'il bouge :
+[G-export-pddl.md](./G-export-pddl.md) est explicitement placé après ce livrable pour cette raison, et
+le [livrable 15](./15-instructions-tactiques.md) compile ses contraintes sur le domaine ainsi obtenu.
+Deux verbes primitifs sont ajoutés au passage (`push`, `emit_noise`) ; ils ne s'exportent pas en PDDL,
+qui ne décrit que la couche symbolique.
 
 ## Faim et soif du camp
 
@@ -655,7 +689,17 @@ Nouveaux fichiers de configuration : `config/items.json`, `config/weapons.json`,
 
 ## Étapes à créer
 
-* [ ] **(humain)** Livrer les 49 images du catalogue de tuiles et les 15 icônes d'inventaire.
+* [ ] **Passage à 32 px, avant tout le reste** : `"tile_size": 32` dans `config/tile_legend.json`,
+      `tile_size = Vector2i(32, 32)` déclaré explicitement dans `Assets/poc.tres` (il tombe aujourd'hui
+      sur le défaut 16 de Godot), `separation` remise à `Vector2i(0, 0)`, et `MinZoom` de
+      [CameraController.cs](../Scripts/Game/CameraController.cs) abaissé de `0.4f` à `0.2f`.
+* [ ] Doubler les constantes en **pixels monde** des dessins par code, qui ne passent pas par
+      `tile_size` : rayons de halo et largeurs d'arc de [SurvivorNode.cs](../Scripts/Agents/SurvivorNode.cs)
+      et [ZombieNode.cs](../Scripts/Agents/ZombieNode.cs), tailles de police (8 → 16, 7 → 14) et
+      largeurs de trait des trois overlays de `Scripts/UI/`. Les rayons proportionnels
+      (`_tileSize * 0.34f`, `* 0.30f`, `* 0.18f`) suivent seuls.
+* [ ] **(humain)** Livrer les 57 images du catalogue de tuiles — dont les 8 déjà livrées, refaites en
+      32 × 32 — et les 15 icônes d'inventaire en 48 × 48.
 * [ ] Déclarer chaque tuile produite dans `config/tile_legend.json`.
 * [ ] Ajouter le modèle `Item`, les catégories et les verbes d'effet primitifs.
 * [ ] Ajouter `config/items.json` et son chargeur, avec les 10 objets.

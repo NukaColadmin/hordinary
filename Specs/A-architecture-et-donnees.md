@@ -59,6 +59,43 @@ Game
     └── KnowledgeTests
 ```
 
+### Ce que les livrables 11 à 15 ajoutent
+
+L'arborescence ci-dessus est celle du MVP. Les extensions post-MVP s'y greffent sans la réorganiser —
+c'est une contrainte, pas une observation : un livrable qui demanderait de déplacer `AI/Planning/` ne
+serait plus retirable.
+
+```text
+Hordinary.Core
+├── Agents/Inventory                                    livrable 11
+├── World/ItemCatalogue, WeaponCatalogue, HeavyObject    livrable 11
+├── World/MapGeneration/  (6 passes + validation)        livrable 13
+├── Game/CampStock, Expedition, ExpeditionResolver       livrable 11
+├── Game/SurvivorGenerator, Van                          livrable 12
+├── Game/Encounter, EncounterResolver, CampReputation    livrable 14
+├── AI/Planning/ActionVerbs   (push, emit_noise)         livrable 11
+├── AI/Planning/Pddl/  (PddlDomain, PddlAction,
+│                       PddlFormula, PddlWriter)         document G
+└── AI/Instructions/  (TacticalConstraint, Grammar,
+                       DomainCompiler, TrajectoryChecker,
+                       InstructionLog)                   livrable 15
+
+Scripts/                     (Godot, jamais de logique de regles)
+├── UI/*                     refonte complete            livrable 12
+├── Dialogue/DialogueClient                              livrable 14
+└── Instructions/InstructionClient                       livrable 15
+
+service/                     projet Python separe, hors solution .NET
+                             endpoints /instruction (15) et /dialogue (14)
+
+tools/pddl/                  sorties versionnees du document G
+```
+
+**La ligne de partage ne bouge jamais** : tout ce qui décide vit dans `Hordinary.Core` et se teste sans
+Godot ; `Scripts/` affiche et appelle ; `service/` écrit du texte et ne décide de rien. Les trois
+livrables qui touchent à un modèle de langage (14, 15, et l'habillage narratif) sont précisément ceux
+qui doivent rester coupables de zéro décision.
+
 ## Modèle de données simplifié
 
 ```python

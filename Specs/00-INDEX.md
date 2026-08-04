@@ -1,6 +1,6 @@
 # Hordinary — Index des livrables
 
-Ce dossier découpe [SPECS.md](./SPECS.md) (spécification complète du MVP) en livrables successifs, dans l'ordre où ils doivent être construits. Chaque fichier est autonome : il contient les extraits de spécification nécessaires pour réaliser l'étape, son critère de validation, et les tests associés.
+Ce dossier découpe la spécification complète du MVP en livrables successifs, dans l'ordre où ils doivent être construits. Chaque fichier est autonome : il contient les extraits de spécification nécessaires pour réaliser l'étape, son critère de validation, et les tests associés. **Ce document est la seule spécification d'ensemble** : le `SPECS.md` d'origine a été entièrement absorbé par les fichiers de ce dossier et n'existe plus.
 
 ---
 
@@ -16,7 +16,7 @@ Partie jouable de 5 à 10 minutes : trois survivants récupèrent des médicamen
 
 ## 3. Expérience attendue
 
-Le joueur observe les survivants analyser leur environnement, choisir une priorité, générer un plan, l'exécuter, découvrir une information inattendue, replanifier, communiquer et improviser face à une horde (voir l'exemple de séquence en section 3 de SPECS.md).
+Le joueur observe les survivants analyser leur environnement, choisir une priorité, générer un plan, l'exécuter, découvrir une information inattendue, replanifier, communiquer et improviser face à une horde. La séquence de démonstration complète est celle du [livrable 8](./08-interface-et-boucle-complete.md).
 
 ## 4. Périmètre fonctionnel (résumé)
 
@@ -24,7 +24,7 @@ Le joueur observe les survivants analyser leur environnement, choisir une priori
 
 **Exclu** : monde ouvert, génération procédurale complexe, multijoueur, inventaire avancé, arbre de compétences, crafting, véhicules, cycle jour/nuit, météo, faim/soif, narration complexe, dialogues, sauvegarde persistante, combat tactique avancé, hordes de centaines de zombies.
 
-Ces exclusions valent pour le **MVP**, c'est-à-dire les livrables 1 à 8. Les livrables 11 à 14 en lèvent une partie (inventaire, faim/soif, véhicule, génération procédurale, dialogues) et sont numérotés à la suite précisément pour que la frontière reste lisible : le MVP doit rester jouable et testable sans eux.
+Ces exclusions valent pour le **MVP**, c'est-à-dire les livrables 1 à 8. Les livrables 11 à 15 en lèvent une partie (inventaire, faim/soif, véhicule, génération procédurale, dialogues, instructions en langage naturel) et sont numérotés à la suite précisément pour que la frontière reste lisible : le MVP doit rester jouable et testable sans eux.
 
 ## 5. Boucle de jeu
 
@@ -62,27 +62,37 @@ Ces exclusions valent pour le **MVP**, c'est-à-dire les livrables 1 à 8. Les l
 | 7 | Trois survivants et partage d'informations | [07-survivants-et-partage.md](./07-survivants-et-partage.md) | Une information découverte par Alice peut être utilisée par Bob après communication. |
 | 8 | Interface et boucle complète | [08-interface-et-boucle-complete.md](./08-interface-et-boucle-complete.md) | Une partie complète peut être jouée du départ jusqu'à la victoire ou la défaite. |
 
-## Extension optionnelle (hors MVP)
+## Extension optionnelle (hors MVP) — livrables 9 et 10, absorbés
 
-| # | Livrable | Fichier | Critère de validation |
-|---|----------|---------|------------------------|
-| 9 | Retour à la base et debrief | [09-narration-et-debrief.md](./09-narration-et-debrief.md) | Au retour à la base, les connaissances des survivants sont partagées, et un vétéran peut relancer la motivation du groupe, choisir la mission suivante, augmenter des caractéristiques et enseigner une technique. |
-| 10 | Groupes de survivants indépendants | [10-groupes-de-survivants-independants.md](./10-groupes-de-survivants-independants.md) | Un groupe indépendant rencontré sur la carte peut être recruté, mis en confiance ou repoussé selon un calcul déterministe, sans service externe. |
+Ces deux extensions ont été annoncées, puis **fondues dans le livrable 14** plutôt que spécifiées à
+part. Elles n'ont donc pas de fichier propre, et il ne faut pas en attendre un.
 
-Le livrable 9 est entièrement mécanique (partage de connaissances, motivation, montée de niveau,
-enseignement de technique) et respecte donc la contrainte « aucun service externe » du MVP ; seul son
-habillage narratif optionnel (répliques de debrief via FastAPI + LangChain/LangGraph, désactivable via
-`enabled: false`) en dépend, sans jamais modifier `Hordinary.Core` ni les livrables 1 à 8. La création
-de nouvelles missions ou techniques (via un LLM local) est hors périmètre du livrable 9 et fera l'objet
-d'une spécification à part. Le livrable 10 est purement mécanique (même framework agent que les
-survivants du joueur) et respecte cette contrainte ; le livrable 9 peut l'habiller narrativement, en
-option, sans jamais changer son résultat.
+| # | Extension | Ce qu'elle est devenue |
+|---|-----------|------------------------|
+| 9 | Retour à la base et debrief | Le stock et la résolution de fin de journée sont passés au [livrable 11](./11-objets-armes-et-economie-du-camp.md) ; l'écran de camp au [livrable 12](./12-interface-survivants-et-van.md) ; l'habillage narratif (répliques de debrief) au [livrable 14](./14-recrutement-et-dialogues.md) |
+| 10 | Groupes de survivants indépendants | Devenu la partie « rencontres » du [livrable 14](./14-recrutement-et-dialogues.md), avec la même règle : la résolution est déterministe et sans service externe |
 
-## Extensions post-MVP (livrables 11 à 14)
+Ce qui a été conservé de leur cahier des charges, et qui vaut toujours : la mécanique reste
+**entièrement déterministe et sans service externe** ; seul l'habillage textuel dépend d'un modèle, il
+est désactivable par `dialogue.enabled: false`, et il ne modifie ni `Hordinary.Core` ni les livrables 1
+à 8. La création de nouvelles missions ou de nouvelles techniques par un modèle reste hors périmètre.
 
-Ces quatre livrables se construisent dans l'ordre du tableau. Chacun porte sa priorité en tête de
-fichier, et chacun reste retirable : le MVP (livrables 1 à 8) doit continuer à se jouer et à passer ses
-tests si l'un d'eux est abandonné en cours de route.
+## Extensions post-MVP (livrables 11 à 15)
+
+Chacun porte sa priorité en tête de fichier, et chacun reste retirable : le MVP (livrables 1 à 8) doit
+continuer à se jouer et à passer ses tests si l'un d'eux est abandonné en cours de route.
+
+**L'ordre de réalisation n'est pas l'ordre de numérotation.** Le numéro dit quand le livrable a été
+spécifié ; la priorité dit quand il se fait :
+
+```text
+11  →  12  →  G  →  15  →  13  →  14
+```
+
+Le document transverse [G-export-pddl.md](./G-export-pddl.md) s'intercale parce qu'il est un
+**prérequis dur du livrable 15**. Le livrable 15 passe devant le 13 et le 14 parce qu'il ne dépend
+d'aucun des deux et qu'il porte davantage la démonstration. Les livrables 13 et 14 restent
+spécifiés et restent en fin de file.
 
 | # | Priorité | Livrable | Fichier | Critère de validation |
 |---|----------|----------|---------|------------------------|
@@ -90,6 +100,7 @@ tests si l'un d'eux est abandonné en cours de route.
 | 12 | **P2 — Haute** | Interface, survivants générés et van | [12-interface-survivants-et-van.md](./12-interface-survivants-et-van.md) | Une partie se joue de bout en bout sans jamais activer le mode debug. |
 | 13 | **P3 — Moyenne** | Génération de quartiers | [13-generation-de-cartes.md](./13-generation-de-cartes.md) | Trois missions d'affilée sur trois quartiers différents, reproductibles par leur graine, sans mur invisible ni limite non expliquée. |
 | 14 | **P4 — Basse (optionnel)** | Recrutement et dialogues | [14-recrutement-et-dialogues.md](./14-recrutement-et-dialogues.md) | Une rencontre se résout à l'identique, service de dialogue arrêté ou démarré. |
+| 15 | **P2 — Haute** | Instructions tactiques en langage naturel | [15-instructions-tactiques.md](./15-instructions-tactiques.md) | « Avant d'entrer dans un bâtiment, regroupez-vous » change le domaine de planification ; et là où elle rend la mission impossible, elle est refusée avant application, avec sa raison. |
 
 ### Justification des priorités
 
@@ -111,10 +122,20 @@ la navigation, la mémoire des agents ou le rendu, un unique budget à relever
 de jeu, pas parce qu'il est risqué. Sa vraie difficulté est ailleurs, et elle est visuelle : faire que
 les bords du quartier se lisent comme un endroit et non comme un rectangle.
 
-**P4 — Livrable 14.** Seul livrable dépendant d'un service externe et d'un modèle de langage, donc seul
-livrable devant rester désactivable sans conséquence. Il vient en dernier parce qu'il a besoin des trois
-autres, et parce qu'il est le seul dont l'abandon ne coûterait rien au reste. Sa règle centrale — le
-modèle écrit, il ne décide pas — est la même contrainte que celle déjà posée pour le livrable 9.
+**P4 — Livrable 14.** Il vient en dernier parce qu'il a besoin des trois autres, et parce qu'il est le
+seul dont l'abandon ne coûterait rien au reste. Sa règle centrale — le modèle écrit, il ne décide pas —
+est la même contrainte que celle déjà posée pour le livrable 9.
+
+**P2 — Livrable 15.** Numéroté après le 14, mais à faire avant lui : il ne dépend que du livrable 11 et
+du document transverse [G-export-pddl.md](./G-export-pddl.md) — **celui-ci en prérequis dur, et non
+plus en simple appui** : les instructions se compilent dans le domaine **PDDL**, pas dans le JSON, donc
+la spec G doit être terminée avant que le livrable 15 commence, et elle doit exposer sa représentation
+intermédiaire plutôt que seulement des fichiers. Il partage avec le livrable 14 le projet
+`service/` et la règle « le modèle ne décide de rien », mais il l'applique à un objet différent — une
+contrainte de plan plutôt qu'une réplique — et il est le seul des deux dont la sortie se **vérifie
+objectivement** : une contrainte compile ou ne compile pas, laisse la mission solvable ou la rend
+impossible, et Fast Downward tranche. Il est en P2 parce que c'est le livrable qui rend la
+planification symbolique visible pour un lecteur non spécialiste.
 
 ## Documents transverses
 
@@ -126,7 +147,7 @@ modèle écrit, il ne décide pas — est la même contrainte que celle déjà p
 | Qualité, critères d'acceptation & Definition of Done | [D-qualite-et-definition-of-done.md](./D-qualite-et-definition-of-done.md) | Contraintes de code, critères d'acceptation du MVP, priorités, DoD |
 | README attendu | [E-readme-attendu.md](./E-readme-attendu.md) | Contenu obligatoire du README du projet |
 | Direction artistique & prompts | [F-direction-artistique-et-prompts.md](./F-direction-artistique-et-prompts.md) | Registre graphique, charte technique, palette, et un prompt par sprite des livrables 11 à 13 |
-| Export PDDL & validation tierce | [G-export-pddl.md](./G-export-pddl.md) | Traduction de `planner_domain.json` en PDDL valide, résolu par Fast Downward et validé par VAL. Ne change rien au jeu : outil de vérification, à faire après le livrable 11 |
+| Export PDDL & validation tierce | [G-export-pddl.md](./G-export-pddl.md) | Traduction de `planner_domain.json` en PDDL valide, résolu par Fast Downward et validé par VAL. Ne change rien au jeu : outil de vérification, à faire après le livrable 11 — et **prérequis dur du livrable 15**, qui compile ses contraintes dans le domaine PDDL |
 
 ## Priorité en cas de contrainte de temps
 
@@ -148,6 +169,8 @@ La qualité de l'architecture IA est prioritaire sur la qualité graphique.
 ## Technologies
 
 Moteur préféré : **Godot 4.7**. Langage recommandé : **C#**. Le moteur et le langage retenus doivent être documentés dans le README. Le planificateur doit être implémenté dans le projet, sans dépendance à un service externe (une représentation inspirée de PDDL est acceptable, sans moteur PDDL complet).
+
+Cette contrainte tient toujours après [G-export-pddl.md](./G-export-pddl.md) : aucun planificateur tiers ne tourne pendant une partie, et le jeu n'acquiert aucune dépendance. Fast Downward et VAL sont des outils **hors ligne**, de vérification, et les tests qui les emploient se marquent `Skip` quand le binaire est absent.
 
 ## Livrables finaux attendus
 

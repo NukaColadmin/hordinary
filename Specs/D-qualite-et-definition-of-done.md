@@ -2,6 +2,8 @@
 
 > Document transverse référencé par tous les livrables ([00-INDEX.md](./00-INDEX.md)), à valider en particulier au terme du [livrable 8](./08-interface-et-boucle-complete.md).
 
+Les **critères d'acceptation** ci-dessous sont ceux du MVP et ne bougent pas : un livrable post-MVP qui les casserait serait à retirer, pas à négocier. La **Definition of Done**, elle, vaut pour tout livrable, MVP ou non — c'est elle que les livrables 11 et 12 invoquent quand ils se déclarent bloqués tant que leurs images ne sont pas livrées : une fonctionnalité qu'on ne voit pas en jeu n'est pas terminée, même si son code passe ses tests.
+
 ## Contraintes de qualité
 
 Le code doit :

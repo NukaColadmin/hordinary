@@ -77,7 +77,7 @@ La Utility AI peut être réévaluée :
 * lorsqu'un survivant est blessé ;
 * lorsqu'un bruit important est entendu.
 
-Fréquence recommandée en régime de croisière : 1 à 2 fois par seconde (voir [00-INDEX.md](./00-INDEX.md) / gestion des mises à jour dans SPECS.md section 24).
+Fréquence recommandée en régime de croisière : 1 à 2 fois par seconde (voir la gestion des mises à jour dans [A-architecture-et-donnees.md](./A-architecture-et-donnees.md)).
 
 ## Data-driven : objectifs comme composition de considérations
 

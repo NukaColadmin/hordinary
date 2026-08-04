@@ -8,8 +8,15 @@ d'autre cesse de fonctionner, et il doit le rester. Il vient en dernier parce qu
 nourrir (livrable 11), de la fiche de personnage et du générateur de survivants (livrable 12) et de
 lieux variés où faire des rencontres (livrable 13).
 
-**Dépendances** : livrables 11, 12, 13. Recouvre et prolonge les livrables 9 (habillage narratif) et 10
-(groupes de survivants indépendants) annoncés dans [00-INDEX.md](./00-INDEX.md).
+**Dépendances** : livrables 11, 12, 13. Il **absorbe** les livrables 9 (habillage narratif) et 10
+(groupes de survivants indépendants) annoncés dans [00-INDEX.md](./00-INDEX.md), qui n'ont pas de
+fichier propre.
+
+Il ne dépend pas du [livrable 15](./15-instructions-tactiques.md), mais celui-ci passe avant dans
+l'ordre de réalisation et aura donc **déjà créé le projet `service/`** : FastAPI, le commutateur de
+fournisseur, le graphe LangGraph et le repli sur gabarit existent alors, et ce livrable n'ajoute qu'un
+second endpoint. Si le 15 était abandonné, tout ce que la section « Architecture du service » décrit
+resterait à écrire ici — c'est la seule conséquence, et elle est chiffrable.
 
 ## Objectif
 
@@ -122,13 +129,44 @@ LangGraph — graphe à cinq nœuds
    ├── 1. context      normalise la requête ; ne garde que ce que le locuteur SAIT
    ├── 2. persona      compose le prompt système depuis le profil (rôle, personnalité,
    │                   description, traits) — les mêmes données que config/survivors.json
-   ├── 3. generate     appel LangChain au modèle local
+   ├── 3. generate     appel LangChain au fournisseur de modèle
    ├── 4. guardrail    valide la sortie ; en cas d'échec, une reprise, puis gabarit
    └── 5. project      renvoie la réplique ET l'issue mécanique reçue en entrée, inchangée
    │
    ▼
-Phi-4-mini (local, servi par Ollama ou un endpoint compatible OpenAI)
+Fournisseur de modele : OpenRouter OU Ollama (voir ci-dessous)
 ```
+
+Le projet `service/` est **le même** que celui du livrable 15 : deux endpoints, `/dialogue` et
+`/instruction`, un seul déploiement, un seul commutateur de fournisseur.
+
+### Choix du fournisseur
+
+Un commutateur, `dialogue.provider`, deux valeurs. LangChain rend les deux interchangeables derrière la
+même interface de modèle de conversation.
+
+| | `ollama` | `openrouter` |
+|---|---|---|
+| Modèles | local (`phi4-mini`, `qwen2.5:7b-instruct`…) | catalogue distant, plusieurs familles |
+| Coût | nul | facturé au jeton, et **un dialogue en appelle beaucoup** |
+| Réseau | aucun | requis |
+| Déterminisme | `seed` honoré | selon le fournisseur amont, **non garanti** |
+| Usage visé | jouer — c'est le défaut livré | comparer des modèles sur la qualité des répliques |
+
+Ollama est le mode normal de ce livrable, et pas par principe : le bavardage entre survivants est le
+seul appel **récurrent** de tout le projet. Six survivants sur une mission de dix minutes en produisent
+des dizaines, sans aucune valeur mécanique. Le facturer au jeton contredirait l'objectif « jeu
+vendable » — un joueur n'a pas à payer pour que ses personnages se parlent.
+
+OpenRouter existe donc ici pour une seule chose : **comparer des modèles hors ligne**, sur un corpus de
+scènes figées, afin de choisir lequel installer en local. C'est l'inverse du livrable 15, où la
+comparaison distante est le mode de travail normal.
+
+**Le déterminisme de la partie ne vient jamais du modèle.** Il vient du cache
+`(kind, seed, situation, locuteur)`, et surtout du fait que l'issue mécanique est décidée par
+`Hordinary.Core` **avant** tout appel. Un fournisseur distant non déterministe ne rend donc aucune
+partie irreproductible : il ne change que la formulation, et seulement à la première exécution d'une
+scène.
 
 ### Contrat d'API
 
@@ -187,8 +225,15 @@ Rejettent la génération et déclenchent une reprise, puis le gabarit :
 {
   "dialogue": {
     "enabled": false,
-    "endpoint": "http://127.0.0.1:8000/dialogue",
-    "model": "phi4-mini",
+    "provider": "ollama",
+    "endpoint": "http://127.0.0.1:8001/dialogue",
+    "ollama": { "model": "phi4-mini", "base_url": "http://127.0.0.1:11434" },
+    "openrouter": {
+      "model": "anthropic/claude-haiku-4.5",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "base_url": "https://openrouter.ai/api/v1",
+      "max_cost_usd_per_session": 0.25
+    },
     "timeout_ms": 800,
     "max_concurrent": 2,
     "min_interval_between_banter": 20,
@@ -200,6 +245,16 @@ Rejettent la génération et déclenchent une reprise, puis le gabarit :
 ```
 
 Livré à `false`. C'est un supplément, pas une dépendance.
+
+La clé d'API se lit dans une variable d'environnement, **jamais** dans un fichier de configuration
+versionné. `max_cost_usd_per_session` est un plafond dur côté client : dépassé, le dialogue bascule sur
+les gabarits et le signale dans le journal — le même repli que le timeout, déclenché par une autre
+cause.
+
+Le `timeout_ms` de 800 reste valable quel que soit le fournisseur, et c'est une contrainte réelle sur le
+choix d'un modèle distant : au-delà, le gabarit s'affiche et l'appel est perdu. Un modèle qui répond en
+1,5 s est inutilisable **ici**, alors qu'il conviendrait très bien au livrable 15, dont le budget est
+de huit secondes.
 
 ## Architecture concernée
 
@@ -224,7 +279,8 @@ Nouveaux fichiers de configuration : `config/encounters.json`, section `dialogue
       supplément.
 * [ ] Créer le service `service/` : FastAPI, endpoint `/dialogue`, `/health`.
 * [ ] Construire le graphe LangGraph à cinq nœuds.
-* [ ] Brancher Phi-4-mini en local via LangChain.
+* [ ] Implémenter le commutateur de fournisseur `ollama` / `openrouter` via LangChain, et le plafond de
+      coût par session.
 * [ ] Implémenter les garde-fous, en particulier le contrôle des faits hors `known_facts`.
 * [ ] Écrire `DialogueClient.cs` : appels asynchrones, timeout, cache, budget, repli sur gabarit.
 * [ ] Vérifier côté client que l'`outcome` renvoyé est identique à celui envoyé.
@@ -262,4 +318,17 @@ Côté service, dans `service/tests/` :
 
 * le garde-fou rejette une réplique mentionnant un fait absent de `known_facts` ;
 * le garde-fou rejette une réplique hors longueur, hors personnage ou dans une autre langue ;
-* le nœud `project` renvoie toujours l'`outcome` reçu, quelle que soit la génération.
+* le nœud `project` renvoie toujours l'`outcome` reçu, quelle que soit la génération ;
+* le commutateur de fournisseur produit le même contrat de sortie sur `ollama` et sur `openrouter` ;
+* le plafond de coût coupe les appels et bascule sur les gabarits.
+
+## Sur le RAG
+
+**Il n'y en a pas ici, et c'est délibéré.** Ce qu'un survivant sait vit dans son `AgentKnowledge` : un
+état structuré, typé, de quelques dizaines de faits. Le transmettre est un filtre — « ne garde que ce
+que le locuteur sait » — pas une recherche par similarité, et l'appeler récupération documentaire
+serait un abus de vocabulaire. Le profil du locuteur tient en une centaine d'octets. Il n'existe aucun
+corpus dans ce projet.
+
+Le raisonnement complet, avec la seule ouverture honnête vers de la vraie récupération, est écrit une
+fois pour toutes au livrable 15, section « Sur le RAG ».

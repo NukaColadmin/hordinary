@@ -7,7 +7,9 @@ démonstration unique par un quartier généré à chaque mission. Sa valeur est
 après les livrables 11 et 12, qui tiennent sur la carte actuelle, et avant le livrable 14, qui a besoin
 de lieux variés où faire des rencontres.
 
-**Dépendances** : livrables 1 à 8, et le van du livrable 12 (c'est lui qui dépose le groupe).
+**Dépendances** : livrables 1 à 8 ; le livrable 11 (la passe 4 pose les `profile` de `config/zones.json`,
+la passe 5 applique leurs tables de butin et sème les objets lourds) ; et le van du livrable 12, c'est
+lui qui dépose le groupe et dont l'empreinte de 2 × 3 cases entre dans le contrat de jouabilité.
 
 ## Objectif
 
@@ -273,15 +275,21 @@ appartiennent à la famille de palette **froide**, pour que le quartier reste l'
 de rester.
 
 * [ ] tuiles de ceinture pour les six types (`grillage`, `gravats`, `remblai`, `canal`, `foret`,
-      `barrage`), avec leurs **terminaisons de rue** : portail soudé, bouchon de voitures, pont écroulé,
-      immeuble effondré sur la chaussée ;
-* [ ] tuile de brèche pour les types qui l'autorisent ;
-* [ ] tuiles de décor vues de dessus : toits, cimes d'arbres, silhouettes de bâtiments.
+      `barrage`), en **32 × 32 px raccordables dans les deux axes**, avec leurs **terminaisons de rue**
+      en **32 × 32 px** : portail soudé, bouchon de voitures, pont écroulé, immeuble effondré sur la
+      chaussée. Une terminaison se raccorde à la ceinture d'un côté et à `FloorAsphalt` de l'autre :
+      c'est la seule tuile du projet contrainte sur deux voisins différents ;
+* [ ] tuile de brèche pour les types qui l'autorisent, en **32 × 32 px** ;
+* [ ] tuiles de décor vues de dessus : toits, cimes d'arbres, silhouettes de bâtiments — trois planches
+      de **128 × 128 px**, soit 16 tuiles raccordables de 32 × 32 chacune. Le fondu vers le noir de la
+      couche 4 est produit par le code, jamais dessiné dans ces tuiles.
 
 ## Architecture concernée
 
 `World/MapGeneration/` (`LayoutPass`, `RoadPass`, `BuildingPass`, `ZonePass`, `PopulatePass`,
-`BorderPass`, `ValidationPass`, `DistrictGenerator`) — voir
+`BorderPass`, `ValidationPass`, `DistrictGenerator`) — huit classes pour six passes : la passe 6 se
+partage en deux, `BorderPass` qui pose, `ValidationPass` qui relit et rejette, parce qu'on ne teste pas
+un validateur qui est aussi son propre producteur. Voir
 [A-architecture-et-donnees.md](./A-architecture-et-donnees.md). Le générateur vit dans
 `Hordinary.Core` : il ne dépend d'aucun type Godot et se teste sans lancer le jeu. Seuls le décor, le
 fondu et le bornage de caméra vivent dans `Scripts/`.
