@@ -63,8 +63,12 @@ public partial class GameRoot : Node2D
     /// <summary>Noms des TileMapLayer, du fond vers le premier plan.</summary>
     [Export] public string[] LayerNames { get; set; } = ["Ground", "Wall-Door", "Window", "Objects"];
 
-    /// <summary>Une couleur par survivant, dans l'ordre ou le joueur les a enroles.</summary>
-    private static readonly Color[] BodyColors =
+    /// <summary>
+    /// Une couleur d'identification par survivant, dans l'ordre ou le joueur les a enroles. Elle ne
+    /// teinte pas le personnage — les six sprites sont livres en couleur — elle sert l'anneau au sol et
+    /// le nom au-dessus de la tete. Deux survivants peuvent partager un sprite, jamais une couleur.
+    /// </summary>
+    private static readonly Color[] RingColors =
     [
         new(0.31f, 0.78f, 1f),
         new(1f, 0.71f, 0.29f),
@@ -515,7 +519,7 @@ public partial class GameRoot : Node2D
                 // Le nom porte l'identifiant du survivant : c'est ainsi qu'on retrouve son corps
                 // quand il rentre au camp et qu'il faut le retirer de la carte.
                 Name = _band.Agents[i].Survivor.Id,
-                BodyColor = BodyColors[i % BodyColors.Length],
+                RingColor = RingColors[i % RingColors.Length],
                 ZIndex = 9,
             };
 

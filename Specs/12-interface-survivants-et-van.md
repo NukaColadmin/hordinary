@@ -20,21 +20,21 @@ un véhicule qui coûte de l'essence à faire rouler.
 Livrés dans `Assets/`, au format des existants. Le registre graphique, la charte technique et **un
 prompt de génération par sprite** sont dans
 [F-direction-artistique-et-prompts.md](./F-direction-artistique-et-prompts.md), section 5. Le détail
-image par image — nom de fichier, dimensions, vue, recolorabilité — est dans le **catalogue de sprites**
+image par image — nom de fichier, dimensions, vue, silhouette — est dans le **catalogue de sprites**
 plus bas ; les six lignes ci-dessous sont la liste de contrôle.
 
-* [ ] **Survivants** : 30 images de **32 × 48 px** — corps (2 × 3 vues), têtes (2 × 3), coiffures
-      (3 × 3), tenues (3 × 3) ;
-* [ ] **Zombies** : 15 images de **32 × 48 px** — 3 corps, 2 têtes, en 3 vues. Ils réutilisent les
-      coiffures des survivants, recolorées ;
+* [ ] **Survivants** : 18 images de **32 × 48 px** — **6 personnages entiers** (3 femmes, 3 hommes),
+      chacun en 3 vues ;
+* [ ] **Zombies** : 9 images de **32 × 48 px** — 3 variantes entières, en 3 vues ;
 * [ ] **Armes tenues** : 5 sprites de profil en **32 × 16 px** ;
-* [ ] **Portraits** : 6 images de **64 × 64 px** — 2 bustes × 3 couches ;
+* [ ] **Portraits** : 6 images de **64 × 64 px** — un par personnage ;
 * [ ] **Van d'extraction** : 3 états de **64 × 96 px** ;
 * [ ] **Interface** : 6 planches, soit **25 images** une fois découpées.
 
-**65 livraisons au total** — 59 images individuelles plus 6 planches d'interface, soit **84 fichiers**
-une fois les planches découpées. C'est 65 qui sert à planifier et 84 qui sert à cocher ; les deux
-chiffres sont dans le catalogue, avec leur détail. Aucun de ces fichiers n'est une frame d'animation.
+**47 livraisons au total** — 41 images individuelles plus 6 planches d'interface, soit **66 fichiers**
+une fois les planches découpées. C'est 47 qui sert à planifier et 66 qui sert à cocher ; les deux
+chiffres sont dans le catalogue, avec leur détail. Aucun de ces fichiers n'est une frame d'animation, et
+aucun n'est un calque.
 
 Comme au livrable 11, le code peut être écrit et testé avant, mais le livrable n'est pas terminé tant
 que le résultat n'est pas visible en jeu.
@@ -42,8 +42,34 @@ que le résultat n'est pas visible en jeu.
 ## Personnages : modèle pawn, animation par code
 
 **Aucun sprite de personnage n'est une frame d'animation.** Un survivant comme un zombie est un *pawn*
-au sens de RimWorld : un empilement d'images fixes — corps, vêtement, tête, cheveux, arme — dessiné en
-**trois vues** (face, dos, profil), la quatrième orientation étant le profil retourné par le code.
+au sens de RimWorld : une image fixe, dessinée en **trois vues** (face, dos, profil), la quatrième
+orientation étant le profil retourné par le code.
+
+**Il n'y a pas de calques.** Un personnage est livré entier et en couleur : corps, tenue, visage et
+cheveux dans la même image. Six personnages existent — trois femmes, trois hommes — et seule l'arme
+tenue se dessine par-dessus, avec sa rotation libre. Ce qui est abandonné avec les calques : l'ordre
+d'empilement normatif, l'alignement au pixel près entre quatre images, la livraison en niveaux de gris
+et la recoloration par palette.
+
+### Qui est qui : l'anneau et le nom
+
+Six sprites pour un roster qui peut en compter davantage — **deux survivants peuvent partager un
+personnage**. C'est assumé : l'identification est produite par le code, pas par le dessin.
+
+| Signe | Production | Règle |
+|-------|-----------|-------|
+| **Anneau au sol** | Ellipse aplatie de 2 px sous les pieds, couleur tirée par le code | **Unique parmi les survivants vivants** |
+| **Nom au-dessus de la tête** | Texte taille 8, contour sombre de 2 px, **teinté de la couleur de l'anneau** | Toujours affiché, jamais réservé au mode debug |
+| Sélection | Arc blanc à l'extérieur de l'anneau | S'ajoute à l'anneau, ne le remplace pas |
+
+L'anneau est au sol et non un contour du personnage : teinter le contour entrerait en conflit avec la
+règle de contour de la charte (1 px, teinte foncée, jamais noir pur) et disparaîtrait sur un sol de la
+même famille chromatique.
+
+**Les deux signes existent déjà** dans [SurvivorNode.cs](../Scripts/Agents/SurvivorNode.cs), avec les
+couleurs de `RingColors` dans [GameRoot.cs](../Scripts/Game/GameRoot.cs) : ce livrable remplace le rond
+par le sprite, il n'a pas à réinventer l'identification. **Un zombie n'a ni anneau ni nom** — ce qui
+porte une couleur au sol est quelqu'un.
 
 Tout le mouvement est produit par `Scripts/Agents/` et remplace le cercle actuellement dessiné par
 [SurvivorNode.cs](../Scripts/Agents/SurvivorNode.cs) et
@@ -66,8 +92,9 @@ Les amplitudes sont en **pixels monde** et valent le double de ce qu'elles valai
 la tuile à 32 px : une oscillation de 1 px sur une tuile de 32 se verrait deux fois moins qu'elle ne se
 voyait sur une tuile de 16. Les angles et les durées ne dépendent pas de l'échelle et ne changent pas.
 
-Ce choix divise la production graphique par deux et rend les zombies possibles dans le même budget —
-voir [F-direction-artistique-et-prompts.md](./F-direction-artistique-et-prompts.md), section 5.
+Ce choix divise la production graphique par deux et rend les zombies possibles dans le même budget ;
+l'abandon des calques la divise encore, de 45 à 27 images pour les deux familles — voir
+[F-direction-artistique-et-prompts.md](./F-direction-artistique-et-prompts.md), section 5.
 
 ## Catalogue de sprites
 
@@ -77,93 +104,87 @@ dans la section 5 de [F-direction-artistique-et-prompts.md](./F-direction-artist
 
 **Trois règles valables pour tout ce qui suit :**
 
-* **chaque calque occupe la toile entière**, même une coiffure qui ne couvre que le haut du crâne. Le
-  reste est transparent. C'est ce qui permet d'empiler sans calculer un seul décalage — et un décalage
-  d'un pixel sur une tête se voit immédiatement ;
+* **un personnage est une image entière**, livrée **en couleur** : corps, tenue, visage et cheveux
+  ensemble. Aucun calque, aucun empilement, aucune recoloration ;
 * **les trois vues sont `face` (sud), `dos` (nord) et `profil` (est)**. L'ouest est le profil retourné
   par le code. Il n'existe pas de quatrième vue à dessiner ;
-* **les calques recolorables sont livrés en niveaux de gris à deux tons.** La teinte vient du code, à
-  partir d'`appearance.palette`. Un calque livré en couleur ne peut pas servir au générateur.
+* **les six personnages doivent se distinguer par la silhouette seule.** Plus rien ne varie par
+  recoloration : capuche, chignon, casque, bonnet, salopette et sac sont ce qui les sépare à 32 px. Le
+  test : passés en noir plein, les six restent-ils reconnaissables ?
 
 ### Convention de nommage
 
 ```text
-pawn_{couche}_{variante}_{vue}.png      survivants
-zpawn_{couche}_{variante}_{vue}.png     zombies
+pawn_{female,male}_{1,2,3}_{vue}.png    survivants
+zpawn_{variante}_{vue}.png              zombies
 held_{arme}.png                         armes tenues
-portrait_{couche}_{variante}.png        portraits
+portrait_{female,male}_{1,2,3}.png      portraits
 van_{etat}.png                          van
 ui_{famille}_{variante}.png             interface
 ```
 
-### 1. Survivants — 30 images de 32 × 48 px
+### 1. Survivants — 18 images de 32 × 48 px
 
-Ordre d'empilement, de bas en haut. Il est normatif : c'est celui que le code applique.
+Six personnages entiers : trois femmes, trois hommes. Les sujets, silhouettes et détails décalés sont en
+section 5.1 de [F-direction-artistique-et-prompts.md](./F-direction-artistique-et-prompts.md).
 
-| # | Calque | Fichiers | Variantes | Vues | Images | Recolorable |
-|---|--------|----------|-----------|------|--------|-------------|
-| 1 | Corps | `pawn_body_{male,female}_{face,dos,profil}` | 2 | 3 | **6** | oui — teint |
-| 2 | Vêtement | `pawn_cloth_{1,2,3}_{face,dos,profil}` | 3 | 3 | **9** | oui — couleur de tenue |
-| 3 | Tête | `pawn_head_{a,b}_{face,dos,profil}` | 2 | 3 | **6** | oui — teint, **même teinte que le corps** |
-| 4 | Cheveux | `pawn_hair_{1,2,3}_{face,dos,profil}` | 3 | 3 | **9** | oui — couleur de cheveux |
-| | | | | | **30** | |
+| # | Personnage | Fichiers | Silhouette | Vues | Images |
+|---|-----------|----------|-----------|------|--------|
+| 1 | Femme 1 | `pawn_female_1_{face,dos,profil}` | Capuche relevée, gilet à badges | 3 | **3** |
+| 2 | Femme 2 | `pawn_female_2_{face,dos,profil}` | Chignon, cardigan et tablier | 3 | **3** |
+| 3 | Femme 3 | `pawn_female_3_{face,dos,profil}` | Casque de vélo, nattes courtes | 3 | **3** |
+| 4 | Homme 1 | `pawn_male_1_{face,dos,profil}` | Sac à dos, veste de travail ouverte | 3 | **3** |
+| 5 | Homme 2 | `pawn_male_2_{face,dos,profil}` | Manteau long, bonnet, écharpe | 3 | **3** |
+| 6 | Homme 3 | `pawn_male_3_{face,dos,profil}` | Salopette, ceinture à outils, crâne nu | 3 | **3** |
+| | | | | | **18** |
 
-Les deux corps sont `pawn_male` et `pawn_female` de la section 5.1 de la spec F : **ce ne sont pas deux
-personnages**, mais les deux bases que le générateur habille et recolore pour produire tout le roster.
-
-La tête et le corps partagent la même entrée de palette. Les dessiner dans deux séances différentes est
-le meilleur moyen d'obtenir un cou qui ne raccorde pas : le point de jonction se fixe une fois, sur le
-corps `male` vu de face, et les cinq autres corps s'y alignent.
+Aucun n'est recolorable : la couleur du personnage est celle de son dessin, et la couleur qui identifie
+le survivant est celle de son anneau.
 
 **La vue de dos est la moins intéressante à dessiner et la plus regardée.** Un survivant qui explore
-s'éloigne du joueur : c'est le dos qu'on voit la majorité du temps. Ne pas la bâcler.
+s'éloigne du joueur : c'est le dos qu'on voit la majorité du temps. Ne pas la bâcler — et c'est la vue
+où la silhouette fait tout le travail, puisque le visage a disparu.
 
-#### Jeu étendu (facultatif)
+#### Extension (facultative)
 
-Le jeu minimal ci-dessus — 2 corps, 2 têtes, 3 coiffures, 3 tenues — suffit à jouer et à générer un
-roster varié. Deux extensions sont prévues, dans cet ordre de rendement :
+Il n'y a pas de « jeu étendu » par couches : la seule extension possible est **un septième personnage
+entier, +3 images**. Elle est facultative et sans urgence — six personnages pour un roster de trois à
+cinq survivants suffisent, et un doublon reste séparé par l'anneau et le nom.
 
-| Extension | Images ajoutées | Effet |
-|-----------|-----------------|-------|
-| Coiffures 3 → 8 | +15 (5 × 3 vues) | Le plus rentable : c'est la couche qu'on lit en premier sur un pawn |
-| Tenues 3 → 10 | +21 (7 × 3 vues) | Variété du roster, mais moins distinctif à cette taille |
-
-`config/survivor_generation.json` est **créé par ce livrable** : ses compteurs `appearance` valent donc
-`{ "body": 2, "hair": 3, "clothing": 3 }` dès le premier jour, et montent à 8 et 10 **le jour où les
-images correspondantes existent**, jamais avant. Un `hair: 8` avec trois coiffures sur disque produirait
-cinq survivants sur huit sans cheveux, et le défaut ne se voit qu'en jeu.
-
-Les valeurs 8 et 10 apparaissent dans la section 5.1 de
-[F-direction-artistique-et-prompts.md](./F-direction-artistique-et-prompts.md) : ce sont des **valeurs
-cibles de production**, pas des valeurs de configuration.
+`config/survivor_generation.json` est **créé par ce livrable**. Ses compteurs
+`appearance.characters_female` et `appearance.characters_male` valent le **nombre de personnages
+réellement livrés**, jamais un objectif, et le chargement **échoue** s'ils dépassent les fichiers
+présents dans `Assets/`.
 
 Deux façons de tenir cette règle ; celle retenue est la seconde. Que le générateur **borne
 silencieusement son tirage** au nombre de fichiers présents fait dépendre le comportement du contenu
-d'`Assets/`, ce qui se découvre trois semaines plus tard. Qu'il **échoue au chargement** quand un
-compteur dépasse le nombre de calques livrés est plus brutal, se teste, et donne l'erreur au bon moment.
-C'est ce que vérifie le test « aucun index d'apparence ne dépasse le nombre de calques présents ».
+d'`Assets/`, ce qui se découvre trois semaines plus tard. Qu'il **échoue au chargement** est plus brutal,
+se teste, et donne l'erreur au bon moment. C'est ce que vérifie le test « aucun index de personnage ne
+dépasse le nombre de sprites présents ».
 
-> **`body` ne monte jamais.** Le modèle pawn ne prévoit que **2 corps** (homme, femme) : la variété
-> vient des couches et de la recoloration, pas de silhouettes supplémentaires. Un `appearance.body`
-> supérieur à `2` est une erreur, pas une extension.
+> **La variété ne vient plus des couches.** Elle vient de six dessins distincts, de la couleur d'anneau
+> et du nom. Ajouter un huitième `pawn_female_4` est une extension légitime ; réintroduire un calque de
+> coiffure ne l'est pas.
 
-### 2. Zombies — 15 images de 32 × 48 px
+### 2. Zombies — 9 images de 32 × 48 px
 
-Même squelette, mêmes vues, mêmes points de jonction. Ce qui change est la palette (famille froide) et
-la posture — voûtée, bras pendants, tête inclinée.
+Même format, mêmes vues. Ce qui change est la palette (famille froide) et la posture — voûtée, bras
+pendants, tête inclinée.
 
-| # | Calque | Fichiers | Variantes | Vues | Images | Recolorable |
-|---|--------|----------|-----------|------|--------|-------------|
-| 1 | Corps | `zpawn_body_{civil,employe,secours}_{face,dos,profil}` | 3 | 3 | **9** | oui — teint froid |
-| 2 | Tête | `zpawn_head_{a,b}_{face,dos,profil}` | 2 | 3 | **6** | oui — teint froid |
-| | | | | | **15** | |
+| # | Variante | Fichiers | Ce qu'elle raconte | Vues | Images |
+|---|----------|----------|--------------------|------|--------|
+| 1 | Civil | `zpawn_civil_{face,dos,profil}` | Le fond de la horde | 3 | **3** |
+| 2 | Employé | `zpawn_employe_{face,dos,profil}` | Il travaillait au supermarché où vous êtes entré | 3 | **3** |
+| 3 | Secours | `zpawn_secours_{face,dos,profil}` | Les secours sont venus, et sont restés | 3 | **3** |
+| | | | | | **9** |
 
-Le vêtement fait partie du corps chez le zombie : les trois variantes *sont* trois tenues (civil, tablier
-d'employé, gilet de secours). Il n'y a donc pas de calque de vêtement séparé, et c'est ce qui fait tenir
-les zombies dans 15 images au lieu de 24.
+Le vêtement fait partie du personnage : les trois variantes *sont* trois tenues (civil, tablier
+d'employé, gilet de secours), cheveux compris. La mutualisation des coiffures des survivants n'a plus
+d'objet — sans calques, il n'y a rien à réemprunter, et il n'y en a plus besoin : neuf images entières
+coûtent moins que quinze calques.
 
-**Les coiffures sont celles des survivants**, recolorées en tons froids et ternes par le code. Aucune
-image supplémentaire — et c'est la seule mutualisation du livrable, donc la seule à ne pas casser.
+**Un zombie n'a ni anneau ni nom.** C'est ce qui, sur la carte, sépare instantanément les vôtres des
+autres : ce qui porte une couleur au sol est quelqu'un.
 
 **Aucun détail décalé, aucune blague, aucun gore.** C'est la seule famille de sprites du projet à
 laquelle la règle du décalé ne s'applique pas : si la menace ne pèse pas, l'arbitrage fuir / combattre /
@@ -194,20 +215,21 @@ Non recolorable : une arme a sa couleur.
 
 Buste de face trois quarts, tête et épaules, pour la grille du bas et le panneau latéral.
 
-| # | Calque | Fichiers | Variantes | Images | Recolorable |
-|---|--------|----------|-----------|--------|-------------|
-| 1 | Visage | `portrait_face_{male,female}` | 2 | **2** | oui — teint |
-| 2 | Cheveux | `portrait_hair_{male,female}` | 2 | **2** | oui — couleur de cheveux |
-| 3 | Vêtement | `portrait_cloth_{male,female}` | 2 | **2** | oui — couleur de tenue |
-| | | | | **6** | |
+| # | Portrait | Fichiers | Images |
+|---|----------|----------|--------|
+| 1 | Un par personnage | `portrait_female_{1,2,3}` | **3** |
+| 2 | Un par personnage | `portrait_male_{1,2,3}` | **3** |
+| | | | **6** |
 
-Les trois couches se recolorent avec **les mêmes entrées de palette que le pawn du même survivant** :
-c'est toute la raison d'être du découpage en couches ici. Un portrait dont les cheveux ne sont pas de la
-couleur de ceux du pawn donne l'impression que la grille du bas montre quelqu'un d'autre.
+**Un portrait est une image entière, non recolorable**, comme le pawn qu'il montre. Le nombre ne change
+pas ; ce qui change est que ces six images sont six personnes au lieu de six morceaux — et que le
+portrait montre exactement le personnage de la carte, coiffure comprise, ce que le découpage en couches
+ne garantissait jamais tout à fait.
 
-Le portrait ne suit pas les trois vues : il est toujours de face. Deux couches de cheveux pour trois
-coiffures de pawn — huit à terme — est un écart assumé : la coiffure du portrait est générique, elle
-n'est pas la même que celle du pawn et n'a pas à la suivre. Seule la **couleur** est partagée.
+Le portrait ne suit pas les trois vues : il est toujours de face. La vignette de la grille du bas
+l'entoure de l'**anneau de couleur** du survivant : c'est le même signe que sur la carte, donc le même
+geste de reconnaissance — et c'est lui, pas le portrait, qui distingue deux survivants partageant un
+personnage.
 
 ### 5. Van — 3 images de 64 × 96 px
 
@@ -259,37 +281,38 @@ plein écran sans mise à l'échelle entière.
 
 | Groupe | Dimensions | Images |
 |--------|-----------|--------|
-| Survivants — 4 couches × 3 vues | 32 × 48 | 30 |
-| Zombies — 2 couches × 3 vues | 32 × 48 | 15 |
+| Survivants — 6 personnages × 3 vues | 32 × 48 | 18 |
+| Zombies — 3 variantes × 3 vues | 32 × 48 | 9 |
 | Armes tenues | 32 × 16 | 5 |
-| Portraits — 3 couches | 64 × 64 | 6 |
+| Portraits — un par personnage | 64 × 64 | 6 |
 | Van — 3 états | 64 × 96 | 3 |
 | Interface — 6 planches découpées | variable | 25 |
-| **Total** | | **84** |
+| **Total** | | **66** |
 
-Le total de **65 livraisons** annoncé dans les prérequis est le même travail compté à la commande : les
-59 images des cinq premières lignes, plus les six planches d'interface comptées **comme six planches**
-et non comme les 25 fichiers qu'elles donnent une fois découpées. 65 pour planifier, 84 pour cocher.
+Le total de **47 livraisons** annoncé dans les prérequis est le même travail compté à la commande : les
+41 images des cinq premières lignes, plus les six planches d'interface comptées **comme six planches**
+et non comme les 25 fichiers qu'elles donnent une fois découpées. 47 pour planifier, 66 pour cocher.
 
-**Extensions facultatives** : +15 images pour porter les coiffures à 8, +21 pour porter les tenues à 10.
+**Extension facultative** : +3 images par personnage supplémentaire.
 
 ### Ordre de production
 
 Chaque étape doit rendre le jeu plus jouable que la précédente, sinon l'ordre ne sert à rien.
 
-1. **`pawn_body_male` et `pawn_head_a`, trois vues chacun — 6 images.** C'est le lot qui permet de
-   remplacer le cercle de `SurvivorNode.cs` et de vérifier toute la chaîne : empilement, choix de vue,
-   miroir ouest, recoloration, oscillation de marche. Tant que ces six-là ne s'affichent pas
-   correctement, produire les 78 autres est un pari.
-2. **Le corps féminin, la seconde tête, une coiffure, une tenue — 12 images.** Le générateur produit
-   alors des survivants réellement distincts.
-3. **Les trois corps de zombie — 9 images.** La menace cesse d'être un rond vert.
+1. **`pawn_male_1`, trois vues — 3 images.** C'est le lot qui permet de remplacer le rond de
+   `SurvivorNode.cs` et de vérifier toute la chaîne : choix de vue, miroir ouest, anneau au sol sous les
+   pieds, nom au-dessus de la tête, oscillation de marche. Tant que ces trois-là ne s'affichent pas
+   correctement, produire les 63 autres est un pari.
+2. **Les cinq autres personnages — 15 images.** Le générateur produit alors des survivants réellement
+   distincts, et c'est là que se vérifie la règle de silhouette : trois d'entre eux côte à côte à
+   l'écran doivent se reconnaître sans lire les noms.
+3. **Les trois zombies — 9 images.** La menace cesse d'être un rond vert.
 4. **Le van et les portraits — 9 images.** Ce que le joueur regarde à chaque mission.
 5. **Les jauges, icônes d'état et curseurs — 18 images.** L'interface devient lisible sans texte.
-6. **Le reste — 30 images** : les deux coiffures et les deux tenues restantes (12), les deux têtes de
-   zombie (6), les cinq armes tenues (5), les cadres, les boutons et le fond de titre (7). Les armes
-   tenues sont dans ce lot parce qu'un pawn sans arme visible reste jouable, pas parce qu'elles sont
-   faciles — leur point de pivot commun est le calage le plus exigeant du livrable.
+6. **Le reste — 12 images** : les cinq armes tenues (5), les cadres, les boutons et le fond de titre (7).
+   Les armes tenues sont dans ce lot parce qu'un pawn sans arme visible reste jouable, pas parce qu'elles
+   sont faciles — leur point de pivot commun est le calage le plus exigeant du livrable, et depuis
+   l'abandon des calques c'est le **seul** alignement au pixel près qui reste dans tout le projet.
 
 ## Interface
 
@@ -325,8 +348,9 @@ Une vignette par survivant, toujours visible :
 * icônes d'état : blessé, paniqué, surchargé, arme équipée, radio, rappelé au camp ;
 * clic = sélection (remplace la sélection actuelle), `Ctrl`+clic = ajout à la sélection ;
 * double-clic = centrer la caméra sur le survivant ;
-* bordure de couleur reprenant la couleur de silhouette du survivant sur la carte, pour qu'on le
-  retrouve à l'œil ;
+* **bordure de la couleur de son anneau sur la carte**, pour qu'on le retrouve à l'œil. C'est le seul
+  signe qui tient quand deux survivants partagent un personnage : ni le portrait ni le sprite ne les
+  distinguent, la couleur et le nom si ;
 * le stock du camp (livrable 11) occupe le coin droit de la barre : nourriture, eau, essence, munitions.
 
 ### Panneau latéral
@@ -385,7 +409,8 @@ doit être adapté.
   "seed": 20260803,
 
   "names": {
-    "first": ["Alice", "Bob", "Claire", "Diane", "Emile", "Farid", "Greta", "Hugo"],
+    "first_female": ["Alice", "Claire", "Diane", "Greta"],
+    "first_male": ["Bob", "Emile", "Farid", "Hugo"],
     "last": ["Marchand", "Okonkwo", "Sorensen", "Vargas", "Nowak"]
   },
 
@@ -410,10 +435,9 @@ doit être adapté.
   ],
 
   "appearance": {
-    "body": 2,
-    "hair": 3,
-    "clothing": 3,
-    "palette": ["#8d5524", "#c68642", "#e0ac69", "#f1c27d", "#ffdbac"]
+    "characters_female": 3,
+    "characters_male": 3,
+    "ring_colors": ["#4fc7ff", "#ffb54a", "#8ceb8c", "#eb8ceb", "#f2f280", "#ff7f6b"]
   }
 }
 ```
@@ -424,11 +448,15 @@ Règles :
 * un à deux `traits` par survivant, qui multiplient un réglage existant de `config/game_config.json` —
   aucun trait n'introduit une mécanique nouvelle, sinon le générateur devient une seconde source de
   règles ;
-* l'apparence est un tirage de couches (`body`, `hair`, `clothing`, teinte), pas un sprite tiré au sort ;
-* **les trois compteurs d'`appearance` valent le nombre de fichiers réellement livrés**, jamais un
-  objectif. Un `hair: 8` avec trois coiffures sur disque produit cinq survivants sur huit sans cheveux,
-  et le défaut ne se voit qu'en jeu. Ils montent à 8 et 10 le jour où les extensions du catalogue de
-  sprites sont livrées, pas avant — et un test le vérifie ;
+* l'apparence est **un personnage tiré parmi les six** et **une couleur d'anneau**, rien d'autre. Il n'y
+  a plus de tirage de couches ni de teinte : les sprites sont livrés en couleur ;
+* **le prénom suit le personnage.** Un sprite visiblement féminin nommé « Bob » est un défaut, pas une
+  variation : le générateur tire d'abord le personnage, puis le prénom dans la liste correspondante ;
+* **les deux compteurs d'`appearance` valent le nombre de sprites réellement livrés**, jamais un
+  objectif, et le chargement échoue s'ils les dépassent — un test le vérifie ;
+* **la couleur d'anneau est unique parmi les survivants vivants.** `ring_colors` en contient au moins
+  autant que le van peut en transporter ; épuiser la liste est une erreur de chargement, pas un
+  recyclage silencieux. Deux survivants peuvent partager un personnage, jamais une couleur ;
 * **déterminisme** : à graine égale, roster identique, apparences comprises. Un roster généré peut être
   écrit dans un fichier au format `config/survivors.json` pour être rejoué ou corrigé à la main ;
 * les trois profils du livrable 7 restent livrés en dur dans `config/survivors.json` et servent de
@@ -485,23 +513,26 @@ Nouveaux fichiers de configuration : `config/survivor_generation.json`, section 
 
 ## Étapes à créer
 
-* [ ] **(humain)** Livrer les 84 fichiers du **catalogue de sprites** (65 livraisons), dans l'ordre de
-      production qu'il donne — les 6 premiers avant tout le reste, ce sont eux qui valident la chaîne
-      d'empilement.
-* [ ] Écrire `config/survivor_generation.json` avec `appearance` aligné sur les calques réellement
-      livrés (`body` toujours à `2`), et faire échouer le chargement quand un compteur les dépasse.
+* [ ] **(humain)** Livrer les 66 fichiers du **catalogue de sprites** (47 livraisons), dans l'ordre de
+      production qu'il donne — les 3 premiers avant tout le reste, ce sont eux qui valident la chaîne
+      d'affichage.
+* [ ] Écrire `config/survivor_generation.json` avec `appearance` aligné sur les personnages réellement
+      livrés, et faire échouer le chargement quand un compteur les dépasse ou quand `ring_colors` est
+      trop court.
 * [ ] Refondre le HUD en trois zones (carte, panneau latéral, grille du bas).
 * [ ] Construire la grille des survivants (vignettes, jauges, icônes d'état, sélection multiple).
 * [ ] Construire le panneau latéral complet (identité, jauges, caractéristiques, personnalité,
       aptitudes, compétences, inventaire, décision).
 * [ ] Rendre les informations du livrable 8 visibles hors mode debug, sans supprimer le mode debug.
-* [ ] Ajouter le pawn en couches (corps, vêtement, tête, cheveux) et sa recoloration.
+* [ ] Afficher le pawn : un sprite entier par survivant, choisi par son index de personnage.
+* [ ] Dessiner l'anneau au sol à la couleur du survivant et garder le nom au-dessus de sa tête, tous
+      deux visibles hors mode debug — le comportement actuel de `SurvivorNode.cs`, conservé.
 * [ ] Implémenter le choix des trois vues et le miroir horizontal pour l'ouest.
 * [ ] Implémenter les effets par code : oscillation, bond d'attaque, teinte de dégât, inclinaison de
       blessure, tremblement de panique, rotation à terre.
 * [ ] Faire pivoter le sprite d'arme tenue vers la cible.
-* [ ] Remplacer les cercles de `SurvivorNode` et `ZombieNode` par le pawn, en conservant les quatre
-      teintes d'état du zombie.
+* [ ] Remplacer les ronds de `SurvivorNode` et `ZombieNode` par le pawn, en conservant les quatre
+      teintes d'état du zombie — et sans donner d'anneau ni de nom aux zombies.
 * [ ] Écrire le générateur de survivants (archétypes, intervalles, traits, apparence), déterministe.
 * [ ] Permettre l'export d'un roster généré au format `config/survivors.json`.
 * [ ] Ajouter le van : empreinte, capacité, coût en essence, réserve de retour, bruit de démarrage.
@@ -520,10 +551,13 @@ l'essence du van au départ, et voit dans la grille du bas lequel est blessé sa
 À ajouter dans `Tests/` (voir [C-tests.md](./C-tests.md)) :
 
 * deux générations avec la même graine produisent des rosters identiques, traits et apparences compris ;
-* aucun index d'apparence tiré par le générateur ne dépasse le nombre de calques réellement présents
-  dans `Assets/` — le test qui empêche un survivant chauve par erreur de configuration ;
-* les quatre couches d'un pawn ont toutes les mêmes dimensions et les trois mêmes vues, sans quoi
-  l'empilement est faux avant même de s'afficher ;
+* aucun index de personnage tiré par le générateur ne dépasse le nombre de sprites réellement présents
+  dans `Assets/` — le test qui empêche un survivant sans sprite par erreur de configuration ;
+* **deux survivants vivants n'ont jamais la même couleur d'anneau**, et une liste `ring_colors` plus
+  courte que le roster échoue au chargement plutôt que de recycler une couleur ;
+* le prénom d'un survivant vient de la liste correspondant au genre de son personnage ;
+* les six personnages ont tous les trois mêmes vues aux mêmes dimensions, sans quoi le choix de vue
+  échoue à l'affichage ;
 * tout survivant généré est chargeable par le lecteur de `config/survivors.json` sans traitement
   particulier ;
 * un trait ne modifie qu'un réglage existant de `config/game_config.json` ;
