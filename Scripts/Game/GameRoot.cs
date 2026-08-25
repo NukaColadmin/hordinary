@@ -937,14 +937,9 @@ public partial class GameRoot : Node2D
         switch (mouse.ButtonIndex)
         {
             case MouseButton.Left:
-                // Un clic sur un survivant le selectionne ; ailleurs, c'est un ordre.
+                // Un clic sur un survivant le selectionne.
                 if (_band.Standing.FirstOrDefault(agent => agent.Survivor.Position == cell) is { } clicked)
-                {
                     _commands.Execute(PlayerCommand.Select(clicked.Survivor.Id));
-                    return;
-                }
-
-                _commands.Execute(PlayerCommand.MoveTo(cell, mouse.ShiftPressed));
                 break;
 
             case MouseButton.Right when _config.Debug.AcceptsCommands:

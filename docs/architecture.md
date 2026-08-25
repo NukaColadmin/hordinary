@@ -107,7 +107,6 @@ meme code, pas deux copies qui divergent.
 |---|---|
 | `Tab` / clic sur un survivant | changer de point de vue : les panneaux et les overlays suivent le survivant choisi |
 | `G` | selectionner le groupe : les ordres suivants s'adressent a tout le monde |
-| Clic gauche | donner au survivant selectionne l'objectif d'aller sur la case visee |
 | `Maj` + un ordre | adresser l'ordre au groupe entier plutot qu'au seul survivant selectionne |
 | Clic droit | cycler le niveau de danger d'une case : aucun -> suspecte -> zombie proche |
 | `1` / `2` | recuperer les medicaments / rentrer au camp (la sortie, qui est aussi le depart) |
@@ -1026,7 +1025,7 @@ Une entree clavier ne pose plus directement un objectif : elle fabrique un `Play
 `CommandManager` traduit. La distinction n'est pas cosmetique — elle separe deux choses qui n'ont pas
 le meme statut :
 
-* un **ordre** (`FetchMedicine`, `ReachExtraction`, `ExploreArea`, `Regroup`, `MoveTo`) pose un
+* un **ordre** (`FetchMedicine`, `ReachExtraction`, `ExploreArea`, `Regroup`) pose un
   `MissionOrder` que la Utility AI met en concurrence avec ses propres objectifs. Il peut etre mis de
   cote au profit d'un danger immediat, et il peut aussi **echouer a etre donne** : on n'envoie
   personne a un endroit dont il ignore l'existence. Chaque ordre est resolu dans la memoire de celui

@@ -170,10 +170,6 @@ public sealed class CommandManager
         PlayerCommandKind.ForbidZone => Fence(agent, command.Zone, forbid: true),
         PlayerCommandKind.AllowZone => Fence(agent, command.Zone, forbid: false),
 
-        PlayerCommandKind.MoveTo => command.Cell is { } cell
-            ? Give(agent, $"aller en {cell}", cell)
-            : "aucune case designee",
-
         PlayerCommandKind.ExploreArea => ExploreArea(agent, command.Zone),
         PlayerCommandKind.FetchMedicine => SendToZone(agent, ZoneKind.Pharmacy, "recuperer les medicaments"),
         PlayerCommandKind.ReachExtraction => SendToZone(agent, ZoneKind.Extraction, "rejoindre l'extraction"),

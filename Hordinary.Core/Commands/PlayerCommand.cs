@@ -2,7 +2,7 @@ using Hordinary.World;
 
 namespace Hordinary.Commands;
 
-/// <summary>Les neuf commandes de la specification (livrable 8, « Commandes disponibles »).</summary>
+/// <summary>Les huit commandes de la specification (livrable 8, « Commandes disponibles »).</summary>
 public enum PlayerCommandKind
 {
     /// <summary>Changer de point de vue : le HUD et les overlays suivent le survivant choisi.</summary>
@@ -34,9 +34,6 @@ public enum PlayerCommandKind
 
     /// <summary>Leve l'interdiction posee sur une zone.</summary>
     AllowZone,
-
-    /// <summary>Ordre libre : « allez a cette case ». C'est le clic gauche du prototype.</summary>
-    MoveTo,
 }
 
 /// <summary>
@@ -49,13 +46,11 @@ public enum PlayerCommandKind
 /// </summary>
 /// <param name="Kind">Ce que le joueur demande.</param>
 /// <param name="ToAll">Vrai si la commande s'adresse au groupe plutot qu'au survivant selectionne.</param>
-/// <param name="Cell">Case visee, pour les commandes qui en designent une.</param>
 /// <param name="Zone">Zone visee, pour l'exploration et l'interdiction.</param>
 /// <param name="SurvivorId">Survivant vise par <see cref="PlayerCommandKind.SelectSurvivor"/>.</param>
 public sealed record PlayerCommand(
     PlayerCommandKind Kind,
     bool ToAll = false,
-    GridPosition? Cell = null,
     MapZone? Zone = null,
     string? SurvivorId = null)
 {
@@ -85,9 +80,6 @@ public sealed record PlayerCommand(
     public static PlayerCommand AllowZone(MapZone zone, bool toAll = true)
         => new(PlayerCommandKind.AllowZone, toAll, Zone: zone);
 
-    public static PlayerCommand MoveTo(GridPosition cell, bool toAll = false)
-        => new(PlayerCommandKind.MoveTo, toAll, Cell: cell);
-
     /// <summary>Vrai pour les consignes permanentes, qui ne se traduisent pas en objectif.</summary>
     public bool IsStandingOrder => Kind
         is PlayerCommandKind.ForbidNoise
@@ -107,7 +99,6 @@ public sealed record PlayerCommand(
         PlayerCommandKind.AllowNoise => "autoriser les actions bruyantes",
         PlayerCommandKind.ForbidZone => $"interdire {Zone?.Name ?? "?"}",
         PlayerCommandKind.AllowZone => $"autoriser {Zone?.Name ?? "?"}",
-        PlayerCommandKind.MoveTo => $"aller en {Cell}",
         _ => Kind.ToString(),
     };
 }
