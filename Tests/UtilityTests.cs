@@ -26,7 +26,7 @@ public class UtilityTests
     private static UtilityAiSettings Tuning => DeliveredConfig.UtilityAi;
 
     /// <summary>Terrain degage entierement observe : seules les entites font varier les scores.</summary>
-    private static Survivor Alice(GridPosition at, Personality? personality = null)
+    private static Survivor Alice(GridPosition at)
     {
         const int size = 21;
         var map = TestMaps.Parse(Enumerable.Repeat(new string('.', size), size).ToArray());
@@ -37,13 +37,10 @@ public class UtilityTests
             knowledge.ObserveCell(cell, map.GetCell(cell), map.IsIndoor(cell), 0d);
         }
 
-        var survivor = new Survivor("alice", "Alice", knowledge, settings: DeliveredConfig.Survivor)
+        return new Survivor("alice", "Alice", knowledge, settings: DeliveredConfig.Survivor, catalogue: DemoMap.Items)
         {
             Position = at,
         };
-
-        if (personality is not null) survivor.Personality = personality;
-        return survivor;
     }
 
     private static UtilityContext Context(Survivor survivor, double now = 0d)
@@ -123,27 +120,6 @@ public class UtilityTests
     }
 
     [Fact]
-    public void Un_survivant_loyal_privilegie_davantage_l_aide_a_un_allie()
-    {
-        static float HelpScore(float loyalty)
-        {
-            var survivor = Alice(new GridPosition(10, 10), new Personality { Loyalty = loyalty, Caution = 0.5f });
-
-            // Bob est a quatre cases, avec un zombie sur le dos.
-            survivor.Knowledge.RememberEntity("bob", EntityKind.Survivor, new GridPosition(14, 10), 0d);
-            survivor.Knowledge.RememberEntity("zombie-1", EntityKind.Zombie, new GridPosition(15, 10), 0d);
-
-            var scores = new UtilityScorer(DeliveredGoals).ScoreAll(Context(survivor));
-            return ScoreOf(scores, "HelpAlly");
-        }
-
-        float loyal = HelpScore(0.9f);
-        float indifferent = HelpScore(0.3f);
-
-        Assert.True(loyal > indifferent, $"Loyal {loyal:0.00} devrait depasser indifferent {indifferent:0.00}.");
-    }
-
-    [Fact]
     public void L_hysteresis_evite_les_changements_constants_d_objectif()
     {
         // Deux objectifs epures, pilotes par deux entrees que le test controle directement.
@@ -219,7 +195,7 @@ public class UtilityTests
               "goals": [
                 {
                   "name": "PorterLesMedicaments",
-                  "preconditions": [ { "input": "has_medicine", "min": 0.5 } ],
+                  "preconditions": [ { "input": "has_objective", "min": 0.5 } ],
                   "considerations": [ { "input": "constant", "curve": "linear" } ]
                 },
                 { "name": "Explorer", "considerations": [ { "input": "player_priority", "curve": "linear" } ] }
@@ -229,13 +205,13 @@ public class UtilityTests
 
         var alice = Alice(new GridPosition(10, 10));
         alice.Mission = new MissionOrder("explorer", null, 0.2f);
-        alice.AddToInventory(ItemKind.Medicine);
+        alice.AddToInventory(Survivor.DefaultObjectiveItem);
 
         var selector = new UtilitySelector(goals, Tuning);
         Assert.Equal("PorterLesMedicaments", selector.Evaluate(Context(alice), 0d).Goal);
 
         // Les medicaments changent de mains : la precondition tombe, l'objectif avec.
-        alice.RemoveFromInventory(ItemKind.Medicine);
+        alice.RemoveFromInventory(Survivor.DefaultObjectiveItem);
         var decision = selector.Evaluate(Context(alice), 1d);
 
         Assert.True(decision.Changed);
@@ -312,7 +288,7 @@ public class UtilityTests
         var flee = new UtilityScorer(DeliveredGoals).ScoreAll(Context(alice))
             .First(score => score.Goal == "FleeDanger");
 
-        Assert.Equal(4, flee.Breakdown.Count);
+        Assert.Equal(3, flee.Breakdown.Count);
         Assert.Contains(flee.Breakdown, c => c.Input == "threat_pressure");
         Assert.Contains("threat_pressure", flee.Describe());
         Assert.Contains("FleeDanger", flee.Describe());
@@ -492,7 +468,7 @@ public class UtilityTests
         string[] required =
         [
             "CompletePlayerMission", "ExploreUnknownArea", "FleeDanger", "HelpAlly", "HealSelf",
-            "HealAlly", "SearchForMedicine", "PickUpMedicine", "ReachExtraction", "Hide",
+            "HealAlly", "SearchForObjective", "PickUpObjective", "ReachExtraction", "Hide",
             "Regroup", "CreateDistraction",
         ];
 
@@ -528,7 +504,7 @@ public class UtilityTests
             knowledge.ObserveCell(cell, map.GetCell(cell), map.IsIndoor(cell), 0d);
         }
 
-        var alice = new Survivor("alice", "Alice", knowledge, settings: DeliveredConfig.Survivor)
+        var alice = new Survivor("alice", "Alice", knowledge, settings: DeliveredConfig.Survivor, catalogue: DemoMap.Items)
         {
             Position = new GridPosition(2, 2),
         };
@@ -623,7 +599,7 @@ public class UtilityTests
             knowledge.ObserveCell(cell, map.GetCell(cell), map.IsIndoor(cell), 0d);
         }
 
-        var alice = new Survivor("alice", "Alice", knowledge, settings: DeliveredConfig.Survivor)
+        var alice = new Survivor("alice", "Alice", knowledge, settings: DeliveredConfig.Survivor, catalogue: DemoMap.Items)
         {
             Position = new GridPosition(8, 2),
         };

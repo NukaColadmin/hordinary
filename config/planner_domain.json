@@ -5,6 +5,14 @@
 // damage — decrites ici. Ajouter une action au jeu, en retirer une pour isoler un comportement
 // ("enabled": false) ou reequilibrer son cout se fait dans ce fichier, sans recompilation.
 //
+// Le domaine ne nomme aucun objet reel et aucun lieu de mission. Trois noms symboliques suffisent :
+//   objective       ce que la mission envoie chercher — config/missions.json decide lequel c'est.
+//   objective_zone  ou elle l'envoie le chercher — pharmacie, entrepot ou hangar, indifferemment.
+//   remedy          de quoi soigner — le premier objet porte qui declare un effet "heal".
+// C'est ce qui fait qu'une mission qui rapporte un jerrican se joue avec les memes actions qu'une
+// mission qui rapporte une trousse, sans une ligne de plus. Le coeur les traduit en identifiants de
+// config/items.json au moment d'executer, jamais avant (WorldPlanRuntime.Resolve).
+//
 // Lecture d'une action :
 //   name           identifiant unique de l'action.
 //   description    phrase courte destinee a un lecteur humain (ou a l'atelier de creation base sur
@@ -100,36 +108,36 @@
     },
 
     {
-      "name": "LocateMedicine",
-      "description": "« Localiser les medicaments » de l'exemple de plan de la specification : fouiller la pharmacie est ce qui apprend ou ils sont. Le planificateur est optimiste — s'ils n'y sont pas, l'action echoue a l'execution et le livrable 6 replanifie. « !searched_in_vain » est ce qui empeche la replanification de redemander la meme fouille : une fouille infructueuse entre dans la memoire du survivant, et redevient un fait ici.",
+      "name": "LocateObjective",
+      "description": "« Localiser ce qu'on est venu chercher » : fouiller le lieu de la mission est ce qui apprend ou il est. Aucune pharmacie n'est nommee — « objective_zone » est le lieu que la mission a designe, pharmacie, entrepot ou hangar. Le planificateur est optimiste : si l'objet n'y est pas, l'action echoue a l'execution et le livrable 6 replanifie. « !searched_in_vain » est ce qui empeche la replanification de redemander la meme fouille — une fouille infructueuse entre dans la memoire du survivant, et redevient un fait ici. C'est aussi, et surtout, ce qui l'empeche d'aller chercher indefiniment un objet qui n'existe plus.",
       "verb": "setFlag",
-      "params": { "condition": "medicine_found", "value": true },
-      "preconditions": [ "at(agent, pharmacy)", "searched(pharmacy)", "!medicine_found", "!searched_in_vain(pharmacy)" ],
-      "effects": [ "medicine_found", "item_at(medicine, pharmacy)" ],
+      "params": { "condition": "objective_found", "value": true },
+      "preconditions": [ "at(agent, objective_zone)", "searched(objective_zone)", "!objective_found", "!searched_in_vain(objective_zone)" ],
+      "effects": [ "objective_found", "item_at(objective, objective_zone)" ],
       "cost": 1,
       "noise_level": 0,
       "duration": 1
     },
 
     {
-      "name": "PickUpMedicine",
-      "description": "Ramasser les medicaments une fois leur emplacement connu a la pharmacie.",
+      "name": "PickUpObjective",
+      "description": "Ramasser l'objet de la mission sur le lieu qu'on a fouille, une fois son emplacement connu.",
       "verb": "take",
-      "params": { "item": "medicine" },
-      "preconditions": [ "at(agent, pharmacy)", "medicine_found", "!has(agent, medicine)" ],
-      "effects": [ "has(agent, medicine)", "medicine_collected" ],
+      "params": { "item": "objective" },
+      "preconditions": [ "at(agent, objective_zone)", "objective_found", "!has(agent, objective)" ],
+      "effects": [ "has(agent, objective)", "objective_collected" ],
       "cost": 1,
       "noise_level": 0,
       "duration": 1
     },
 
     {
-      "name": "PickUpSpottedMedicine",
-      "description": "Meme action, mais pour des medicaments apercus ailleurs qu'a la pharmacie : « medicine_spot » est l'endroit ou le survivant croit les voir. Deux entrees de configuration, aucun code en plus.",
+      "name": "PickUpSpottedObjective",
+      "description": "Meme action, mais pour un exemplaire apercu ailleurs que sur le lieu de la mission : « objective_spot » est l'endroit ou le survivant croit le voir. Deux entrees de configuration, aucun code en plus.",
       "verb": "take",
-      "params": { "item": "medicine" },
-      "preconditions": [ "at(agent, medicine_spot)", "medicine_found", "!has(agent, medicine)" ],
-      "effects": [ "has(agent, medicine)", "medicine_collected" ],
+      "params": { "item": "objective" },
+      "preconditions": [ "at(agent, objective_spot)", "objective_found", "!has(agent, objective)" ],
+      "effects": [ "has(agent, objective)", "objective_collected" ],
       "cost": 1,
       "noise_level": 0,
       "duration": 1
@@ -142,7 +150,7 @@
       "parameters": { "item": "item", "location": "location" },
       "params": { "item": "?item", "location": "?location" },
       "preconditions": [ "has(agent, ?item)", "at(agent, ?location)" ],
-      "effects": [ "!has(agent, ?item)", "!medicine_collected", "item_at(?item, ?location)" ],
+      "effects": [ "!has(agent, ?item)", "!objective_collected", "item_at(?item, ?location)" ],
       "cost": 1,
       "noise_level": 1,
       "duration": 0.5
@@ -150,10 +158,10 @@
 
     {
       "name": "ReachExtraction",
-      "description": "La sortie. Elle n'a de sens qu'avec les medicaments : c'est la condition de victoire.",
+      "description": "La sortie. Elle n'a de sens qu'avec ce qu'on est venu chercher : c'est la condition de victoire. « !at(agent, extraction) » n'est pas une precaution de style — sans elle, un survivant deja sur la case de sortie se redonne indefiniment un plan d'une action qui s'acheve aussitot, parce que « extracted » est un marqueur de but et ne survit pas au plan qui l'a pose.",
       "verb": "toPos",
       "params": { "location": "extraction" },
-      "preconditions": [ "extraction_known", "has(agent, medicine)", "!extracted" ],
+      "preconditions": [ "extraction_known", "has(agent, objective)", "!at(agent, extraction)", "!extracted" ],
       "effects": [ "!at(agent, *)", "at(agent, extraction)", "extracted" ],
       "cost": 1,
       "distance_cost": 0.5,
@@ -264,8 +272,8 @@
       "verb": "setFlag",
       "parameters": { "ally": "ally" },
       "params": { "condition": "healed(?ally)", "value": true, "target": "?ally" },
-      "preconditions": [ "has(agent, medicine)", "at(agent, ally)", "ally_wounded(?ally)", "!healed(?ally)" ],
-      "effects": [ "!has(agent, medicine)", "!medicine_collected", "healed(?ally)", "ally_healed" ],
+      "preconditions": [ "has(agent, remedy)", "at(agent, ally)", "ally_wounded(?ally)", "!healed(?ally)" ],
+      "effects": [ "!has(agent, remedy)", "healed(?ally)", "ally_healed" ],
       "cost": 1,
       "noise_level": 0,
       "duration": 3
@@ -289,8 +297,8 @@
       "description": "Se soigner soi-meme avec les medicaments transportes.",
       "verb": "setFlag",
       "params": { "condition": "healed(agent)", "value": true },
-      "preconditions": [ "has(agent, medicine)", "!healed(agent)" ],
-      "effects": [ "!has(agent, medicine)", "!medicine_collected", "healed(agent)" ],
+      "preconditions": [ "has(agent, remedy)", "!healed(agent)" ],
+      "effects": [ "!has(agent, remedy)", "healed(agent)" ],
       "cost": 1,
       "noise_level": 0,
       "duration": 3
@@ -330,6 +338,93 @@
       "cost": 1,
       "noise_level": 0,
       "duration": 1
+    },
+
+    // --- Livrable 11 : objets, armes et meubles -------------------------------------------------
+    // Sept actions de plus, et le domaine passe de 23 a 30 schemas. C'est la derniere fois qu'il
+    // bouge : G-export-pddl.md est place apres ce livrable pour cette raison, et le livrable 15
+    // compile ses contraintes sur le domaine ainsi obtenu.
+    //
+    // Deux verbes primitifs sont ajoutes au passage — push et emitNoise — et aucun autre ne le sera.
+    // Ils ne s'exportent pas en PDDL, qui ne decrit que la couche symbolique.
+
+    {
+      "name": "PickUpItem",
+      "description": "Ramasser un objet apercu, quel qu'il soit. C'est la version generale de PickUpMedicine : celle-ci vise ce qu'on est venu chercher, celle-la tout le reste. Un sac plein la refuse, et l'echec devient une replanification.",
+      "verb": "take",
+      "parameters": { "item": "item", "location": "location" },
+      "params": { "item": "?item" },
+      "preconditions": [ "at(agent, ?location)", "item_at(?item, ?location)", "!has(agent, ?item)", "!inventory_full" ],
+      "effects": [ "has(agent, ?item)", "!item_at(?item, ?location)" ],
+      "cost": 1,
+      "noise_level": 0,
+      "duration": 1
+    },
+
+    {
+      "name": "UseItem",
+      "description": "Se servir de ce qu'on porte. Ce que l'objet fait n'est pas ecrit ici mais dans config/items.json : le domaine sait qu'on l'utilise, le catalogue sait a quoi.",
+      "verb": "setFlag",
+      "parameters": { "item": "item" },
+      "params": { "condition": "used(?item)", "value": true },
+      "preconditions": [ "has(agent, ?item)", "usable(?item)", "!used(?item)" ],
+      "effects": [ "used(?item)" ],
+      "cost": 1,
+      "noise_level": 0,
+      "duration": 1
+    },
+
+    {
+      "name": "EquipWeapon",
+      "description": "Prendre une arme en main. Une seule a la fois (inventory.weapon_slots) : equiper la seconde range la premiere. C'est cette action qui rend vrai tout ce que l'arme pondere ensuite — le cout d'une effraction au pied-de-biche, celui d'un combat a la machette.",
+      "verb": "setFlag",
+      "parameters": { "item": "item" },
+      "params": { "condition": "equipped(?item)", "value": true },
+      "preconditions": [ "has(agent, ?item)", "usable(?item)", "!equipped(?item)" ],
+      "effects": [ "!equipped(*)", "equipped(?item)" ],
+      "cost": 1,
+      "noise_level": 1,
+      "duration": 0.5
+    },
+
+    {
+      "name": "AttackWithWeapon",
+      "description": "Frapper avec ce qu'on tient. Elle ne remplace pas AttackZombie : les deux coexistent, et GBFS arbitre par le cout. Un survivant sans arme garde exactement le comportement du MVP. La portee vient de l'arme — zombie_in_range vaut a une case pour une machette, a six pour un revolver — et les degats aussi, ce que le verbe damage lit dans le catalogue.",
+      "verb": "damage",
+      "parameters": { "threat": "threat", "item": "item" },
+      "params": { "target": "?threat", "amount": 0 },
+      "preconditions": [ "zombie_in_range(?threat)", "equipped(?item)", "usable(?item)", "!threat_down(?threat)" ],
+      "effects": [ "threat_down(?threat)", "threat_handled" ],
+      "cost": 2,
+      "noise_level": 4,
+      "duration": 1
+    },
+
+    {
+      "name": "ThrowFirecracker",
+      "description": "Une diversion a distance. CreateNoiseDistraction faisait deja du bruit, mais sous les pieds de celui qui le produit, ce qui attirait la horde sur lui ; un petard lance separe enfin le bruit de sa cause. Bruit 10, le maximum du bareme, comme le fusil a pompe.",
+      "verb": "emitNoise",
+      "parameters": { "location": "location" },
+      "params": { "target": "?location", "amount": 10 },
+      "preconditions": [ "has(agent, firecracker)", "known(?location)", "!at(agent, ?location)", "!distraction_created" ],
+      "effects": [ "distraction_created", "!has(agent, firecracker)" ],
+      "cost": 2,
+      "noise_level": 0,
+      "noise_action": "Distraction",
+      "duration": 1
+    },
+
+    {
+      "name": "PushHeavyObject",
+      "description": "Degager un passage, ou refermer une allee derriere soi. On pousse depuis la case adjacente opposee a la direction voulue, jamais en tirant. Au-dela de trois de masse il faut etre deux survivants adjacents — c'est la seule regle du jeu qui donne au regroupement une raison mecanique plutot qu'une consigne, et mass_ok en est la traduction symbolique.",
+      "verb": "push",
+      "parameters": { "heavy": "heavy", "location": "location" },
+      "params": { "target": "?heavy" },
+      "preconditions": [ "at(agent, ?location)", "heavy_at(?heavy, ?location)", "mass_ok(?heavy)" ],
+      "effects": [ "!heavy_at(?heavy, ?location)", "pushed(?heavy)" ],
+      "cost": 3,
+      "noise_level": 4,
+      "duration": 2
     }
   ],
 
@@ -338,9 +433,9 @@
   // de chaque objectif proprement dite vit dans config/utility_goals.json ; celle-ci ne repete que
   // la condition de reussite, cote planificateur.
   "goals": [
-    { "name": "PickUpMedicine", "description": "Reussi quand l'agent porte les medicaments.", "conditions": [ "has(agent, medicine)" ] },
-    { "name": "SearchForMedicine", "description": "Reussi quand l'emplacement des medicaments est connu.", "conditions": [ "medicine_found" ] },
-    { "name": "ReachExtraction", "description": "Reussi quand l'agent a atteint la zone d'extraction avec les medicaments.", "conditions": [ "extracted" ] },
+    { "name": "PickUpObjective", "description": "Reussi quand l'agent porte ce que la mission envoyait chercher.", "conditions": [ "has(agent, objective)" ] },
+    { "name": "SearchForObjective", "description": "Reussi quand l'emplacement de l'objet de la mission est connu.", "conditions": [ "objective_found" ] },
+    { "name": "ReachExtraction", "description": "Reussi quand l'agent a atteint la zone d'extraction avec ce qu'il etait venu chercher.", "conditions": [ "extracted" ] },
     { "name": "CompletePlayerMission", "description": "Reussi quand l'agent a atteint le lieu designe par la consigne du joueur.", "conditions": [ "at(agent, mission)" ] },
     { "name": "ExploreUnknownArea", "description": "Reussi quand la frontiere visee a ete atteinte et observee.", "conditions": [ "explored" ] },
     { "name": "FleeDanger", "description": "Reussi quand l'agent a rejoint un point hors de portee du danger percu.", "conditions": [ "at(agent, away_from_danger)" ] },

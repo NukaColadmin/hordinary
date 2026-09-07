@@ -52,7 +52,7 @@ public sealed class PlanningProblem
         foreach (var candidate in objects)
         {
             // Un nom d'objet est une cle dans les faits : deux objets homonymes rendraient
-            // « at(agent, medicine) » ambigu. Mieux vaut le refuser que planifier au hasard.
+            // « at(agent, objective) » ambigu. Mieux vaut le refuser que planifier au hasard.
             if (_objects.TryAdd(candidate.Name, candidate)) continue;
 
             throw new InvalidOperationException(

@@ -61,8 +61,7 @@ public class ConfigurationTests
                 "run_speed": 7,
                 "panic_rise_per_second": 0.5,
                 "panic_decay_per_second": 0.15,
-                "panic_per_wound": 2.5,
-                "personality": { "courage": 0.5, "loyalty": 0.7, "caution": 0.8 }
+                "panic_per_wound": 2.5
               },
               "utility_ai": {
                 "evaluation_interval": 0.75,
@@ -137,8 +136,6 @@ public class ConfigurationTests
         Assert.Equal(0.5f, config.Survivor.PanicRisePerSecond, 3);
         Assert.Equal(0.15f, config.Survivor.PanicDecayPerSecond, 3);
         Assert.Equal(2.5f, config.Survivor.PanicPerWound, 3);
-        Assert.Equal(0.7f, config.Survivor.Personality.Loyalty, 3);
-        Assert.Equal(0.8f, config.Survivor.Personality.Caution, 3);
 
         Assert.Equal(0.75f, config.UtilityAi.EvaluationInterval, 3);
         Assert.Equal(0.15f, config.UtilityAi.SwitchThreshold, 3);
@@ -261,27 +258,28 @@ public class ConfigurationTests
         Assert.Equal(0.25f, config.Survivor.CalmAmount, 3);
     }
 
+    /// <summary>
+    /// Livrable 7 : ajouter un quatrieme survivant ne doit jamais demander de recompiler. Rien dans
+    /// le code ne nomme Alice, Bob ni Claire.
+    ///
+    /// Un profil ne declare plus que trois choses. Une fiche de personnage — role, caracteristiques,
+    /// aptitudes, competences — n'est pas seulement absente : les proprietes inconnues sont ignorees
+    /// au chargement, donc un vieux fichier se relit sans erreur <b>et</b> sans effet. C'est ce
+    /// second point que ce test verifie : la ligne de base du jeu vaut pour tout le monde, quoi que
+    /// le fichier raconte a cote.
+    /// </summary>
     [Fact]
-    public void Un_survivant_se_declare_entierement_en_configuration()
+    public void Un_survivant_ne_declare_qu_un_identifiant_un_nom_et_une_image()
     {
-        // Livrable 7 : ajouter un quatrieme survivant, ou lui donner une competence, ne doit jamais
-        // demander de recompiler. Rien dans le code ne nomme Alice, Bob ni Claire.
         const string json = """
             {
               "survivors": [
                 {
                   "id": "dan",
                   "name": "Dan",
+                  "character": "male_3",
                   "role": "Guetteur",
-                  "personality": { "courage": 0.3, "loyalty": 0.6, "caution": 0.9 },
                   "max_health": 90,
-                  "walk_speed": 3.5,
-                  "vision_range": 14,
-                  "noise_multiplier": 0.4,
-                  "skills": {
-                    "Observe": { "cost": 0.2, "duration": 0.3 },
-                    "ForceDoor": { "enabled": false }
-                  },
                   "aptitudes": { "exploration": 0.8 }
                 }
               ]
@@ -291,20 +289,16 @@ public class ConfigurationTests
         var profile = SurvivorRoster.FromJson(json).Find("dan");
 
         Assert.NotNull(profile);
-        Assert.Equal("Guetteur", profile.Role);
-        Assert.Equal(0.9f, profile.Personality.Caution, 3);
-        Assert.Equal(0.4f, profile.NoiseMultiplier, 3);
-        Assert.Equal(0.8f, profile.AptitudeFor("exploration"), 3);
-        Assert.False(profile.SkillFor("ForceDoor").Enabled);
+        Assert.Equal("Dan", profile.Name);
+        Assert.Equal("male_3", profile.Character);
 
-        // Les caracteristiques absentes retombent sur la ligne de base, elles ne valent pas zero.
+        // Le role, la sante et l'aptitude declares ci-dessus n'ont aucun effet : Dan part avec la
+        // ligne de base, comme les trois autres.
         var baseline = new SurvivorSettings { MaxHealth = 100f, WalkSpeed = 4f, RunSpeed = 7f };
-        var effective = profile.ApplyTo(baseline);
+        var dan = Survivor.FromProfile(profile, new AgentKnowledge("dan", 5, 5), settings: baseline);
 
-        Assert.Equal(90f, effective.MaxHealth, 3);
-        Assert.Equal(3.5f, effective.WalkSpeed, 3);
-        Assert.Equal(7f, effective.RunSpeed, 3);
-        Assert.Equal(14, profile.ApplyTo(new PerceptionSettings { VisionRange = 8 }).VisionRange);
+        Assert.Equal(100f, dan.Settings.MaxHealth, 3);
+        Assert.Equal(4f, dan.Settings.WalkSpeed, 3);
     }
 
     [Fact]
@@ -315,10 +309,15 @@ public class ConfigurationTests
 
         Assert.Contains("deux fois", duplicate.Message, StringComparison.Ordinal);
 
-        var aptitude = Assert.Throws<InvalidOperationException>(() => SurvivorRoster.FromJson(
-            """{ "survivors": [ { "id": "bob", "name": "Bob", "aptitudes": { "breaching": 4 } } ] }"""));
+        var nameless = Assert.Throws<InvalidOperationException>(() => SurvivorRoster.FromJson(
+            """{ "survivors": [ { "id": "bob" } ] }"""));
 
-        Assert.Contains("entre 0 et 1", aptitude.Message, StringComparison.Ordinal);
+        Assert.Contains("n'a pas de nom", nameless.Message, StringComparison.Ordinal);
+
+        var anonymous = Assert.Throws<InvalidOperationException>(() => SurvivorRoster.FromJson(
+            """{ "survivors": [ { "name": "Bob" } ] }"""));
+
+        Assert.Contains("sans identifiant", anonymous.Message, StringComparison.Ordinal);
     }
 
     [Fact]

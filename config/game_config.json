@@ -1,4 +1,5 @@
 ﻿{
+  "//navigation": "max_explored_nodes est un garde-fou : il evite de geler une frame sur une carte sans solution, il ne regle pas la qualite des trajets. Il valait 4000, taille pour la carte dessinee (754 cellules). Un quartier genere du plus grand profil (livrable 13) compte environ 21 800 cases praticables, et la traversee la plus couteuse mesuree y explore 17 051 noeuds : a 12 000, A* abandonnait un trajet qui existe. 24 000 laisse la recherche balayer le plus grand quartier en entier — c'est le vrai pire cas, et au-dela il n'y a plus de chemin a trouver.",
   "navigation": {
     "known_cell_cost": 1,
     "unknown_cell_cost": 4,
@@ -6,7 +7,7 @@
     "dangerous_cell_cost": 15,
     "closed_door_cost": 3,
     "allow_diagonal": true,
-    "max_explored_nodes": 4000
+    "max_explored_nodes": 24000
   },
 
   "perception": {
@@ -43,23 +44,12 @@
     "heal_amount": 45,
     "calm_amount": 0.4,
 
-    "max_sanity": 200,
-    "sanity_drain_per_second": 6,
-    "sanity_recovery_per_second": 3,
-    "sanity_per_wound": 0.5,
-
     "melee_range": 1,
     "push_back_distance": 3,
 
     "rear_glance_threshold": 0.15,
     "rear_glance_interval": 1.5,
-    "rear_glance_duration": 0.3,
-
-    "personality": {
-      "courage": 0.5,
-      "loyalty": 0.7,
-      "caution": 0.8
-    }
+    "rear_glance_duration": 0.3
   },
 
   "zombies": {
@@ -148,18 +138,35 @@
     "watch_plan_validity": true
   },
 
-  "//mission": "Ce qui se passe une fois l'objectif rempli. Une mission commence et finit au camp : la caisse rentre, le groupe est rappele, et la partie ne s'arrete que lorsque tout le monde est revenu. recall_priority est le poids de l'ordre de retour dans les scores Utility AI — plus eleve que player_order_priority, parce que plus rien au-dehors ne vaut la peine, mais toujours un poids et non une laisse : un survivant poursuivi fuit d'abord. abandon_at_zero_sanity a true fait rentrer de lui-meme un survivant a bout de motivation ; a false, la jauge SANITY redevient un simple indicateur.",
-  "mission": {
-    "recall_priority": 0.9,
-    "recall_reroute": 3,
-    "camp_radius": 1,
-    "abandon_at_zero_sanity": true
+  "//inventory": "Le sac a dos (livrable 11). Le MVP portait un sac sans fond : on ramassait indefiniment, et rien de ce qu'on prenait ne coutait quelque chose. slots est le nombre d'emplacements — un objet empilable en occupe un seul jusqu'a son max_stack de config/items.json. max_weight est le poids transportable avant penalite, dans l'unite des \"weight\" du catalogue : le depasser n'interdit rien, cela ralentit, et rentrer charge reste donc un choix. overweight_speed_penalty est le multiplicateur de vitesse applique au-dela. weapon_slots vaut un : on ne degaine pas deux fusils. drop_on_death laisse l'inventaire au sol, ce qui rend une mort couteuse autrement que par le nombre — et donne une raison d'aller rechercher un corps.",
+  "inventory": {
+    "slots": 6,
+    "max_weight": 20,
+    "weapon_slots": 1,
+    "overweight_speed_penalty": 0.5,
+    "drop_on_death": true
   },
 
   "//debug": "Reglages d'observation, pas de jeu : ils retirent une variable pour rendre les autres lisibles. Ils se reglent ici et nulle part ailleurs, pour qu'une partie se deroule entierement dans le meme regime. enabled est l'interrupteur general : a false, plus de console, plus de touches de debug, plus de texte d'inspection ni d'overlay, quelles que soient les lignes suivantes — on livre le jeu ainsi et on le developpe a true. console_output : le journal (plans, replanifications, bruits, ordres, partages). commands : les touches d'observation F1 a F7, le danger pose a la main, la distraction — pas les commandes du joueur. hud_text : les trois panneaux de texte ; sans eux il reste la carte et la barre d'agents, qui est l'interface du joueur. panic_enabled a false neutralise la panique et le stress (livrable 8) : la panique reste a zero et cesse d'influencer les scores Utility AI, ce qui laisse observer la planification et la navigation seules. Les trois overlays fixent l'etat de depart de F1, F2 et F3.",
   "debug": {
     "enabled": true,
     "console_output": true,
+
+    // Canaux ouverts, par le nom entre crochets qui ouvre chaque ligne du journal. Liste vide : tous.
+    // Canaux disponibles : Config, Carte, Zone, Monde, Objet, Camp, Expedition, Utility, Mission,
+    // Agent, Plan, Action, Replan, IA, Partage, Bruit, Zombie, Combat, Ordre, Camera, Navigation,
+    // Rappel, Partie, Debug.
+    //
+    // Trois sont fermes par defaut, et pour la meme raison : ils repetent ce qu'un autre dit deja.
+    // « IA » redit mot pour mot le bloc de replanification que « Replan » imprime tel que la
+    // specification l'exige. « Action » detaille chaque bruit de pas sous une action que « Plan »
+    // annonce deja. « Partage » compte des croyances echangees a chaque seconde et par paire.
+    // Les rouvrir se fait ici, sans recompilation — c'est tout l'interet d'avoir des canaux.
+    "console_channels": [
+      "Config", "Carte", "Zone", "Monde", "Objet", "Camp", "Expedition", "Utility",
+      "Mission", "Agent", "Plan", "Replan", "Bruit", "Zombie", "Combat",
+      "Ordre", "Camera", "Navigation", "Rappel", "Partie", "Debug"
+    ],
     "commands": false,
     "hud_text": false,
     "skip_setup": false,
@@ -194,3 +201,4 @@
     "danger_confirmed_threshold": 0.6
   }
 }
+

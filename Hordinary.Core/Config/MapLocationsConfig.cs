@@ -58,6 +58,12 @@ public sealed class ZoneDefinition
 
     public ZoneKind Kind { get; init; } = ZoneKind.Other;
 
+    /// <summary>
+    /// Profil de <c>config/zones.json</c>, facultatif. Une zone ecrite a la main peut en declarer un
+    /// pour heriter de son rendement ; la carte de demonstration n'en declare aucun et reste valide.
+    /// </summary>
+    public string? Profile { get; init; }
+
     /// <summary>Coin superieur gauche, inclusif : <c>[x, y]</c>.</summary>
     public int[] Min { get; init; } = [0, 0];
 
@@ -69,6 +75,6 @@ public sealed class ZoneDefinition
         if (Min.Length < 2 || Max.Length < 2)
             throw new InvalidOperationException($"Zone '{Name}' : min et max doivent contenir deux entiers [x, y].");
 
-        return new MapZone(Name, Kind, new GridPosition(Min[0], Min[1]), new GridPosition(Max[0], Max[1]));
+        return new MapZone(Name, Kind, new GridPosition(Min[0], Min[1]), new GridPosition(Max[0], Max[1]), Profile);
     }
 }

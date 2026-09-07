@@ -38,7 +38,7 @@ public readonly record struct DecisionEntry(double At, string Agent, DecisionKin
 /// <code>
 /// [10:42:13] Alice replans
 /// Reason: Front door is locked
-/// Previous goal: Collect medicine
+/// Previous goal: Collect objective
 /// New goal: Find alternate entrance
 /// </code>
 ///

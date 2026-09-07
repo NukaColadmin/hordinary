@@ -16,10 +16,20 @@ public enum ZoneKind
 /// Lieu nomme de la carte, decrit par un rectangle inclusif en coordonnees de tuiles.
 /// Les zones sont declarees dans <c>config/map_locations.json</c> et non codees en dur.
 /// </summary>
-public sealed class MapZone(string name, ZoneKind kind, GridPosition min, GridPosition max)
+public sealed class MapZone(string name, ZoneKind kind, GridPosition min, GridPosition max, string? profile = null)
 {
     public string Name { get; } = name;
     public ZoneKind Kind { get; } = kind;
+
+    /// <summary>
+    /// Profil de <c>config/zones.json</c>, quand la zone en declare un : ce qu'elle <b>contient</b> et
+    /// comment elle est agencee, par-dessus ce qu'elle <b>est</b>.
+    ///
+    /// <see cref="Kind"/> reste la categorie structurelle, celle que la navigation et le planificateur
+    /// connaissent ; le profil est une chaine, et une chaine ne se recompile pas. La carte de
+    /// demonstration n'en declare aucun et reste jouable : le champ est facultatif par construction.
+    /// </summary>
+    public string? Profile { get; } = string.IsNullOrWhiteSpace(profile) ? null : profile;
     public GridPosition Min { get; } = new(Math.Min(min.X, max.X), Math.Min(min.Y, max.Y));
     public GridPosition Max { get; } = new(Math.Max(min.X, max.X), Math.Max(min.Y, max.Y));
 
@@ -41,5 +51,6 @@ public sealed class MapZone(string name, ZoneKind kind, GridPosition min, GridPo
         }
     }
 
-    public override string ToString() => $"{Name} [{Kind}] {Min}-{Max}";
+    public override string ToString()
+        => $"{Name} [{Kind}{(Profile is { } profile ? $"/{profile}" : string.Empty)}] {Min}-{Max}";
 }

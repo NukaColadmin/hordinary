@@ -34,12 +34,12 @@ public class PlannedMissionTests
         // Au depart elle ignore ou sont les medicaments : il faut aller fouiller.
         Assert.Empty(mission.Alice.Knowledge.KnownItems);
 
-        bool collected = mission.RunUntil(() => mission.Alice.Carries(ItemKind.Medicine));
+        bool collected = mission.RunUntil(() => mission.Alice.Carries(Survivor.DefaultObjectiveItem));
 
         Assert.True(collected, $"Medicaments non recuperes. {mission.Trace()}");
 
         // Ils ont bien change de main : ils ne sont plus par terre.
-        Assert.DoesNotContain(mission.World.Items.Values, item => item.Kind == ItemKind.Medicine);
+        Assert.DoesNotContain(mission.World.Items.Values, item => item.ItemId == Survivor.DefaultObjectiveItem);
 
         // Et elle est allee les chercher : ils ne se sont pas teleportes dans son sac depuis le depart.
         var pharmacy = mission.Map.GetZone(ZoneKind.Pharmacy)!;
@@ -65,7 +65,7 @@ public class PlannedMissionTests
             mission.Spawn(ZoneKind.Pharmacy),
             MissionRun.Config.UtilityAi.PlayerOrderPriority);
 
-        Assert.True(mission.RunUntil(() => mission.Alice.Carries(ItemKind.Medicine)), "Medicaments non recuperes.");
+        Assert.True(mission.RunUntil(() => mission.Alice.Carries(Survivor.DefaultObjectiveItem)), "Medicaments non recuperes.");
 
         var extraction = mission.Map.GetZone(ZoneKind.Extraction)!;
         bool extracted = mission.RunUntil(() => extraction.Contains(mission.Alice.Position));
@@ -97,7 +97,7 @@ public class PlannedMissionTests
     public void Un_plan_valide_n_est_pas_remis_en_cause_sans_raison()
     {
         var mission = new MissionRun();
-        mission.RunUntil(() => mission.Alice.Carries(ItemKind.Medicine));
+        mission.RunUntil(() => mission.Alice.Carries(Survivor.DefaultObjectiveItem));
 
         // Il n'y a ni zombie ni porte verrouillee sur cette carte : chaque replanification doit
         // pouvoir nommer quelque chose qui est reellement arrive — un mur decouvert, une precondition

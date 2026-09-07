@@ -82,10 +82,7 @@ Trois usages honnêtes, par ordre de rendement :
    sur la palette imposée, nettoyer. Fonctionne pour les objets et le décor, jamais pour les
    personnages animés.
 3. **Outil dédié au pixel art** — un modèle spécialisé ou un éditeur (Aseprite) donne un meilleur
-   résultat que n'importe quel prompt sur les personnages. C'est là que se dessinent les pawns.
-   L'abandon des calques (section 5) lève la contrainte la plus dure de ce lot — plus rien n'a à
-   s'empiler au pixel près sur une même grille — ce qui rend l'usage 1 réellement praticable sur les
-   personnages : générer une planche de référence par personnage, puis pixeliser à la main.
+   résultat que n'importe quel prompt sur les portraits, le seul art de personnage restant (section 5).
 
 Les prompts ci-dessous sont donc écrits comme des **spécifications visuelles** : ils décrivent ce qu'il
 faut obtenir, que le chemin passe par une génération, une planche de référence ou un pixel posé à la
@@ -97,11 +94,10 @@ Contraintes non négociables, valables pour toute image du projet.
 
 | Contrainte | Valeur | Source |
 |------------|--------|--------|
-| **Frames d'animation** | **Aucune** | Tout mouvement est produit par le code : rotation, oscillation, teinte, bond d'attaque. Voir section 5.0 |
+| **Frames d'animation** | **Aucune** | Tout mouvement des survivants et des zombies est produit par le code (`SurvivorNode.cs`, `ZombieNode.cs`), pas par un sprite |
 | Taille de tuile | **32 × 32 px** | `tile_size` de [tile_legend.json](../config/tile_legend.json) |
-| Taille de personnage | **32 × 48 px** | Modèle *pawn* (section 5) : **une image entière**, 3 vues fixes, aucun calque. Plus haut que la tuile : la tête dépasse, c'est ce qui fait la lisibilité et le côté mignon |
 | Portrait / buste | **64 × 64 px** | Grille du bas et panneau latéral (livrable 12) |
-| Icône d'inventaire | **48 × 48 px** | Vue de trois quarts, pas de dessus |
+| Icône d'inventaire | **la tuile 32 × 32 de l'objet** | Aucune image à part : un emplacement affiche la tuile à un facteur d'échelle entier |
 | Vue | **Dessus, légèrement inclinée (~60°)** | Assez de face pour qu'on reconnaisse les objets |
 | Contour | **1 px, teinte foncée de la couleur de base** | Jamais noir pur. **Reste à 1 px** : le contour deux fois plus fin à l'écran *est* le gain du passage à 32 |
 | Ombre portée | **2 px, sous l'objet, couleur unique** | Fixe, aucune ombre dirigée. Elle porte un poids visuel, pas un détail : à 1 px elle disparaîtrait |
@@ -150,8 +146,7 @@ text, letters, watermark, signature, 3D render, photorealism, gore, blood,
 grim desaturated palette, multiple objects, frame, border, background scenery
 ```
 
-Pour un personnage, remplacer `32x32 pixels` par `32x48 pixels` et
-`single object centered` par `single character centered, chibi proportions, head about 40% of height`.
+Le seul prompt de personnage du projet est celui des portraits (section 5.1), déjà complet et autonome.
 
 ## 3. Palette globale
 
@@ -170,7 +165,7 @@ Deux familles, et c'est la règle de ton de la section 1 rendue opérationnelle.
 **Froide — zombies, menace, jauges critiques, ceintures de quartier**
 
 ```text
-#8fa87c  vert olive désaturé (peau de zombie)
+#8fa87c  vert olive désaturé (teinte de zombie appliquée par code dans ZombieNode.cs)
 #5a7a6b  vert-gris (végétation morte, métal oxydé)
 #3d5a6c  bleu ardoise (béton, grillage, ombre)
 #2b3a45  bleu nuit (contours froids)
@@ -180,7 +175,7 @@ Deux familles, et c'est la règle de ton de la section 1 rendue opérationnelle.
 Un sprite ne mélange **pas** les deux familles, sauf pour son contour. C'est ce qui garantit qu'un
 zombie reste identifiable en périphérie de l'écran, à toute vitesse de jeu.
 
-## 4. Prompts — Livrable 11 : 57 tuiles et 15 icônes (72 images)
+## 4. Prompts — Livrable 11 : 57 tuiles
 
 Prompt complet = préambule + colonne « Sujet » + suffixe. Le **détail décalé** est l'avant-dernière
 colonne : c'est là, et seulement là, que vit le « décalé » de la direction artistique. La colonne
@@ -188,8 +183,8 @@ colonne : c'est là, et seulement là, que vit le « décalé » de la direction
 
 **Toutes les tuiles de cette section font 32 × 32 px**, sans exception : c'est la définition d'une
 tuile. Elle est répétée ligne à ligne pour que la table serve de bon de commande sans qu'on ait à
-remonter au texte. La seule table qui n'est pas faite de tuiles est la 4.7, les icônes d'inventaire, en
-48 × 48 : 49 tuiles à produire, plus 8 à refaire (4.9), plus 15 icônes.
+remonter au texte. Toutes les tables sont faites de tuiles, y compris pour l'inventaire : 49 tuiles à
+produire, plus 8 à refaire (4.9), et rien d'autre.
 
 ### 4.1 Décor bloquant (5)
 
@@ -226,8 +221,9 @@ saute aux yeux sur une chaussée. Les cinq sols sont à redessiner, pas à mettr
 
 ### 4.4 Objets au sol (14)
 
-Chacun a aussi une **icône d'inventaire** (section 4.7). Ajouter au préambule :
-`small pickup item lying on the ground, seen from above`.
+Chacune de ces tuiles est **aussi** l'icône d'inventaire de l'objet (section 4.7) : elle sera vue de
+loin sur un sol chargé et de près dans un emplacement, et doit tenir dans les deux cas. Ajouter au
+préambule : `small pickup item lying on the ground, seen from above`.
 
 | Tuile | Dimensions | Sujet | Détail décalé |
 |-------|-----------|-------|---------------|
@@ -246,9 +242,9 @@ Chacun a aussi une **icône d'inventaire** (section 4.7). Ajouter au préambule 
 | `WeaponCrowbar` | **32 × 32** | `a red steel crowbar, curved claw end` | Un bout de peinture écaillée en forme de cœur |
 | `WeaponMachete` | **32 × 32** | `a machete with a wide blade and a black rubber grip` | Un fourreau tressé main, avec un pompon |
 
-Les cinq armes existent en **trois images distinctes** : la tuile au sol ci-dessus (32 × 32, vue de
-dessus), l'icône d'inventaire (48 × 48, trois quarts, section 4.7) et le sprite tenu (32 × 16, profil,
-section 5.1). Trois cadrages, trois tailles, le même objet.
+Les cinq armes existent en **deux images distinctes** : la tuile au sol ci-dessus (32 × 32, vue de
+dessus), qui sert aussi d'icône d'inventaire, et le sprite tenu (32 × 16, profil, section 5.1). Deux
+cadrages, deux tailles, le même objet.
 
 ### 4.5 Objets lourds et barricades (5)
 
@@ -281,31 +277,27 @@ Les trois états d'une réserve doivent être **exactement superposables** : mê
 seul le contenu change. C'est ce qui fait qu'on lit la jauge et non trois dessins différents. Le plus
 simple est de dessiner l'état plein, puis d'effacer.
 
-### 4.7 Icônes d'inventaire (15)
+### 4.7 Icônes d'inventaire (0 — ce sont les tuiles)
 
-Mêmes objets qu'en 4.4, plus `medikit`, mais **vue de trois quarts** et en **48 × 48 px**. Préambule
-modifié :
+**Rien à produire ici.** L'icône d'inventaire d'un objet est sa tuile de la section 4.4, affichée dans
+un emplacement du panneau latéral à un facteur d'échelle entier. `medikit` compris.
 
-```text
-cute chibi pixel art inventory icon, 48x48 pixels, three-quarter view,
-single item centered on transparent background, limited palette of 4 to 6 colors,
-flat shading with two tones, 1px dark outline in a darker shade of the base hue,
-warm saturated colors, rounded friendly shapes, no anti-aliasing,
-crisp hard pixel edges, RPG inventory icon style —
-```
+La version précédente de cette section commandait quinze dessins de plus, vus de trois quarts et en
+48 × 48. Ce n'est pas seulement une économie de quinze images. Deux dessins pour un objet, ce sont deux
+vérités à tenir accordées : la première fois qu'on repeint l'une sans l'autre, une conserve n'a plus la
+même tête selon qu'on la regarde par terre ou dans un sac, et le lien entre l'objet ramassé et l'objet
+porté — qui est tout ce que l'inventaire a à raconter — se défait. Ici, repeindre l'atlas repeint
+l'inventaire.
 
-| Icône | Dimensions |
-|-------|-----------|
-| `IconCannedFood`, `IconWaterCan`, `IconBandage`, `IconMedikit`, `IconFuelCan` | **48 × 48** chacune |
-| `IconAmmoBox`, `IconFlashlight`, `IconRadio`, `IconFirecracker`, `IconToolbox` | **48 × 48** chacune |
-| `IconRevolver`, `IconShotgun`, `IconBaseballBat`, `IconCrowbar`, `IconMachete` | **48 × 48** chacune |
+Deux conséquences pour la table 4.4, dont les tuiles portent maintenant les deux usages :
 
-Le sujet et le détail décalé sont **identiques** à la table 4.4 : c'est le même objet, sous un autre
-angle. Réutiliser les mêmes descriptions garantit la cohérence entre le sol et l'inventaire.
+* **un objet doit rester lisible isolé**, sur fond de panneau, et pas seulement posé sur un sol. C'est
+  ce que garantissent déjà le contour d'1 px et le fond transparent ;
+* **l'agrandissement se fait à l'entier**, jamais à 1,5×. Une tuile de 32 px s'affiche à 32 ou à 64,
+  au plus proche voisin ; toute autre valeur donne des pixels de largeurs inégales dans la même image.
 
-48 plutôt que 64 : l'icône n'est pas une tuile, elle vit dans un emplacement du panneau latéral
-(livrable 12) et n'a aucune raison de s'aligner sur la grille. 48 est le double de la valeur d'origine,
-donc la même densité de pixel que tout le reste — c'est le seul critère qui compte ici.
+Côté code, c'est `TileLegend.TileOf(id)` qui donne l'adresse de la tuile dans l'atlas, et `ItemIcons`
+qui la découpe. Aucun nom de fichier d'icône n'existe nulle part.
 
 ### 4.8 Zones (6)
 
@@ -359,194 +351,37 @@ redessiné, c'est le moment de la retirer et de retrouver une grille en multiple
 emplacements suffisent avec sept de marge. Si tu tiens à conserver la séparation d'1 px, l'atlas devient
 263 × 263 — ça marche, mais les coordonnées cessent d'être rondes.
 
-## 5. Personnages — modèle Pawn
+## 5. Personnages et interface
 
-Survivants et zombies partagent **un seul modèle**, repris de RimWorld : le *pawn*. C'est ce qui rend
-la production tenable, et ce qui garantit qu'un zombie et un survivant se lisent comme deux états d'une
-même chose — ce qu'ils sont.
+Un survivant est identifié en jeu par un **anneau de couleur au sol et son nom au-dessus de la tête**,
+tous deux tirés par le code dans [SurvivorNode.cs](../Scripts/Agents/SurvivorNode.cs) — le corps reste le
+cercle actuel. **Aucun sprite de personnage (« pawn »), de zombie ou d'état de van n'est prévu** : ce
+n'est pas une étape reportée, c'est hors périmètre. Le seul art de personnage produit est le
+**portrait**, utilisé par le panneau latéral et la grille du bas ; il est déjà livré dans
+`Assets/Portraits/`.
 
-> **Décision du 2026-08-06 — le pawn n'est plus un empilement de calques.** Un personnage est désormais
-> **une seule image entière**, livrée en couleur, et il en existe **six** : trois femmes et trois
-> hommes. L'identification d'un survivant n'est plus portée par son apparence mais par **un anneau de
-> couleur au sol, généré par le code, et son nom affiché au-dessus de sa tête**. Ce qui a été abandonné,
-> et pourquoi : l'empilement corps / vêtement / tête / cheveux exigeait un alignement au pixel près
-> entre quatre images sur la même grille, chose qu'aucune génération ne garantit (section 1) et que la
-> main paie cher ; la recoloration en niveaux de gris à deux tons donnait de la variété là où le joueur
-> n'en demandait pas, puisqu'il identifie ses trois survivants par le nom et la couleur, pas par leur
-> coupe de cheveux. Le budget passe de 45 à 27 images pour les deux familles.
+### 5.1 Portraits — six personnages
 
-> **Répartition avec le livrable 12.** Cette section donne les **prompts** et les dimensions ; le
-> **catalogue de sprites** de
-> [12-interface-survivants-et-van.md](./12-interface-survivants-et-van.md) donne les **noms de
-> fichiers**, la convention de nommage et l'ordre de production. Un chiffre qui apparaît des deux
-> côtés — 18 survivants, 9 zombies, 5 armes, 6 portraits, 3 états de van — doit être le même dans les
-> deux documents.
-
-### 5.0 Le modèle Pawn
-
-#### Aucune frame d'animation
-
-**Aucun sprite de ce projet n'est une frame d'animation.** Un pawn est une image fixe ; tout mouvement
-est produit par le code. C'est exactement la méthode de RimWorld, dont les pawns ne possèdent aucune
-animation dessinée et restent pourtant parfaitement lisibles.
-
-Ce que le code produit, et qu'il ne faut donc **pas** dessiner :
-
-| Effet | Comment le code le produit | Remplace |
-|-------|---------------------------|----------|
-| Orientation | Choix parmi 3 vues + miroir horizontal pour l'ouest | 4 jeux directionnels |
-| Marche | Oscillation verticale de **2 px**, sinusoïdale, à la cadence du déplacement | 4 frames de marche |
-| Course | La même oscillation, plus rapide et d'amplitude **4 px** | 4 frames de course |
-| Attaque | Bond de **6 px** vers la cible puis retour (interpolation courte) | 3 frames d'attaque |
-| Visée | **Rotation libre du sprite d'arme** vers la cible | Un jeu d'armes par direction |
-| Dégât reçu | Teinte blanche pendant 0,1 s (`Modulate`) | Frame de touche |
-| Blessé | Inclinaison permanente de 6°, teinte légèrement désaturée | Jeu de sprites « blessé » |
-| Panique | Tremblement de **2 px**, haute fréquence | Jeu de sprites « paniqué » |
-| À terre / mort | Rotation à 90° du pawn entier + fondu | Frame « à terre » |
-| Fouille | Bob accéléré et léger rétrécissement vertical | 2 frames de fouille |
-
-Les amplitudes en pixels de cette table sont en **pixels monde** et ont toutes doublé avec la tuile :
-une oscillation de 1 px sur une tuile de 32 se verrait deux fois moins qu'elle ne se voyait sur une
-tuile de 16. Les angles et les durées, eux, ne changent pas — ils ne dépendent pas de l'échelle.
-
-Le rendu actuel dessine déjà des cercles par code dans
-[SurvivorNode.cs](../Scripts/Agents/SurvivorNode.cs) et
-[ZombieNode.cs](../Scripts/Agents/ZombieNode.cs) : ces effets viennent **remplacer le cercle**, pas
-s'ajouter à un système d'animation qui n'existe pas.
-
-#### Les trois vues
-
-Un pawn n'est pas librement pivoté — une tête vue de dessus n'est qu'une tache. Comme dans RimWorld, on
-dessine **trois vues** et le code choisit :
-
-```text
-face (sud)   →  le pawn vient vers le joueur, visage visible
-dos  (nord)  →  le pawn s'éloigne, arrière du crâne
-profil (est) →  vue de côté
-profil miroir (ouest) →  le même sprite, retourné par le code
-```
-
-Quatre orientations pour trois images. **Seule l'arme tenue tourne librement**, à 360°, parce qu'un
-objet allongé reste lisible sous tous les angles — c'est la réconciliation exacte entre « rotation gérée
-dans le code » et « pawn RimWorld ».
-
-#### Un personnage, une image
-
-Il n'y a **pas de calques**. Un pawn est une image entière, livrée en couleur, qui contient déjà son
-corps, sa tenue, son visage et ses cheveux. Deux seules choses se dessinent par-dessus, et aucune des
-deux n'est un morceau de personnage :
-
-```text
-pawn         (le personnage entier, 32 × 48, une image par vue)
-arme tenue   (si équipée)   ← rotation libre, à côté du pawn, jamais alignée sur lui
-```
-
-Ce que cela supprime : l'alignement au pixel près entre calques, la livraison en niveaux de gris, la
-recoloration par `appearance.palette`, et la contrainte que chaque calque occupe la toile entière. Un
-pawn se dessine comme un dessin.
-
-#### L'identification est du code, pas du dessin
-
-Six personnages pour un roster qui peut en compter davantage : **deux survivants peuvent partager un
-sprite.** C'est assumé, parce que ce n'est pas le sprite qui dit qui est qui.
-
-| Signe | Production | Règle |
-|-------|-----------|-------|
-| **Anneau au sol** | Ellipse aplatie de **2 px**, sous les pieds, tirée par le code | Unique parmi les survivants vivants |
-| **Nom au-dessus de la tête** | `DrawStringOutline` puis `DrawString`, taille 8, contour sombre de 2 px | Teinté de la **couleur de l'anneau**, ce qui relie les deux |
-| Sélection | Arc blanc de 1,5 px, à l'extérieur de l'anneau | S'ajoute à l'anneau, ne le remplace jamais |
-
-L'anneau est **au sol** et non un contour du personnage. Teinter le contour du sprite aurait été plus
-direct, mais entre en conflit avec la règle de contour de la section 2 — 1 px, teinte foncée de la
-couleur de base, jamais noir pur — et disparaît sur un sol de la même famille chromatique. Un anneau au
-sol reste visible quelle que soit la tuile, ne masque rien du personnage, et supporte que trois
-survivants se tiennent côte à côte.
-
-Ces deux signes existent **déjà** dans [SurvivorNode.cs](../Scripts/Agents/SurvivorNode.cs) : ils
-survivront tels quels au remplacement du rond par le sprite. La couleur vient de `RingColors` dans
-[GameRoot.cs](../Scripts/Game/GameRoot.cs).
-
-#### Préambule personnages
-
-Un pawn fait **32 × 48 px**, une image par vue.
-
-```text
-cute chibi pixel art character, 32x48 pixels, top-down view tilted about 60 degrees,
-RimWorld pawn style: a static standing figure seen from above and slightly in front,
-chibi proportions with head about 40% of total height,
-simple readable face with dot eyes, flat shading with two tones,
-1px dark outline in a darker warm brown (never pure black),
-rounded friendly shapes, clear silhouette readable at small size,
-single static pose, no motion, transparent background, no anti-aliasing,
-crisp hard pixel edges, full character sprite for a top-down colony game —
-```
-
-**Les six silhouettes doivent se distinguer sans la couleur.** C'est la contrainte qui remplace celle de
-l'alignement : plus rien ne varie par recoloration, donc la capuche, le chignon, le bonnet, la salopette
-et le manteau long sont ce qui rend deux personnages différents à 32 px. Un test simple : passées en
-noir plein, les six restent-elles reconnaissables ?
-
-### 5.1 Survivants — six personnages
-
-**Trois femmes et trois hommes.** Ce sont bien six personnages, et non six bases à habiller : chacun est
-fini, livré en couleur, et se reconnaît à sa silhouette. Le générateur du livrable 12 leur attribue un
-nom, une couleur d'anneau et des caractéristiques ; il ne touche pas au dessin.
+**Trois femmes et trois hommes.** Le générateur de survivants du livrable 12 leur attribue un nom, une
+couleur d'anneau et des caractéristiques ; il ne touche pas au dessin.
 
 #### Femmes
 
-| Sprite | Sujet | Silhouette | Détail décalé |
-|--------|-------|-----------|---------------|
-| `pawn_female_1` | `a young adult woman survivor, lean build, a hooded sweatshirt under a light utility vest with pockets, rolled-up trousers, sturdy sneakers, a satchel worn across the body, alert focused expression` | **Capuche relevée** | Le gilet est couvert de badges brodés dépareillés, dont un clairement issu d'un parc d'attractions |
-| `pawn_female_2` | `a woman survivor in her sixties, small and square, a thick knitted cardigan over a work apron, long skirt, grey hair pulled into a tight bun, reading glasses hanging on a cord, unimpressed expression` | **Chignon serré, silhouette large** | Elle porte encore ses pantoufles à motif de canards, qu'elle n'a jamais jugé utile de remplacer |
-| `pawn_female_3` | `a young woman survivor, wiry build, a cropped jacket over a tank top, cycling shorts, knee pads, short hair in two stubby braids, a bicycle helmet, restless expression` | **Casque + nattes courtes** | Le casque est saturé d'autocollants de groupes de musique, dont deux se recouvrent |
+| Portrait | Sujet | Détail décalé |
+|----------|-------|---------------|
+| `portrait_female_1` | `a young adult woman survivor, lean build, a hooded sweatshirt under a light utility vest with pockets, alert focused expression` | Le gilet est couvert de badges brodés dépareillés, dont un clairement issu d'un parc d'attractions |
+| `portrait_female_2` | `a woman survivor in her sixties, small and square, a thick knitted cardigan, grey hair pulled into a tight bun, reading glasses hanging on a cord, unimpressed expression` | Elle porte encore ses pantoufles à motif de canards, qu'elle n'a jamais jugé utile de remplacer |
+| `portrait_female_3` | `a young woman survivor, wiry build, a cropped jacket, short hair in two stubby braids, a bicycle helmet, restless expression` | Le casque est saturé d'autocollants de groupes de musique, dont deux se recouvrent |
 
 #### Hommes
 
-| Sprite | Sujet | Silhouette | Détail décalé |
-|--------|-------|-----------|---------------|
-| `pawn_male_1` | `a young adult man survivor, sturdy build, plain t-shirt under an open work jacket, cargo trousers, worn boots, a small canvas backpack, tired but determined expression` | **Sac à dos** | Le sac est manifestement un cartable d'écolier réutilisé, avec un porte-clés en peluche accroché à la fermeture |
-| `pawn_male_2` | `a tall thin man survivor, a long overcoat several sizes too big, a scarf wrapped twice around the neck, a woollen hat pulled down low, thin trousers, worn dress shoes, anxious expression` | **Manteau long, bonnet** | Une cravate nouée par-dessus le manteau, comme s'il partait travailler |
-| `pawn_male_3` | `a stocky middle-aged man survivor, sleeveless dungarees over a striped shirt, heavy work gloves, a loaded tool belt, thick boots, bald head, calm patient expression` | **Salopette, ceinture à outils** | L'un des outils de la ceinture est une spatule de cuisine, glissée entre deux clés à molette |
+| Portrait | Sujet | Détail décalé |
+|----------|-------|---------------|
+| `portrait_male_1` | `a young adult man survivor, sturdy build, plain t-shirt under an open work jacket, tired but determined expression` | Le sac est manifestement un cartable d'écolier réutilisé, avec un porte-clés en peluche accroché à la fermeture |
+| `portrait_male_2` | `a tall thin man survivor, a long overcoat several sizes too big, a scarf wrapped twice around the neck, a woollen hat pulled down low, anxious expression` | Une cravate nouée par-dessus le manteau, comme s'il partait travailler |
+| `portrait_male_3` | `a stocky middle-aged man survivor, sleeveless dungarees over a striped shirt, heavy work gloves, bald head, calm patient expression` | L'un des outils de la ceinture est une spatule de cuisine, glissée entre deux clés à molette |
 
-#### Ce qu'il faut produire
-
-| Groupe | Dimensions | Personnages | Vues | Images |
-|--------|-----------|-------------|------|--------|
-| Survivants | **32 × 48** | 6 (3 femmes, 3 hommes) | 3 | **18** |
-
-Trois vues par personnage — `face`, `dos`, `profil` — l'ouest étant le profil retourné par le code.
-
-**Il n'y a pas de jeu étendu.** Ajouter de la variété se fait en ajoutant un septième personnage entier
-(+3 images), pas une coiffure de plus. C'est le seul axe d'extension, et il est facultatif : six
-personnages pour un roster de trois à cinq survivants suffisent largement, et le doublon est déjà
-résolu par l'anneau et le nom.
-
-#### Armes tenues (5)
-
-Une image par arme, **vue de profil**, tournée librement par le code vers la cible. C'est le seul sprite
-du jeu qui pivote à 360°.
-
-```text
-cute chibi pixel art weapon, 32x16 pixels, side profile view, held-weapon sprite
-for a top-down colony game, flat shading with two tones, 1px dark outline,
-horizontal orientation with the grip on the left, transparent background,
-no anti-aliasing, crisp hard pixel edges —
-{revolver | pump-action shotgun | wooden baseball bat | red steel crowbar | machete}
-```
-
-| Sprite tenu | Dimensions |
-|-------------|-----------|
-| `held_revolver`, `held_shotgun` | **32 × 16** chacun |
-| `held_baseball_bat`, `held_crowbar`, `held_machete` | **32 × 16** chacun |
-
-Les détails décalés sont ceux de la table 4.4 : c'est la même arme que celle posée au sol.
-
-**Point de pivot.** Ce sprite tourne, donc sa toile compte autant que son dessin : la poignée est à
-gauche et le code fait pivoter autour d'elle. Placer la poignée au même pixel sur les cinq armes, sans
-quoi elles ne tiendront pas dans la main au même endroit. Le doublement à 32 × 16 rend ce calage deux
-fois plus précis, et c'est le gain le plus utile de toute la section 5.
-
-#### Portraits — un par personnage
+#### Prompt
 
 ```text
 cute chibi pixel art character portrait bust, 64x64 pixels, front three-quarter view,
@@ -556,98 +391,15 @@ transparent background, no anti-aliasing, crisp hard pixel edges,
 colony sim character portrait style — {l'un des six sujets ci-dessus}
 ```
 
-**Six portraits, un par personnage**, en une seule image chacun : `portrait_female_{1,2,3}` et
-`portrait_male_{1,2,3}`. Plus de calques, plus de recoloration — le portrait montre exactement le
-personnage du pawn, coiffure comprise, ce que le découpage en couches ne garantissait jamais tout à
-fait.
-
 | Groupe | Dimensions | Images |
 |--------|-----------|--------|
 | Portraits | **64 × 64** | **6** |
 
-Le nombre ne change pas ; ce qui change est que ces six images sont six personnes au lieu de six
-morceaux. La vignette de la grille du bas reprend l'**anneau de couleur** en bordure du portrait :
-c'est le même signe que sur la carte, donc le même geste de reconnaissance.
+La vignette de la grille du bas entoure le portrait de l'**anneau de couleur** du survivant : c'est le
+même signe que sur la carte, donc le même geste de reconnaissance — et c'est lui qui distingue deux
+survivants partageant un portrait.
 
-### 5.2 Zombies — le même pawn, refroidi
-
-Un zombie est un pawn : même format, mêmes trois vues, même image entière. Ce qui change est la
-**palette** — famille froide, section 3 — et la posture. C'est la règle de ton de la section 1 rendue littérale :
-même registre graphique, et pourtant on ne les confond jamais.
-
-**Ce qui distingue un zombie d'un survivant, et qui doit être dessiné :**
-
-* peau vert olive désaturé (`#8fa87c`), jamais un teint chaud ;
-* posture voûtée, épaules tombantes, bras pendants — visible dès la silhouette ;
-* tête inclinée sur le côté, traits creusés, yeux sans pupille ;
-* vêtements déchirés et délavés vers le gris-vert, dont on reconnaît encore le métier d'avant.
-
-**Aucun détail décalé, aucune blague, aucun gore.** C'est la seule famille de sprites du projet à
-laquelle la règle du décalé ne s'applique pas : la menace doit peser, sinon l'arbitrage fuir / combattre
-/ aider de la Utility AI n'a plus d'enjeu. Un zombie n'est pas effrayant par le sang, il l'est par
-l'immobilité de son visage.
-
-#### Prompt
-
-```text
-{préambule personnages}
-a shambling zombie, hunched posture with drooping shoulders and slack hanging arms,
-head tilted to one side, hollow cheeks, blank pupil-less eyes, no blood no gore,
-desaturated olive-green skin, torn faded clothing washed out to grey-green,
-cold desaturated palette only —
-{variante ci-dessous}
-```
-
-| Variante | Sujet | Ce qu'elle raconte |
-|----------|-------|--------------------|
-| `zombie_civil` | `wearing a torn shirt and trousers, ordinary and unremarkable` | Le fond de la horde |
-| `zombie_employe` | `wearing a shop apron over a uniform shirt, name badge still pinned on` | Il travaillait au supermarché où vous êtes entré |
-| `zombie_secours` | `wearing a torn high-visibility jacket with faded reflective stripes` | Les secours sont venus, et sont restés |
-
-Le troisième est le plus utile des trois : une veste réfléchissante délavée reste identifiable de loin,
-ce qui donne un point de repère dans une horde.
-
-#### Ce qu'il faut produire
-
-| Groupe | Dimensions | Variantes | Vues | Images |
-|--------|-----------|-----------|------|--------|
-| Zombies | **32 × 48** | 3 (`civil`, `employe`, `secours`) | 3 | **9** |
-
-Trois zombies entiers, cheveux compris, comme les survivants. La mutualisation des coiffures qui faisait
-tenir les zombies dans 15 images n'a plus d'objet : sans calques chez les survivants, il n'y a rien à
-réemprunter — et il n'y en a plus besoin, puisque neuf images entières coûtent moins que quinze calques.
-
-**Un zombie n'a ni anneau ni nom.** C'est ce qui, sur la carte, sépare instantanément les vôtres des
-autres : ce qui porte une couleur au sol est quelqu'un.
-
-#### L'état du zombie reste du code
-
-`ZombieNode.cs` colore déjà le zombie selon son état (`Calm`, `Curious`, `Searching`, `Hunting`). Cette
-signalétique est **conservée telle quelle** et appliquée en teinte sur le pawn plutôt que sur un cercle :
-c'est une information de debug et de lisibilité, pas une variante de sprite. Aucune image à produire
-pour les quatre états.
-
-### 5.3 Van (3 états)
-
-Empreinte de **2 × 3 cases**, soit **64 × 96 px**. Préambule modifié : `64x96 pixels`.
-
-| Sprite | Dimensions | Sujet | Détail décalé |
-|--------|-----------|-------|---------------|
-| `van_idle` | **64 × 96** | `a small delivery van seen from above, warm cream and faded orange paint, side door slid open, roof rack loaded with jerrycans and rope` | Le logo d'une entreprise de livraison de pizzas, à moitié effacé |
-| `van_running` | **64 × 96** | `the same van, headlights on, rear door closed` | Le même logo, plus une guirlande de fanions sur le pare-chocs |
-| `van_dry` | **64 × 96** | `the same van, tilted on a flat tire, fuel cap open, no lights, dust settled on the roof` | Un essuie-glace resté levé, comme un bras qui salue |
-
-L'empreinte est en **cases**, pas en pixels : c'est elle qui est normative. 2 × 3 cases de 32 px font
-64 × 96, et les trois états doivent être superposables au pixel près pour que le van ne se déplace pas
-d'un cheveu en changeant d'état.
-
-Trois images fixes, comme le reste : le panache d'échappement et la trépidation du moteur en marche sont
-des particules et une oscillation de **2 px** produites par le code, pas des frames.
-
-Le van est le sprite le plus regardé du jeu — départ et retour de chaque mission. C'est celui sur lequel
-il faut passer le plus de temps.
-
-### 5.4 Interface
+### 5.2 Interface
 
 Pour l'interface, générer des **planches groupées** plutôt qu'un élément par prompt : la cohérence d'une
 interface tient à ce que ses pièces soient dessinées ensemble.
@@ -655,13 +407,13 @@ interface tient à ce que ses pièces soient dessinées ensemble.
 | Planche | Dimensions | Prompt |
 |---------|-----------|--------|
 | Cadres de panneaux | **bordure 16 px, coin 32 × 32** (9-slice) | `cute pixel art UI panel frame set, 9-slice ready, warm cream paper background with a hand-drawn brown border, slightly uneven lines as if drawn by hand, corner ornaments, three sizes, flat colors, no anti-aliasing, game HUD asset sheet` |
-| Jauges | **96 × 16** chacune | `cute pixel art horizontal gauge bars, 96x16 pixels each, rounded ends, empty and full versions, four colors: warm green health, warm amber motivation, cold blue panic, pale yellow stamina, 1px dark outline, flat fill, no gradient` |
-| Icônes d'état | **24 × 24** chacune | `cute pixel art status icon set, 24x24 pixels each, transparent background, flat colors, thick outline: bandaged head for wounded, wide eyes for panicked, heavy backpack for overloaded, small weapon for armed, antenna for radio, home arrow for recalled` |
+| Jauges | **96 × 16** chacune | `cute pixel art horizontal gauge bars, 96x16 pixels each, rounded ends, empty and full versions, three colors: warm green health, cold blue panic, pale yellow stamina, 1px dark outline, flat fill, no gradient` |
+| Icônes d'état | **24 × 24** chacune | `cute pixel art status icon set, 24x24 pixels each, transparent background, flat colors, thick outline: bandaged head for wounded, wide eyes for panicked, heavy backpack for overloaded, small weapon for armed, antenna for radio` |
 | Curseurs | **32 × 32** chacun | `cute pixel art cursor set, 32x32 pixels: a rounded selection bracket, a chunky move arrow, a forbidden zone cross, a target reticle, warm cream with dark brown outline` |
 | Boutons de menu | **bordure 8 px, coin 16 × 16** (9-slice) | `cute pixel art menu button set, 9-slice ready, warm ochre wooden plank look with rounded corners, three states: idle, hovered slightly brighter, pressed slightly sunken, no text` |
 | Fond de titre (1 seul) | **1920 × 1080** | `cute pixel art title screen background, top-down view of a small survivor camp at dusk, tents and a campfire, warm oranges against a cool blue sky, soft and inviting, no characters, no text, wide format` |
 
-Six planches, **25 images une fois découpées** : 3 cadres, 3 boutons, 8 jauges (4 × vide et plein),
+Six planches, **23 images une fois découpées** : 3 cadres, 3 boutons, 6 jauges (3 × vide et plein),
 6 icônes d'état, 4 curseurs, 1 fond. Les noms de fichiers sont dans le catalogue de sprites du
 livrable 12. **Un seul fond plein écran** pour les quatre écrans : les trois autres réutilisent le cadre
 de panneau sur un aplat de la palette, ce qui économise trois grands formats et donne une interface plus
@@ -763,71 +515,53 @@ qui prépare le fondu vers le noir de la quatrième couche, sans qu'une ligne ne
 
 ## 7. Récapitulatif des images à produire
 
+Les survivants et les zombies n'ont pas de sprite de corps : ils restent le cercle + anneau produit par
+code dans [SurvivorNode.cs](../Scripts/Agents/SurvivorNode.cs) et
+[ZombieNode.cs](../Scripts/Agents/ZombieNode.cs). Le van garde son unique skin déjà livré
+(`Assets/Others/Van.png`, non répertorié ci-dessous car hors périmètre de production restant).
+
 | Livrable | Groupe | Dimensions | Images |
 |----------|--------|-----------|--------|
 | 11 | Tuiles (décor, sols, objets, lourds, camp, zones) | **32 × 32** | 49 |
 | 11 | Tuiles déjà livrées, à refaire (section 4.9) | **32 × 32** | 8 |
-| 11 | Icônes d'inventaire | **48 × 48** | 15 |
-| 12 | Pawns survivants — 6 personnages entiers × 3 vues | **32 × 48** | 18 |
-| 12 | Pawns zombies — 3 variantes entières × 3 vues | **32 × 48** | 9 |
-| 12 | Armes tenues (profil, tournées par le code) | **32 × 16** | 5 |
 | 12 | Portraits — un par personnage | **64 × 64** | 6 |
-| 12 | Van | **64 × 96** | 3 |
-| 12 | Interface (6 planches groupées) | variable, section 5.4 | 6 planches |
+| 12 | Interface (6 planches groupées) | variable, section 5.2 | 6 planches |
 | 13 | Ceintures, terminaisons, brèche | **32 × 32** | 13 |
 | 13 | Décor hors carte | **128 × 128** (16 tuiles de 32) | 3 planches |
-| | **Total** | | **126 images + 9 planches** |
-
-Le total est passé de 136 à 144 quand les huit tuiles déjà livrées ont été comptées — elles sont à
-refaire à la nouvelle échelle — puis de 144 à **126** avec l'abandon des calques : les 30 calques de
-survivant deviennent 18 personnages entiers, les 15 calques de zombie deviennent 9.
+| | **Total** | | **76 images + 9 planches** |
 
 **Les neuf planches sont comptées à part parce qu'elles ne se comptent pas pareil.** Les six planches
-d'interface sont **découpées** et donnent 25 fichiers ; les trois planches de décor **restent trois
+d'interface sont **découpées** et donnent 23 fichiers ; les trois planches de décor **restent trois
 fichiers**, chacune étant une feuille de 16 tuiles raccordables que le moteur découpe à l'affichage,
-comme `atlas.png`. Le périmètre graphique complet est donc de 126 images individuelles, plus 25 pièces
-d'interface, plus 3 feuilles de décor. Le livrable 12 fait le même partage sur son propre périmètre,
-avec 47 livraisons et 66 fichiers.
+comme `atlas.png`.
 
 ### Toutes les dimensions, en un coup d'œil
 
-| Élément | Dimensions | Ancienne valeur |
-|---------|-----------|-----------------|
-| Tuile de carte (toutes sections 4 et 6) | **32 × 32** | 16 × 16 |
-| Pawn entier — survivant et zombie | **32 × 48** | 16 × 24 |
-| Arme tenue | **32 × 16** | 16 × 8 |
-| Icône d'inventaire | **48 × 48** | 24 × 24 |
-| Portrait / buste | **64 × 64** | 32 × 32 |
-| Van (2 × 3 cases) | **64 × 96** | 32 × 48 |
-| Jauge | **96 × 16** | 48 × 8 |
-| Icône d'état | **24 × 24** | 12 × 12 |
-| Curseur | **32 × 32** | 16 × 16 |
-| Planche de décor hors carte | **128 × 128** | — |
-| Fond de menu | **1920 × 1080** | — |
-| Atlas `Assets/atlas.png` | **256 × 256** (8 × 8) | 256 × 16 (8 × 1) |
-| Contour | **1 px** | 1 px — inchangé |
-| Ombre portée | **2 px** | 1 px |
-| Couleurs par sprite | **4 à 6** | 4 à 6 — inchangé |
+| Élément | Dimensions |
+|---------|-----------|
+| Tuile de carte (toutes sections 4 et 6) | **32 × 32** |
+| Icône d'inventaire | **la tuile de l'objet, 32 × 32** |
+| Portrait / buste | **64 × 64** |
+| Van (skin fixe, déjà livré) | **64 × 96** |
+| Jauge | **96 × 16** |
+| Icône d'état | **24 × 24** |
+| Curseur | **32 × 32** |
+| Planche de décor hors carte | **128 × 128** |
+| Fond de menu | **1920 × 1080** |
+| Atlas `Assets/atlas.png` | **256 × 256** (8 × 8) |
+| Contour | **1 px** |
+| Ombre portée | **2 px** |
+| Couleurs par sprite | **4 à 6** |
 
-**Aucune de ces 126 images n'est une frame d'animation.** Le passage au modèle pawn avait supprimé les
-50 frames de survivants au profit de calques fixes ; l'abandon des calques a fait le reste du chemin.
-Six personnages entiers en trois vues, trois zombies entiers en trois vues, et l'identité portée par un
-anneau de couleur et un nom : **27 images pour les deux familles de personnages**, sans un seul pixel à
-aligner entre deux fichiers.
+**Aucune de ces images n'est une frame d'animation.**
 
-**Ordre de production recommandé**, pour que chaque étape débloque du jeu jouable. Les étapes 2 à 4
-sont le résumé de l'ordre détaillé du catalogue de sprites du livrable 12, qui fait foi dès qu'on entre
-dans les personnages :
+**Ordre de production recommandé**, pour que chaque étape débloque du jeu jouable :
 
 0. **Les 8 tuiles déjà livrées, refaites en 32** — avant tout le reste, parce que c'est le seul lot qui
    permet de vérifier la chaîne complète (atlas, `poc.tres`, `tile_legend.json`, caméra) sur du contenu
    connu. Tant que ces huit-là ne s'affichent pas correctement, produire les 49 autres est un pari.
 1. **Les 49 tuiles du livrable 11** — c'est ce qui débloque le livrable prioritaire.
-2. **Un seul personnage, en trois vues — 3 images.** C'est le lot qui remplace le rond de
-   `SurvivorNode.cs` et qui valide toute la chaîne : choix de vue, miroir ouest, anneau au sol sous les
-   pieds, nom au-dessus de la tête, oscillation de marche.
-3. **Le reste des pawns — 24 images** : les cinq autres personnages (15), puis les trois zombies (9).
-   La menace cesse d'être un rond vert.
-4. **Le van et les portraits — 9 images** — ce que le joueur regarde à chaque mission.
-5. **Les planches d'interface** — après les portraits, pour que les cadres soient dessinés autour d'eux.
-6. **Les bords de quartier** — en dernier : le livrable 13 est P3.
+2. **Les 6 portraits** — ce que le joueur regarde le plus souvent dans le panneau latéral et la grille
+   du bas. Déjà livrés.
+3. **Les planches d'interface** — après les portraits, pour que les cadres soient dessinés autour d'eux.
+4. **Les bords de quartier** — en dernier : le livrable 13 est P3.

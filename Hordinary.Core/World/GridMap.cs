@@ -11,6 +11,16 @@ public sealed class GridMap
     private readonly bool[] _indoor;
     private readonly Dictionary<string, MapZone> _zones = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Cellules dont l'ouverture par la force est impossible : rideau metallique de la quincaillerie,
+    /// fenetre a barreaux du poste de police (livrable 11).
+    ///
+    /// C'est un ensemble creux et non un tableau par cellule : une carte en compte une poignee, et
+    /// une carte qui n'en compte aucune ne paie rien. Le blindage n'est pas un type de cellule parce
+    /// qu'il ne change ni le passage ni la vue — il retire une action, ce qui est autre chose.
+    /// </summary>
+    private readonly HashSet<GridPosition> _unbreachable = [];
+
     public int Width { get; }
     public int Height { get; }
 
@@ -42,9 +52,24 @@ public sealed class GridMap
     public CellType GetCell(GridPosition p)
         => Contains(p) ? _cells[Index(p)] : CellType.Unknown;
 
+    /// <summary>
+    /// Emis quand une cellule change de terrain, et seulement alors : une porte qu'on ouvre, une
+    /// vitre qu'on brise. C'est ce qui permet au decor de rester d'accord avec le monde sans le
+    /// relire case par case a chaque image — le peintre repeint la case annoncee, et elle seule.
+    ///
+    /// La grille n'en tire rien elle-meme : comme <c>WorldState</c> pour les objets, elle annonce.
+    /// </summary>
+    public event Action<GridPosition, CellType>? CellChanged;
+
     public void SetCell(GridPosition p, CellType type)
     {
-        if (Contains(p)) _cells[Index(p)] = type;
+        if (!Contains(p)) return;
+
+        int index = Index(p);
+        if (_cells[index] == type) return;
+
+        _cells[index] = type;
+        CellChanged?.Invoke(p, type);
     }
 
     public bool IsIndoor(GridPosition p) => Contains(p) && _indoor[Index(p)];
@@ -53,6 +78,24 @@ public sealed class GridMap
     {
         if (Contains(p)) _indoor[Index(p)] = indoor;
     }
+
+    /// <summary>
+    /// Vrai si cette cellule refuse d'etre ouverte par la force : ni <c>ForceDoor</c>, ni
+    /// <c>BreakWindow</c>. Une porte blindee reste ouvrable si elle n'est pas verrouillee — c'est le
+    /// passage en force qu'elle interdit, pas le passage.
+    /// </summary>
+    public bool IsUnbreachable(GridPosition p) => _unbreachable.Contains(p);
+
+    public void SetUnbreachable(GridPosition p, bool unbreachable = true)
+    {
+        if (!Contains(p)) return;
+
+        if (unbreachable) _unbreachable.Add(p);
+        else _unbreachable.Remove(p);
+    }
+
+    /// <summary>Les cellules qu'on n'ouvre pas en force, pour un debrief ou un test.</summary>
+    public IReadOnlyCollection<GridPosition> Unbreachable => _unbreachable;
 
     /// <summary>Praticable physiquement. Hors carte est toujours faux.</summary>
     public bool IsWalkable(GridPosition p) => Contains(p) && !_cells[Index(p)].BlocksMovement();

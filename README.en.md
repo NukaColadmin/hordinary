@@ -29,14 +29,14 @@ The central architectural point: **the decision logic never references the game 
 `Hordinary.Core` is a pure .NET project, testable without Godot; the engine layer is only a
 renderer and a perception provider.
 
-**316 tests** (`xUnit`, ~0.5 s), run without the engine, against the shipped map and the actual
+**382 tests** (`xUnit`, ~0.5 s), run without the engine, against the shipped map and the actual
 `config/` files — not fixtures.
 
 ## Getting started
 
 ```bash
 dotnet build Hordinary.sln
-dotnet test Tests/Hordinary.Tests.csproj   # 316 tests, no Godot required
+dotnet test Tests/Hordinary.Tests.csproj   # 382 tests, no Godot required
 ```
 
 Then open the folder in **Godot 4.7** and run `Scenes/Main.tscn`.

@@ -14,6 +14,17 @@ public enum CellType
     Obstacle,
     Pharmacy,
     Extraction,
+
+    /// <summary>
+    /// Ceinture du quartier (livrable 13) : la ou le terrain de jeu s'arrete.
+    ///
+    /// Ce n'est pas un mur, et la distinction n'est pas cosmetique. Un mur se longe, se contourne, et
+    /// laisse esperer une porte ; la ceinture ne promet rien. Elle est <b>connue de tous des le
+    /// depart</b> — le groupe a choisi ce quartier sur une carte avant d'y etre depose — ce qui la
+    /// retire du calcul des frontieres d'exploration, et elle est le seul terrain sur lequel la
+    /// generation s'interdit de poser quoi que ce soit.
+    /// </summary>
+    Border,
 }
 
 public static class CellTypeExtensions
@@ -30,6 +41,7 @@ public static class CellTypeExtensions
         CellType.Window => true,
         CellType.Obstacle => true,
         CellType.DoorLocked => true,
+        CellType.Border => true,
         _ => false,
     };
 
@@ -40,6 +52,7 @@ public static class CellTypeExtensions
         CellType.Obstacle => true,
         CellType.DoorClosed => true,
         CellType.DoorLocked => true,
+        CellType.Border => true,
         _ => false,
     };
 

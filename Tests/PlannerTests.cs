@@ -79,9 +79,14 @@ public class PlannerTests
         if (knowsExtraction)
             knowledge.RememberLocation("Extraction", ZoneKind.Extraction, ExtractionCell, 0d, KnowledgeSource.Inference);
 
-        return new Survivor("alice", "Alice", knowledge, settings: DeliveredConfig.Survivor)
+        return new Survivor("alice", "Alice", knowledge, settings: DeliveredConfig.Survivor, catalogue: DemoMap.Items)
         {
             Position = at ?? StartCell,
+
+            // Ou on l'envoie chercher : le domaine ne parle que d'une « objective_zone », et sans cette
+            // ligne aucun plan de recuperation n'existe — ce qui est exactement le comportement voulu
+            // pour un survivant qu'on n'a envoye nulle part.
+            ObjectiveZone = new ObjectiveSite("Pharmacie", ZoneKind.Pharmacy),
         };
     }
 
@@ -99,7 +104,7 @@ public class PlannerTests
     public void L_objectif_recuperer_les_medicaments_produit_une_suite_d_actions_valide()
     {
         var alice = Alice();
-        var result = NewPlanner().PlanFor("PickUpMedicine", Context(alice));
+        var result = NewPlanner().PlanFor("PickUpObjective", Context(alice));
 
         Assert.True(result.Found, result.Reason);
         var plan = result.Plan!;
@@ -107,7 +112,7 @@ public class PlannerTests
         // La suite attendue est celle de l'exemple de la specification : se rendre a la pharmacie,
         // ouvrir une entree, fouiller, localiser les medicaments, les prendre.
         Assert.Equal(
-            ["MoveToLocation", "ForceDoor", "SearchRoom", "LocateMedicine", "PickUpMedicine"],
+            ["MoveToLocation", "ForceDoor", "SearchRoom", "LocateObjective", "PickUpObjective"],
             Steps(plan));
 
         Assert.False(plan.IsFallback);
@@ -122,9 +127,9 @@ public class PlannerTests
         // Meme quartier, mais la porte est ouverte et les medicaments deja reperes : il ne reste plus
         // qu'a aller les prendre.
         var alice = Alice(door: 'o');
-        alice.Knowledge.RememberItem("medicine-1", ItemKind.Medicine, PharmacyCell, 0d);
+        alice.Knowledge.RememberItem("objective-1", Survivor.DefaultObjectiveItem, PharmacyCell, 0d);
 
-        var plan = NewPlanner().PlanFor("PickUpMedicine", Context(alice)).Plan;
+        var plan = NewPlanner().PlanFor("PickUpObjective", Context(alice)).Plan;
 
         Assert.NotNull(plan);
         Assert.True(plan.IsValid());
@@ -156,8 +161,8 @@ public class PlannerTests
     [Fact]
     public void Une_porte_verrouillee_exige_une_action_adaptee()
     {
-        var locked = NewPlanner().PlanFor("PickUpMedicine", Context(Alice(door: 'L'))).Plan;
-        var closed = NewPlanner().PlanFor("PickUpMedicine", Context(Alice(door: 'D'))).Plan;
+        var locked = NewPlanner().PlanFor("PickUpObjective", Context(Alice(door: 'L'))).Plan;
+        var closed = NewPlanner().PlanFor("PickUpObjective", Context(Alice(door: 'D'))).Plan;
 
         Assert.NotNull(locked);
         Assert.NotNull(closed);
@@ -175,14 +180,14 @@ public class PlannerTests
     public void Le_plan_final_satisfait_l_objectif()
     {
         var alice = Alice();
-        var result = NewPlanner().PlanFor("PickUpMedicine", Context(alice));
+        var result = NewPlanner().PlanFor("PickUpObjective", Context(alice));
         var plan = result.Plan!;
 
         var final = plan.ExpectedFinalState;
 
         Assert.True(plan.Problem.IsSatisfiedBy(final));
-        Assert.True(final.Holds("has(agent, medicine)"));
-        Assert.True(final.Holds("medicine_collected"));
+        Assert.True(final.Holds("has(agent, objective)"));
+        Assert.True(final.Holds("objective_collected"));
 
         // Et l'etat de depart, lui, ne le satisfaisait pas : le plan a bien servi a quelque chose.
         Assert.False(plan.Problem.IsSatisfiedBy(plan.Problem.Initial));
@@ -192,7 +197,7 @@ public class PlannerTests
     public void La_limite_de_profondeur_est_respectee()
     {
         var alice = Alice();
-        var problem = Problem(alice, "PickUpMedicine");
+        var problem = Problem(alice, "PickUpObjective");
 
         // Le plan complet demande cinq actions : deux de profondeur ne peuvent pas suffire.
         var tooShallow = new Gbfs(problem, Limited(maxDepth: 2)).Search();
@@ -214,7 +219,7 @@ public class PlannerTests
     [Fact]
     public void Les_limites_de_recherche_sont_configurables_et_appliquees()
     {
-        var problem = Problem(Alice(), "PickUpMedicine");
+        var problem = Problem(Alice(), "PickUpObjective");
 
         var starved = new Gbfs(problem, Limited(maxNodes: 1)).Search();
         Assert.False(starved.Found);
@@ -228,7 +233,7 @@ public class PlannerTests
     [Fact]
     public void Une_planification_tient_dans_le_budget_de_temps_annonce()
     {
-        var problem = Problem(Alice(), "PickUpMedicine");
+        var problem = Problem(Alice(), "PickUpObjective");
         var search = new Gbfs(problem, Limits).Search();
 
         Assert.True(search.Found);
@@ -240,8 +245,8 @@ public class PlannerTests
     [Fact]
     public void Deux_planifications_sur_la_meme_memoire_rendent_le_meme_plan()
     {
-        var first = NewPlanner().PlanFor("PickUpMedicine", Context(Alice())).Plan;
-        var second = NewPlanner().PlanFor("PickUpMedicine", Context(Alice())).Plan;
+        var first = NewPlanner().PlanFor("PickUpObjective", Context(Alice())).Plan;
+        var second = NewPlanner().PlanFor("PickUpObjective", Context(Alice())).Plan;
 
         Assert.NotNull(first);
         Assert.NotNull(second);
@@ -283,9 +288,9 @@ public class PlannerTests
     public void Un_objectif_deja_atteint_ne_produit_aucune_action()
     {
         var alice = Alice();
-        alice.AddToInventory(ItemKind.Medicine);
+        alice.AddToInventory(Survivor.DefaultObjectiveItem);
 
-        var result = NewPlanner().PlanFor("PickUpMedicine", Context(alice));
+        var result = NewPlanner().PlanFor("PickUpObjective", Context(alice));
 
         Assert.True(result.Found);
         Assert.Empty(result.Plan!.Actions);
@@ -308,7 +313,7 @@ public class PlannerTests
         Assert.True(state.Holds("accessible(pharmacy)"));
         Assert.True(state.Holds("known(pharmacy)"));
         Assert.True(state.Holds("at(agent, start)"));
-        Assert.False(state.Holds("medicine_found"));
+        Assert.False(state.Holds("objective_found"));
     }
 
     [Fact]
@@ -327,8 +332,8 @@ public class PlannerTests
     [Fact]
     public void Un_etat_symbolique_est_immuable_et_son_empreinte_ne_depend_pas_de_l_ordre()
     {
-        var first = new SymbolicState(["at(agent, pharmacy)", "medicine_found"]);
-        var second = new SymbolicState(["medicine_found", "at(agent,pharmacy)"]);
+        var first = new SymbolicState(["at(agent, pharmacy)", "objective_found"]);
+        var second = new SymbolicState(["objective_found", "at(agent,pharmacy)"]);
 
         Assert.Equal(first.Hash, second.Hash);
 
@@ -347,7 +352,7 @@ public class PlannerTests
     {
         string[] expected =
         [
-            "MoveToLocation", "OpenDoor", "ForceDoor", "BreakWindow", "SearchRoom", "PickUpMedicine",
+            "MoveToLocation", "OpenDoor", "ForceDoor", "BreakWindow", "SearchRoom", "PickUpObjective",
             "DropItem", "EscapeLocation", "Hide", "HelpAlly", "HealAlly", "CreateNoiseDistraction",
             "Wait", "ReachExtraction", "ShareKnowledge", "Explore", "Observe",
         ];
@@ -408,7 +413,7 @@ public class PlannerTests
         var domain = PlanningDomain.FromJson(json);
         var alice = Alice(door: 'L');
 
-        var problem = SymbolicStateBuilder.Build(Context(alice), domain, domain.FindGoal("PickUpMedicine")!, Limits);
+        var problem = SymbolicStateBuilder.Build(Context(alice), domain, domain.FindGoal("PickUpObjective")!, Limits);
         var result = new Planner(domain, Limits).Solve(problem);
 
         // Sans moyen de forcer la porte et sans fenetre, la pharmacie reste close.
@@ -456,7 +461,7 @@ public class PlannerTests
     [Fact]
     public void L_heuristique_simple_compte_les_conditions_non_satisfaites()
     {
-        var problem = Problem(Alice(), "PickUpMedicine");
+        var problem = Problem(Alice(), "PickUpObjective");
 
         // Poids de la specification dans sa version la plus simple.
         var simple = new Heuristic(problem, new PlannerSettings
@@ -467,14 +472,14 @@ public class PlannerTests
         });
 
         Assert.Equal(1f, simple.Estimate(problem.Initial, 0f), 3);
-        Assert.Equal(0f, simple.Estimate(problem.Initial.With("has(agent, medicine)"), 0f), 3);
+        Assert.Equal(0f, simple.Estimate(problem.Initial.With("has(agent, objective)"), 0f), 3);
     }
 
     [Fact]
     public void L_heuristique_enrichie_penalise_le_bruit_et_le_danger()
     {
         var alice = Alice();
-        var problem = Problem(alice, "PickUpMedicine");
+        var problem = Problem(alice, "PickUpObjective");
         var heuristic = new Heuristic(problem, Limits);
 
         float quiet = heuristic.Estimate(problem.Initial, 0f);
@@ -483,7 +488,7 @@ public class PlannerTests
         Assert.True(loud > quiet, "Un debut de plan bruyant doit paraitre moins prometteur.");
 
         // Et un etat qui satisfait le but ne coute rien, quel qu'ait ete le chemin.
-        Assert.Equal(0f, heuristic.Estimate(problem.Initial.With("has(agent, medicine)"), 10f), 3);
+        Assert.Equal(0f, heuristic.Estimate(problem.Initial.With("has(agent, objective)"), 10f), 3);
     }
 
     [Fact]
@@ -491,9 +496,9 @@ public class PlannerTests
     {
         // Alice a repere les medicaments a l'autre bout du quartier : la distance compte, le danger non.
         var alice = Alice();
-        alice.Knowledge.RememberItem("medicine-1", ItemKind.Medicine, PharmacyCell, 0d);
+        alice.Knowledge.RememberItem("objective-1", Survivor.DefaultObjectiveItem, PharmacyCell, 0d);
 
-        var problem = Problem(alice, "PickUpMedicine");
+        var problem = Problem(alice, "PickUpObjective");
         var detail = new Heuristic(problem, Limits).Explain(problem.Initial, accumulatedNoise: 5f);
 
         Assert.Equal(1, detail.Unsatisfied);
@@ -529,7 +534,7 @@ public class PlannerTests
     public void Les_actions_du_plan_s_executent_dans_l_ordre()
     {
         var alice = Alice();
-        var plan = NewPlanner().PlanFor("PickUpMedicine", Context(alice)).Plan!;
+        var plan = NewPlanner().PlanFor("PickUpObjective", Context(alice)).Plan!;
 
         var runtime = new RecordingRuntime(alice.Position);
         var executor = new PlanExecutor(runtime, Limits);
@@ -546,17 +551,49 @@ public class PlannerTests
         // Le plan s'est traduit en gestes concrets, pas seulement en faits.
         Assert.Contains(PharmacyCell, runtime.Visited);
         Assert.Contains("door_open(door_5_5)", runtime.Flags);
-        Assert.Contains("medicine", runtime.Taken);
+        Assert.Contains("objective", runtime.Taken);
 
         // Et il a fait le bruit annonce : forcer une porte s'entend a six.
         Assert.Contains(runtime.Noises, noise => Math.Abs(noise - 6f) < 0.001f);
+    }
+
+    /// <summary>
+    /// Le plan dit « prends les medicaments a la pharmacie », pas « va sur la case (11,4) » : c'est la
+    /// bonne granularite, et elle laissait pourtant la caisse sauter dans le sac au moment ou Alice
+    /// poussait la porte. L'executeur comble l'ecart lui-meme — le ramassage commence par les
+    /// quelques pas qui l'en separent.
+    /// </summary>
+    [Fact]
+    public void Ramasser_commence_par_aller_jusqu_a_l_objet()
+    {
+        var alice = Alice();
+        var plan = NewPlanner().PlanFor("PickUpObjective", Context(alice)).Plan!;
+
+        // La caisse est au fond de la piece, loin de la case par laquelle on y entre.
+        var shelf = new GridPosition(PharmacyCell.X + 5, PharmacyCell.Y + 4);
+        var runtime = new RecordingRuntime(alice.Position);
+        runtime.ItemCells["objective"] = shelf;
+
+        var executor = new PlanExecutor(runtime, Limits);
+
+        executor.Start(plan);
+        RunToCompletion(executor);
+
+        Assert.Equal(PlanStatus.Completed, plan.Status);
+        Assert.Contains("objective", runtime.Taken);
+
+        // Et elle y est allee : la case de la caisse a ete visitee, apres celle de la pharmacie.
+        Assert.Contains(shelf, runtime.Visited);
+        Assert.True(
+            runtime.Visited.IndexOf(shelf) > runtime.Visited.IndexOf(PharmacyCell),
+            $"Alice a ramasse la caisse avant d'entrer : {string.Join(", ", runtime.Visited)}.");
     }
 
     [Fact]
     public void Une_action_qui_echoue_arrete_le_plan_et_dit_pourquoi()
     {
         var alice = Alice();
-        var plan = NewPlanner().PlanFor("PickUpMedicine", Context(alice)).Plan!;
+        var plan = NewPlanner().PlanFor("PickUpObjective", Context(alice)).Plan!;
 
         // La porte resiste : le moteur refuse l'effet.
         var runtime = new RecordingRuntime(alice.Position) { RefuseFlag = "door_open(door_5_5)" };
@@ -581,7 +618,7 @@ public class PlannerTests
     public void Un_itineraire_impossible_fait_echouer_l_action_de_deplacement()
     {
         var alice = Alice();
-        var plan = NewPlanner().PlanFor("PickUpMedicine", Context(alice)).Plan!;
+        var plan = NewPlanner().PlanFor("PickUpObjective", Context(alice)).Plan!;
 
         var runtime = new RecordingRuntime(alice.Position) { RefuseMove = true };
         var executor = new PlanExecutor(runtime, Limits);
@@ -630,6 +667,8 @@ public class PlannerTests
         public List<string> Flags { get; } = [];
         public List<string> Taken { get; } = [];
         public List<float> Noises { get; } = [];
+        public List<string> Pushed { get; } = [];
+        public List<string> Thrown { get; } = [];
 
         /// <summary>Fait echouer l'effet demande, comme une porte qui resiste.</summary>
         public string? RefuseFlag { get; init; }
@@ -649,6 +688,12 @@ public class PlannerTests
         public MoveState PollMove(GridPosition destination)
             => AgentCell == destination ? MoveState.Arrived : MoveState.Moving;
 
+        /// <summary>Ou le test veut que l'objet se trouve. Vide, tout est deja sous la main.</summary>
+        public Dictionary<string, GridPosition> ItemCells { get; } = [];
+
+        public GridPosition? WhereIs(string item)
+            => ItemCells.TryGetValue(item, out var cell) ? cell : null;
+
         public bool Take(string item)
         {
             Taken.Add(item);
@@ -656,6 +701,19 @@ public class PlannerTests
         }
 
         public bool Put(string item, GridPosition where) => true;
+
+        public bool Push(string target)
+        {
+            Pushed.Add(target);
+            return true;
+        }
+
+        public bool ThrowNoise(string target, float amount)
+        {
+            Thrown.Add(target);
+            Noises.Add(amount);
+            return true;
+        }
 
         public bool SetFlag(string fact, bool value, GridPosition? where)
         {

@@ -11,8 +11,6 @@ namespace Hordinary.Agents;
 /// </summary>
 public sealed class Survivor : IPerceivingAgent
 {
-    private readonly List<ItemKind> _inventory = [];
-
     public string Id { get; }
     public string Name { get; }
 
@@ -37,82 +35,76 @@ public sealed class Survivor : IPerceivingAgent
     /// </summary>
     public SurvivorProfile Profile { get; }
 
-    /// <summary>Coefficients de personnalite (section 10.2), lus par la Utility AI.</summary>
-    public Personality Personality { get; set; }
-
     /// <summary>Sante, de 0 a <see cref="SurvivorSettings.MaxHealth"/> (section 19.1).</summary>
     public float Health { get; private set; }
 
     /// <summary>Panique, de 0 a 1 (section 19.3). Elle monte pres du danger et retombe au calme.</summary>
     public float Panic { get; private set; }
 
-    /// <summary>
-    /// Motivation, de 0 a <see cref="SurvivorSettings.MaxSanity"/> : la jauge <c>SANITY</c> de la
-    /// fiche de personnage. La panique est une emotion de l'instant, qui retombe des que la rue est
-    /// vide ; la motivation est ce qu'il en reste une fois la peur passee, et elle ne se refait pas
-    /// dans la meme minute. C'est elle qui distingue un survivant frais d'un survivant qui revient
-    /// de trois missions.
-    ///
-    /// A zero, le survivant n'a plus de raison de rester dehors : <see cref="Motivated"/> passe a
-    /// faux, et <c>MissionRecall</c> le renvoie au camp.
-    /// </summary>
-    public float Sanity { get; private set; }
-
     public bool Alive => Health > 0f;
 
-    /// <summary>Vrai tant qu'il reste de quoi tenir. A faux, le survivant abandonne la mission.</summary>
-    public bool Motivated => Sanity > 0f;
+    /// <summary>
+    /// Sante maximale effective. La fiche donne la ligne de base ; la faim ou la soif la rabote
+    /// (<c>camp.starvation_max_health_penalty</c>). Un survivant prive de ravitaillement ne se soigne
+    /// donc plus jusqu'a la pleine forme, et c'est ce qui rend une disette couteuse au-dela du jour ou
+    /// elle a lieu.
+    /// </summary>
+    public float MaxHealth => Math.Max(1f, Settings.MaxHealth - HealthPenalty);
 
-    public float HealthRatio => Settings.MaxHealth <= 0f ? 0f : Math.Clamp(Health / Settings.MaxHealth, 0f, 1f);
-
-    public float SanityRatio => Settings.MaxSanity <= 0f ? 0f : Math.Clamp(Sanity / Settings.MaxSanity, 0f, 1f);
-
-    // --- Rappel et retour au camp ---------------------------------------------------------------
+    /// <summary>Plafond retire a la sante maximale, cumule par les journees de disette.</summary>
+    public float HealthPenalty { get; private set; }
 
     /// <summary>
-    /// Vrai quand quelqu'un lui a dit de rentrer — l'agent qui a fini la mission, ou sa propre
-    /// motivation tombee a zero. Ce n'est pas un ordre de deplacement : c'est le fait d'avoir
-    /// <b>recu le message</b>. Le trajet, lui, passe par <see cref="Mission"/> comme n'importe quel
-    /// autre objectif, et reste donc negociable face a une horde.
+    /// Rabote la sante maximale et ramene la sante courante sous le nouveau plafond. C'est ce que la
+    /// faim fait a un corps : elle ne blesse pas, elle enleve de la reserve.
     /// </summary>
-    public bool Recalled { get; private set; }
+    public void CapMaxHealth(float penalty)
+    {
+        if (penalty <= 0f) return;
 
-    /// <summary>Ce qu'on lui a dit, mot pour mot. Le HUD et le journal l'affichent tel quel.</summary>
-    public string? RecallMessage { get; private set; }
+        HealthPenalty += penalty;
+        Health = Math.Min(Health, MaxHealth);
+    }
+
+    /// <summary>Rend ce que la faim avait pris, quand le camp remange a sa faim.</summary>
+    public void RestoreMaxHealth()
+        => HealthPenalty = 0f;
+
+    public float HealthRatio => MaxHealth <= 0f ? 0f : Math.Clamp(Health / MaxHealth, 0f, 1f);
 
     /// <summary>
-    /// Vrai une fois rentre au camp. Le survivant quitte alors le terrain : il ne percoit plus, ne
-    /// decide plus, et ne recoit plus d'ordre. Il n'est pas mort pour autant — <see cref="Alive"/>
-    /// reste vrai, et sa sante comme sa motivation sont celles avec lesquelles il repartira.
+    /// Ce que le survivant porte, sous contrainte d'emplacements et de poids (livrable 11). Le sac
+    /// ne connait aucun objet par son nom : il manipule des identifiants de <c>config/items.json</c>
+    /// et de <c>config/weapons.json</c>, et ignore ce qu'ils font.
     /// </summary>
-    public bool Returned { get; private set; }
+    public Inventory Inventory { get; }
 
-    /// <summary>Date de jeu du retour, pour le debrief.</summary>
-    public double ReturnedAt { get; private set; }
+    /// <summary>
+    /// Ce qu'on l'a envoye chercher, par identifiant du catalogue. C'est la mission qui le fixe
+    /// (<c>config/missions.json</c>) : le code ne nomme donc nulle part « les medicaments », il
+    /// demande seulement au survivant s'il porte ce pour quoi il est parti.
+    /// </summary>
+    public string ObjectiveItem { get; set; } = DefaultObjectiveItem;
 
-    /// <summary>Recoit le message de rappel. Vrai la premiere fois seulement.</summary>
-    public bool Recall(string message)
-    {
-        if (Recalled || Returned) return false;
+    /// <summary>
+    /// Objectif de repli quand aucune mission n'a ete donnee — le cas d'un survivant fabrique en
+    /// test. C'est la seule mention d'un identifiant d'objet dans le coeur, et elle ne decide de
+    /// rien : toute partie reelle la remplace par celle de la mission.
+    /// </summary>
+    public const string DefaultObjectiveItem = "medikit";
 
-        Recalled = true;
-        RecallMessage = message;
-        return true;
-    }
-
-    /// <summary>Rentre au camp. Vrai la premiere fois seulement.</summary>
-    public bool ComeHome(double now)
-    {
-        if (Returned) return false;
-
-        Returned = true;
-        ReturnedAt = now;
-        Mission = null;
-        return true;
-    }
-
-    /// <summary>Objets transportes. Un simple sac : l'inventaire avance est hors perimetre du MVP.</summary>
-    public IReadOnlyList<ItemKind> Inventory => _inventory;
+    /// <summary>
+    /// Ou on l'a envoye chercher : le lieu exact que la mission designe comme objectif. C'est le
+    /// pendant de <see cref="ObjectiveItem"/> pour l'endroit, et c'est ce qui permet au domaine de
+    /// planification de parler d'un <c>objective_zone</c> plutot que d'une pharmacie. Une mission qui
+    /// envoie fouiller un entrepot devient alors la meme mission, sans une ligne de domaine en plus.
+    ///
+    /// Le <b>nom</b> compte autant que la categorie : la carte livree compte deux batiments, et une
+    /// mission qui vise le hangar sud ne doit pas envoyer fouiller l'entrepot ouest.
+    ///
+    /// <c>null</c> pour un survivant fabrique en test, qui n'a ete envoye nulle part.
+    /// </summary>
+    public ObjectiveSite? ObjectiveZone { get; set; }
 
     /// <summary>Ordre courant du joueur, ou <c>null</c> si le survivant est livre a lui-meme.</summary>
     public MissionOrder? Mission { get; set; }
@@ -160,7 +152,9 @@ public sealed class Survivor : IPerceivingAgent
         AgentKnowledge knowledge,
         PerceptionSettings? perception = null,
         SurvivorSettings? settings = null,
-        SurvivorProfile? profile = null)
+        SurvivorProfile? profile = null,
+        ItemCatalogue? catalogue = null,
+        InventorySettings? inventory = null)
     {
         var vision = perception ?? PerceptionSettings.Default;
 
@@ -169,11 +163,10 @@ public sealed class Survivor : IPerceivingAgent
         Knowledge = knowledge ?? throw new ArgumentNullException(nameof(knowledge));
         Settings = settings ?? SurvivorSettings.Default;
         Profile = profile ?? SurvivorProfile.Default;
-        Personality = Settings.Personality;
         Health = Settings.MaxHealth;
-        Sanity = Settings.MaxSanity;
         VisionRange = vision.VisionRange;
         FieldOfViewDegrees = vision.FieldOfViewDegrees;
+        Inventory = new Inventory(catalogue ?? ItemCatalogue.Empty, inventory);
     }
 
     /// <summary>
@@ -185,7 +178,9 @@ public sealed class Survivor : IPerceivingAgent
         SurvivorProfile profile,
         AgentKnowledge knowledge,
         PerceptionSettings? perception = null,
-        SurvivorSettings? settings = null)
+        SurvivorSettings? settings = null,
+        ItemCatalogue? catalogue = null,
+        InventorySettings? inventory = null)
     {
         ArgumentNullException.ThrowIfNull(profile);
 
@@ -193,9 +188,11 @@ public sealed class Survivor : IPerceivingAgent
             profile.Id,
             profile.Name,
             knowledge,
-            profile.ApplyTo(perception ?? PerceptionSettings.Default),
-            profile.ApplyTo(settings ?? SurvivorSettings.Default),
-            profile);
+            perception ?? PerceptionSettings.Default,
+            settings ?? SurvivorSettings.Default,
+            profile,
+            catalogue,
+            inventory);
     }
 
     /// <summary>Oriente le regard vers une cellule. Une direction nulle laisse l'orientation intacte.</summary>
@@ -207,6 +204,13 @@ public sealed class Survivor : IPerceivingAgent
 
     // --- Sante et panique (section 19) ------------------------------------------------------
 
+    /// <summary>
+    /// Emis au moment ou le survivant tombe, une seule fois. C'est par la que son inventaire finit
+    /// au sol : le survivant sait ce qu'il porte, pas ou il tombe — poser les objets sur la carte est
+    /// l'affaire de qui connait le monde.
+    /// </summary>
+    public event Action<Survivor>? Died;
+
     /// <summary>Encaisse un coup. Etre blesse fait aussi monter la panique (section 19.3).</summary>
     public void TakeDamage(float amount)
     {
@@ -215,9 +219,7 @@ public sealed class Survivor : IPerceivingAgent
         float lost = Math.Min(amount, Health);
         Health -= lost;
 
-        // Encaisser un coup entame la motivation, meme en mode debug : c'est un fait, pas une
-        // emotion. Ce que l'interrupteur neutralise, c'est la peur — pas les consequences.
-        DrainSanity(Settings.MaxSanity * Settings.SanityPerWound * lost / Settings.MaxHealth);
+        if (!Alive) Died?.Invoke(this);
 
         if (!PanicEnabled) return;
 
@@ -227,7 +229,7 @@ public sealed class Survivor : IPerceivingAgent
     public void Heal(float amount)
     {
         if (amount <= 0f || !Alive) return;
-        Health = Math.Min(Settings.MaxHealth, Health + amount);
+        Health = Math.Min(MaxHealth, Health + amount);
     }
 
     /// <summary>
@@ -243,49 +245,17 @@ public sealed class Survivor : IPerceivingAgent
         if (amount <= 0f || !Alive) return;
 
         Panic = Math.Clamp(Panic - amount, 0f, 1f);
-
-        // Rassurer quelqu'un lui rend aussi l'envie de continuer, dans la meme proportion. C'est ce
-        // qui fait de Claire autre chose qu'une infirmiere : elle est la raison pour laquelle le
-        // groupe ne rentre pas a mi-chemin.
-        RestoreSanity(amount * Settings.MaxSanity);
     }
 
-    // --- Motivation -----------------------------------------------------------------------------
+    /// <summary>Ramasser. Echoue si l'objet est inconnu du catalogue ou si le sac est plein.</summary>
+    public bool AddToInventory(string itemId) => Inventory.Add(itemId);
 
-    public void DrainSanity(float amount)
-    {
-        if (amount <= 0f) return;
-        Sanity = Math.Max(0f, Sanity - amount);
-    }
+    public bool RemoveFromInventory(string itemId) => Inventory.Remove(itemId);
 
-    public void RestoreSanity(float amount)
-    {
-        if (amount <= 0f) return;
-        Sanity = Math.Min(Settings.MaxSanity, Sanity + amount);
-    }
+    public bool Carries(string? itemId) => Inventory.Carries(itemId);
 
-    /// <summary>
-    /// Fait glisser la motivation avec la peur du moment : elle se vide a proportion de la panique
-    /// et se refait au calme, plus lentement qu'elle ne se vide.
-    ///
-    /// Elle depend de la panique et non du danger percu, et la nuance porte tout le sens de la
-    /// jauge : voir un zombie de loin sans s'affoler ne coute rien. C'est d'avoir eu peur qui coute.
-    /// </summary>
-    public void UpdateSanity(float deltaSeconds)
-    {
-        if (deltaSeconds <= 0f || !Alive) return;
-
-        float drain = Settings.SanityDrainPerSecond * Panic;
-        float recovery = Settings.SanityRecoveryPerSecond * (1f - Panic);
-
-        Sanity = Math.Clamp(Sanity + (recovery - drain) * deltaSeconds, 0f, Settings.MaxSanity);
-    }
-
-    public void AddToInventory(ItemKind kind) => _inventory.Add(kind);
-
-    public bool RemoveFromInventory(ItemKind kind) => _inventory.Remove(kind);
-
-    public bool Carries(ItemKind kind) => _inventory.Contains(kind);
+    /// <summary>Vrai quand il porte ce pour quoi il est parti.</summary>
+    public bool CarriesObjective => Inventory.Carries(ObjectiveItem);
 
     /// <summary>
     /// Fait glisser la panique vers le danger percu (section 19.3). Elle monte vite pres des zombies

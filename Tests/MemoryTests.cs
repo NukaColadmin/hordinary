@@ -41,16 +41,16 @@ public class MemoryTests
     public void Un_objet_vu_entre_en_memoire_avec_ses_coordonnees()
     {
         var (alice, world, perception) = Room("......");
-        var medicine = new GridPosition(4, 0);
+        var objective = new GridPosition(4, 0);
 
-        world.SetItem("medicine-1", ItemKind.Medicine, medicine);
+        world.SetItem("objective-1", Survivor.DefaultObjectiveItem, objective);
         perception.Observe(alice, world, time: 1d);
 
-        var belief = alice.Knowledge.GetItem("medicine-1");
+        var belief = alice.Knowledge.GetItem("objective-1");
 
         Assert.NotNull(belief);
-        Assert.Equal(medicine, belief.Value);
-        Assert.Equal(ItemKind.Medicine, belief.Kind);
+        Assert.Equal(objective, belief.Value);
+        Assert.Equal(Survivor.DefaultObjectiveItem, belief.ItemId);
         Assert.Equal(KnowledgeSource.DirectObservation, belief.Source);
         Assert.False(belief.IsGone);
     }
@@ -58,31 +58,31 @@ public class MemoryTests
     [Fact]
     public void Un_objet_ramasse_par_un_autre_reste_en_memoire_jusqu_au_retour_sur_place()
     {
-        // Alice voit les medicaments au bout du couloir, puis s'en detourne.
+        // Alice voit les objet de la mission au bout du couloir, puis s'en detourne.
         var (alice, world, perception) = Room("..........");
-        var medicine = new GridPosition(4, 0);
+        var objective = new GridPosition(4, 0);
 
-        world.SetItem("medicine-1", ItemKind.Medicine, medicine);
+        world.SetItem("objective-1", Survivor.DefaultObjectiveItem, objective);
         perception.Observe(alice, world, time: 1d);
 
         // Quelqu'un les prend pendant qu'elle regarde ailleurs.
-        world.RemoveItem("medicine-1");
+        world.RemoveItem("objective-1");
         alice.Facing = new Vector2(-1f, 0f);
         perception.Observe(alice, world, time: 2d);
 
         // Rien ne l'a prevenue : elle continue de croire qu'ils sont la, et de pouvoir planifier avec.
-        var belief = alice.Knowledge.GetItem("medicine-1");
+        var belief = alice.Knowledge.GetItem("objective-1");
         Assert.NotNull(belief);
         Assert.False(belief.IsGone);
-        Assert.Equal(medicine, belief.Value);
-        Assert.True(new UtilityContext(alice, 2d, Config.UtilityAi).KnowsMedicine);
+        Assert.Equal(objective, belief.Value);
+        Assert.True(new UtilityContext(alice, 2d, Config.UtilityAi).KnowsObjective);
 
         // Elle se retourne, regarde la case, et constate. C'est seulement la que la croyance tombe.
         alice.Facing = new Vector2(1f, 0f);
         perception.Observe(alice, world, time: 3d);
 
-        Assert.True(alice.Knowledge.GetItem("medicine-1")!.IsGone);
-        Assert.False(new UtilityContext(alice, 3d, Config.UtilityAi).KnowsMedicine);
+        Assert.True(alice.Knowledge.GetItem("objective-1")!.IsGone);
+        Assert.False(new UtilityContext(alice, 3d, Config.UtilityAi).KnowsObjective);
     }
 
     [Fact]
@@ -90,14 +90,14 @@ public class MemoryTests
     {
         // Un mur separe Alice de l'objet : elle ne peut ni le voir, ni conclure qu'il a disparu.
         var (alice, world, perception) = Room("..#...");
-        world.SetItem("medicine-1", ItemKind.Medicine, new GridPosition(4, 0));
+        world.SetItem("objective-1", Survivor.DefaultObjectiveItem, new GridPosition(4, 0));
 
-        alice.Knowledge.RememberItem("medicine-1", ItemKind.Medicine, new GridPosition(4, 0), 0d);
-        world.RemoveItem("medicine-1");
+        alice.Knowledge.RememberItem("objective-1", Survivor.DefaultObjectiveItem, new GridPosition(4, 0), 0d);
+        world.RemoveItem("objective-1");
 
         perception.Observe(alice, world, time: 1d);
 
-        Assert.False(alice.Knowledge.GetItem("medicine-1")!.IsGone);
+        Assert.False(alice.Knowledge.GetItem("objective-1")!.IsGone);
     }
 
     // --- Fouilles infructueuses --------------------------------------------------------------------
@@ -130,9 +130,9 @@ public class MemoryTests
     public void Une_pharmacie_vide_finit_par_etre_abandonnee()
     {
         // Aucun medicament nulle part : la fouille echouera, encore et encore, si rien ne l'apprend.
-        var mission = new MissionRun(withMedicine: false);
+        var mission = new MissionRun(withObjective: false);
         mission.Alice.Mission = new MissionOrder(
-            "recuperer les medicaments",
+            "recuperer les objet de la mission",
             mission.Spawn(ZoneKind.Pharmacy),
             MissionRun.Config.UtilityAi.PlayerOrderPriority);
 
@@ -143,9 +143,9 @@ public class MemoryTests
         Assert.True(learned, $"Alice n'a jamais retenu que la pharmacie etait vide. {mission.Trace()}");
 
         // Elle a cesse de la reclamer : plus aucun plan ne prevoit d'y localiser quoi que ce soit.
-        int before = mission.Executed.Count(name => name == "LocateMedicine");
+        int before = mission.Executed.Count(name => name == "LocateObjective");
         mission.RunUntil(() => false, maxTicks: 300);
-        int after = mission.Executed.Count(name => name == "LocateMedicine");
+        int after = mission.Executed.Count(name => name == "LocateObjective");
 
         Assert.Equal(before, after);
     }
@@ -279,7 +279,7 @@ public class MemoryTests
     {
         var mission = new MissionRun(lockedDoors: [MissionRun.PharmacyDoor]);
         mission.Alice.Mission = new MissionOrder(
-            "recuperer les medicaments",
+            "recuperer les objet de la mission",
             mission.Spawn(ZoneKind.Pharmacy),
             MissionRun.Config.UtilityAi.PlayerOrderPriority);
 

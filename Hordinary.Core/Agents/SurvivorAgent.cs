@@ -16,15 +16,18 @@ namespace Hordinary.Agents;
 /// les deux couches n'ont plus qu'a le faire tourner : c'est aussi ce qui garantit que le jeu et les
 /// tests suivent la meme boucle et non deux copies qui divergent.
 ///
-/// Chaque agent a <b>sa</b> carte mentale, <b>son</b> planificateur et <b>son</b> domaine specialise
-/// par son profil. Rien n'est partage entre survivants sauf le monde lui-meme — et le monde n'est lu
-/// que par la perception.
+/// Chaque agent a <b>sa</b> carte mentale, <b>son</b> planificateur et <b>son</b> domaine, specialise
+/// par ce qu'il porte. Rien n'est partage entre survivants sauf le monde lui-meme — et le monde n'est
+/// lu que par la perception.
 /// </summary>
 public sealed class SurvivorAgent
 {
     private readonly WorldState _world;
     private readonly PerceptionSystem _perception;
     private readonly GameConfig _config;
+
+    /// <summary>Le domaine commun, avant toute specialisation : la base de chaque recalcul.</summary>
+    private readonly PlanningDomain _baseDomain;
 
     private float _pursuit;
 
@@ -36,8 +39,12 @@ public sealed class SurvivorAgent
     public PathFollower Follower { get; } = new();
     public RearGlance Glance { get; }
 
-    /// <summary>Domaine de planification specialise par les competences du profil (livrable 7).</summary>
-    public PlanningDomain Domain { get; }
+    /// <summary>
+    /// Domaine de planification specialise par ce que le survivant a en main (livrable 11). Il se
+    /// recalcule quand l'equipement change, et pas autrement : les survivants pratiquent tous le meme
+    /// repertoire au meme prix.
+    /// </summary>
+    public PlanningDomain Domain { get; private set; }
 
     public UtilitySelector Utility { get; }
     public Planner Planner { get; }
@@ -66,7 +73,8 @@ public sealed class SurvivorAgent
         PerceptionSystem perception,
         IReadOnlyList<Survivor> band,
         KnowledgeSharing sharing,
-        IHorde? horde = null)
+        IHorde? horde = null,
+        ItemCatalogue? catalogue = null)
     {
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(goals);
@@ -80,33 +88,44 @@ public sealed class SurvivorAgent
         var knowledge = new AgentKnowledge(
             profile.Id, world.Grid.Width, world.Grid.Height, world.Grid.Origin, config.Knowledge);
 
-        Survivor = Survivor.FromProfile(profile, knowledge, config.Perception, config.Survivor);
+        Survivor = Survivor.FromProfile(
+            profile, knowledge, config.Perception, config.Survivor, catalogue, config.Inventory);
         Survivor.Position = spawn;
 
         Glance = new RearGlance(Survivor.Settings);
 
         // A* travaille sur la carte mentale, jamais sur la carte reelle, et paie plus cher les cases
-        // dont ce survivant-la garde un mauvais souvenir. La prudence du profil module ces couts :
-        // Claire fait un detour la ou Bob passe (specification section 16.2).
+        // dont ce survivant-la garde un mauvais souvenir (specification section 16.2).
         Navigation = new NavigationGrid(knowledge.MentalMap, config.Navigation)
         {
             Sensed = cell => knowledge.Danger.LevelAt(cell, _world.Time),
             Forbidden = Survivor.Orders.IsForbidden,
-            Profile = NavigationProfile.FromCaution(Survivor.Personality.Caution),
+            Profile = NavigationProfile.Neutral,
         };
 
         Astar = new AStar(Navigation);
 
-        Follower.Speed = Survivor.Settings.WalkSpeed;
         Follower.Teleport(spawn);
+        SetPace(running: false);
 
-        Domain = domain.Specialize(profile.Skills);
+        // Ce qu'on porte pese : la vitesse se recalcule des que le sac change, sans quoi un survivant
+        // surcharge continuerait de courir jusqu'a ce que quelqu'un pense a le ralentir.
+        Survivor.Inventory.Changed += () => SetPace(_running);
+        Survivor.Died += DropCarried;
+
+        _baseDomain = domain;
+        Domain = domain;
 
         Utility = new UtilitySelector(goals, config.UtilityAi);
         Planner = new Planner(Domain, config.Planner);
 
+        // Prendre un pied-de-biche en main change le prix d'une effraction, et c'est la seule chose
+        // qui le change : le domaine est respecialise quand l'equipement bouge, et GBFS decouvre le
+        // nouveau plan de lui-meme — aucun code ne teste ce qu'on porte.
+        Survivor.Inventory.EquipmentChanged += RefreshDomain;
+
         Runtime = new WorldPlanRuntime(
-            Survivor, world, Follower, Astar, Survivor.Settings, band, sharing, horde);
+            Survivor, world, Follower, Astar, Survivor.Settings, band, sharing, horde, catalogue);
 
         Runtime.Logged += message => Logged?.Invoke(message);
         Runtime.WorldChanged += _ => Perceive();
@@ -120,6 +139,74 @@ public sealed class SurvivorAgent
         Brain = new Replanner(Survivor, Utility, Planner, Executor, config.Replanning);
 
         _world.SetEntity(Survivor.Id, EntityKind.Survivor, spawn);
+    }
+
+    /// <summary>Vrai quand le survivant court. Sa charge s'applique par-dessus, dans les deux cas.</summary>
+    private bool _running;
+
+    /// <summary>
+    /// Regle l'allure. C'est le seul endroit qui fixe la vitesse du corps, pour que la penalite de
+    /// surcharge ne puisse pas etre oubliee par un appelant : marcher charge est plus lent que
+    /// marcher, et courir charge est plus lent que courir.
+    /// </summary>
+    public void SetPace(bool running)
+    {
+        _running = running;
+
+        float pace = running ? Survivor.Settings.RunSpeed : Survivor.Settings.WalkSpeed;
+        Follower.Speed = pace * Survivor.Inventory.SpeedMultiplier;
+    }
+
+    /// <summary>
+    /// Ce qu'un corps laisse derriere lui (<c>inventory.drop_on_death</c>). Les objets tombent la ou
+    /// le survivant est tombe : une mort coute alors autre chose qu'un nom en moins, et le groupe a
+    /// une raison d'aller rechercher un corps.
+    /// </summary>
+    private void DropCarried(Survivor fallen)
+    {
+        if (!Survivor.Inventory.Settings.DropOnDeath) return;
+
+        var where = Follower.CurrentCell;
+        int index = 0;
+
+        foreach (string itemId in Survivor.Inventory.DropAll())
+        {
+            _world.SetItem($"{itemId}-{fallen.Id}-{++index}", itemId, where);
+        }
+
+        if (index > 0) Logged?.Invoke($"{fallen.Name} tombe en {where} et laisse {index} objet(s) au sol");
+    }
+
+    /// <summary>
+    /// Recompose le domaine a partir de ce que le survivant a en main. Deux outils qui portent sur la
+    /// meme action se composent : une caisse a outils et un pied-de-biche font une effraction moins
+    /// chere que l'un des deux seul.
+    ///
+    /// C'est desormais la seule chose qui change le prix d'une action. Un survivant n'a pas de talent
+    /// propre : ce qu'il sait faire moins cher, il le doit a ce qu'il porte.
+    /// </summary>
+    private void RefreshDomain()
+    {
+        var modifiers = new Dictionary<string, ActionModifier>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in Survivor.Inventory.EquippedItems)
+        {
+            foreach (var (action, modifier) in item.ActionModifiers)
+            {
+                var current = modifiers.TryGetValue(action, out var existing) ? existing : ActionModifier.Neutral;
+
+                modifiers[action] = new ActionModifier
+                {
+                    Cost = current.Cost * modifier.Cost,
+                    Noise = current.Noise * modifier.Noise,
+                    Duration = current.Duration * modifier.Duration,
+                    Enabled = current.Enabled && modifier.Enabled,
+                };
+            }
+        }
+
+        Domain = _baseDomain.Specialize(modifiers);
+        Planner.Respecialize(Domain);
     }
 
     // --- Boucle ---------------------------------------------------------------------------------
@@ -147,16 +234,12 @@ public sealed class SurvivorAgent
         LastHeard = _perception.Listen(Survivor, _world, rng);
         Survivor.Knowledge.ForgetFadedNoises(_world.Time);
 
-        Context = new UtilityContext(Survivor, _world.Time, _config.UtilityAi, _config.Exploration);
+        Context = NewContext();
         _pursuit = Context.PursuitPressure;
 
         if (elapsed <= 0d) return;
 
         Survivor.UpdatePanic(Context.PerceivedDanger, (float)elapsed);
-
-        // La motivation suit la panique, donc apres elle : ce qui use un survivant, c'est la peur
-        // qu'il vient d'avoir, pas celle de la passe precedente.
-        Survivor.UpdateSanity((float)elapsed);
     }
 
     /// <summary>
@@ -166,11 +249,27 @@ public sealed class SurvivorAgent
     /// </summary>
     public void Think(float delta)
     {
-        var context = Context ?? new UtilityContext(Survivor, _world.Time, _config.UtilityAi, _config.Exploration);
+        var context = Context ?? NewContext();
 
         Brain.Advance(context, delta);
         DeclareIntent(context);
     }
+
+    /// <summary>
+    /// La situation telle que ce survivant-la la voit, a l'instant present.
+    ///
+    /// C'est aussi le seul endroit ou la decision recoit un mot a dire de la navigation, et il est
+    /// etroit a dessein : non pas des couts ni des itineraires, mais la seule question « puis-je y
+    /// aller ? ». Sans elle, l'exploration choisit des destinations qu'A* refusera, et un plan dont
+    /// la premiere action echoue toujours se rebatit a l'identique — le survivant reste sur place,
+    /// son objectif affiche.
+    /// </summary>
+    private UtilityContext NewContext() => new(
+        Survivor,
+        _world.Time,
+        _config.UtilityAi,
+        _config.Exploration,
+        Reachability.LazyFrom(Navigation, Follower.CurrentCell));
 
     /// <summary>
     /// « Je m'occupe du nord. » L'annonce entre dans sa propre memoire, d'ou le prochain partage la
@@ -210,20 +309,4 @@ public sealed class SurvivorAgent
         Glance.Reset();
     }
 
-    /// <summary>
-    /// Le survivant est rentre au camp : il quitte le terrain. Il sort du monde reel — sans quoi la
-    /// horde continuerait de le poursuivre jusque dans le camp, et les allies restes dehors le
-    /// verraient encore la ou il n'est plus.
-    ///
-    /// Ce qu'il a appris, lui, reste : c'est le meme survivant qui repartira, avec la meme carte
-    /// mentale, la sante et la motivation dans l'etat ou il les rapporte.
-    /// </summary>
-    public bool ComeHome(string reason)
-    {
-        if (!Survivor.ComeHome(_world.Time)) return false;
-
-        _world.RemoveEntity(Survivor.Id);
-        Stop(reason);
-        return true;
-    }
 }

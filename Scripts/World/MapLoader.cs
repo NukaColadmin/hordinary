@@ -3,8 +3,12 @@ using Hordinary.Config;
 
 namespace Hordinary.World;
 
-/// <summary>Objet repere sur la carte (medicaments...), pose par une tuile.</summary>
-public readonly record struct MapItem(TileKind Kind, GridPosition Position);
+/// <summary>
+/// Objet pose sur la carte par une tuile. <c>ItemId</c> est un identifiant de
+/// <c>config/items.json</c> ou <c>config/weapons.json</c> : la carte ne nomme aucun objet, elle
+/// designe une entree du catalogue.
+/// </summary>
+public readonly record struct MapItem(string ItemId, GridPosition Position);
 
 public sealed class MapBuildResult(GridMap map, IReadOnlyList<MapItem> items, IReadOnlyList<string> warnings)
 {
@@ -54,7 +58,7 @@ public sealed class MapLoader(TileLegend legend)
                 var atlas = layer.GetCellAtlasCoords(cell);
                 var position = new GridPosition(cell.X, cell.Y);
 
-                if (!_legend.TryGetKind(sourceId, atlas.X, atlas.Y, out var kind))
+                if (!_legend.TryGetTile(sourceId, atlas.X, atlas.Y, out var tile))
                 {
                     var key = TileLegend.Key(sourceId, atlas.X, atlas.Y);
                     if (unknownTiles.Add(key))
@@ -64,13 +68,21 @@ public sealed class MapLoader(TileLegend legend)
                     continue;
                 }
 
-                var cellType = TileLegend.ToCellType(kind);
+                var cellType = TileLegend.ToCellType(tile.Kind);
                 if (cellType is not null) map.SetCell(position, cellType.Value);
 
-                var indoor = TileLegend.ToIndoorFlag(kind);
+                var indoor = TileLegend.ToIndoorFlag(tile.Kind);
                 if (indoor is not null) map.SetIndoor(position, indoor.Value);
 
-                if (kind == TileKind.Medicine) items.Add(new MapItem(kind, position));
+                // Fenetre a barreaux, rideau metallique : ni effraction ni bris de vitre. C'est la
+                // seule chose qu'une tuile retire au planificateur, et le blindage doit donc survivre
+                // a la conversion en type de cellule, qui n'en garde aucune trace.
+                if (TileLegend.ForbidsForceDoor(tile.Kind) || TileLegend.ForbidsBreakWindow(tile.Kind))
+                {
+                    map.SetUnbreachable(position);
+                }
+
+                if (tile.CarriesItem) items.Add(new MapItem(tile.Item!, position));
             }
         }
 

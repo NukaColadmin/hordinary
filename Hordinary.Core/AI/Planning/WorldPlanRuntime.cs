@@ -30,6 +30,7 @@ public sealed class WorldPlanRuntime : IPlanRuntime
     private readonly IReadOnlyList<Survivor> _band;
     private readonly KnowledgeSharing _sharing;
     private readonly IHorde? _horde;
+    private readonly ItemCatalogue _catalogue;
 
     private bool _blocked;
 
@@ -42,6 +43,10 @@ public sealed class WorldPlanRuntime : IPlanRuntime
     /// La horde, pour les actions de combat (livrable 8). Sans elle, frapper echoue au lieu de
     /// frapper dans le vide — c'est le meme parti que <paramref name="band"/> pour le soin.
     /// </param>
+    /// <param name="catalogue">
+    /// Les objets livres (livrable 11). C'est lui qui dit ce qu'un objet fait : sans catalogue, une
+    /// trousse de soin n'est qu'un identifiant, et soigner echoue au lieu de soigner dans le vide.
+    /// </param>
     public WorldPlanRuntime(
         Survivor survivor,
         WorldState world,
@@ -50,7 +55,8 @@ public sealed class WorldPlanRuntime : IPlanRuntime
         SurvivorSettings? settings = null,
         IReadOnlyList<Survivor>? band = null,
         KnowledgeSharing? sharing = null,
-        IHorde? horde = null)
+        IHorde? horde = null,
+        ItemCatalogue? catalogue = null)
     {
         _survivor = survivor ?? throw new ArgumentNullException(nameof(survivor));
         _world = world ?? throw new ArgumentNullException(nameof(world));
@@ -60,6 +66,7 @@ public sealed class WorldPlanRuntime : IPlanRuntime
         _band = band ?? [];
         _sharing = sharing ?? new KnowledgeSharing();
         _horde = horde;
+        _catalogue = catalogue ?? ItemCatalogue.Empty;
     }
 
     /// <summary>Cellule reellement occupee par le corps du survivant, pas celle que le plan supposait.</summary>
@@ -127,23 +134,46 @@ public sealed class WorldPlanRuntime : IPlanRuntime
 
     // --- Objets ---------------------------------------------------------------------------------
 
+    /// <summary>
+    /// L'exemplaire le plus proche que l'agent peut atteindre depuis la piece ou il se tient, ou
+    /// <c>null</c> s'il n'y en a aucun. C'est ce que <see cref="Take"/> prendra une fois le survivant
+    /// arrive dessus — et c'est donc aussi ou l'executeur doit le mener.
+    /// </summary>
+    public GridPosition? WhereIs(string item) => Nearest(Resolve(item))?.Position;
+
+    private WorldItem? Nearest(string itemId)
+        => _world.Items.Values
+            .Where(candidate => candidate.ItemId.Equals(itemId, StringComparison.OrdinalIgnoreCase))
+            .Where(candidate => IsWithinReach(candidate.Position))
+            .OrderBy(candidate => candidate.Position.ChebyshevDistanceTo(AgentCell))
+            .ThenBy(candidate => candidate.Id, StringComparer.Ordinal)
+            .FirstOrDefault();
+
     public bool Take(string item)
     {
-        if (!TryParseItem(item, out var kind)) return false;
+        string itemId = Resolve(item);
 
         var found = _world.Items.Values
-            .Where(candidate => candidate.Kind == kind && IsWithinReach(candidate.Position))
+            .Where(candidate => candidate.ItemId.Equals(itemId, StringComparison.OrdinalIgnoreCase))
+            .Where(candidate => IsWithinArmsLength(candidate.Position))
             .OrderBy(candidate => candidate.Position.ChebyshevDistanceTo(AgentCell))
             .FirstOrDefault();
 
         if (found is null)
         {
-            Log($"{_survivor.Name} cherche {item} en {AgentCell} et n'y trouve rien");
+            Log($"{_survivor.Name} cherche {item} en {AgentCell} et n'y trouve rien a portee de main");
+            return false;
+        }
+
+        // Un sac plein refuse un ramassage de plus. L'echec devient une replanification, ce qui est
+        // exactement le bon comportement : le plan avait ete bati sans compter les emplacements.
+        if (!_survivor.AddToInventory(itemId))
+        {
+            Log($"{_survivor.Name} ne peut pas prendre {found.Id} : {_survivor.Inventory}");
             return false;
         }
 
         _world.RemoveItem(found.Id);
-        _survivor.AddToInventory(kind);
         Log($"{_survivor.Name} ramasse {found.Id}");
 
         WorldChanged?.Invoke($"{found.Id} ramasse");
@@ -152,16 +182,39 @@ public sealed class WorldPlanRuntime : IPlanRuntime
 
     public bool Put(string item, GridPosition where)
     {
-        if (!TryParseItem(item, out var kind)) return false;
-        if (!_survivor.RemoveFromInventory(kind)) return false;
+        string itemId = Resolve(item);
+        if (!_survivor.RemoveFromInventory(itemId)) return false;
 
-        string id = $"{kind}-{_survivor.Id}-{_world.Time:0.###}".ToLowerInvariant();
-        _world.SetItem(id, kind, where);
+        string id = $"{itemId}-{_survivor.Id}-{_world.Time:0.###}".ToLowerInvariant();
+        _world.SetItem(id, itemId, where);
         Log($"{_survivor.Name} depose {item} en {where}");
 
         WorldChanged?.Invoke($"{item} depose en {where}");
         return true;
     }
+
+    /// <summary>
+    /// Traduit le nom d'objet employe par le plan en identifiant du catalogue.
+    ///
+    /// Le domaine parle de deux objets symboliques et d'aucun objet reel. <c>objective</c> est « ce
+    /// qu'on est venu chercher » : c'est la mission qui decide lequel c'est. <c>remedy</c> est « de quoi
+    /// soigner » : c'est le catalogue qui decide, en cherchant dans le sac le premier objet qui declare
+    /// un effet de soin. Tout autre nom est deja un identifiant de <c>config/items.json</c>, celui
+    /// qu'une action <c>PickUpItem</c> a lie.
+    /// </summary>
+    private string Resolve(string item)
+    {
+        if (item.Equals(ObjectiveObject, StringComparison.OrdinalIgnoreCase)) return _survivor.ObjectiveItem;
+        if (item.Equals(RemedyObject, StringComparison.OrdinalIgnoreCase)) return HealingItem()?.Id ?? item;
+
+        return item;
+    }
+
+    /// <summary>Nom, dans le domaine, de l'objet que la mission envoie chercher.</summary>
+    public const string ObjectiveObject = "objective";
+
+    /// <summary>Nom, dans le domaine, de ce qui sait soigner — quel que soit l'objet reel.</summary>
+    public const string RemedyObject = "remedy";
 
     // --- Effets sur le monde ---------------------------------------------------------------------
 
@@ -172,8 +225,11 @@ public sealed class WorldPlanRuntime : IPlanRuntime
     public bool SetFlag(string fact, bool value, GridPosition? where) => Fact.PredicateOf(fact) switch
     {
         "door_open" => SetDoor(where, value),
+        "door_barricaded" => Barricade(where),
         "window_broken" => BreakWindow(where),
-        "medicine_found" => SearchForMedicine(),
+        "equipped" => Equip(Subject(fact), value),
+        "used" => UseItem(Subject(fact)),
+        "objective_found" => SearchForObjective(),
         "healed" => Heal(Subject(fact)),
         "calmed" => Calm(Subject(fact)),
         "shared_with" => ShareWith(Subject(fact)),
@@ -199,8 +255,38 @@ public sealed class WorldPlanRuntime : IPlanRuntime
     /// </summary>
     public bool Damage(string target, float amount)
     {
+        // Un montant nul veut dire « ce que je tiens » : c'est ainsi qu'AttackWithWeapon lit ses
+        // degats dans config/weapons.json au lieu de les redire dans le domaine. AttackZombie, elle,
+        // declare les siens et frappe a mains nues comme au MVP.
+        var weapon = amount > 0f ? null : _survivor.Inventory.EquippedWeapon;
+
+        if (weapon is not null)
+        {
+            if (!_survivor.Inventory.CanAttackWith(weapon))
+            {
+                Log($"{_survivor.Name} veut frapper avec {weapon}, mais elle est hors d'usage");
+                return false;
+            }
+
+            var strike = _survivor.Inventory.StrikeWith(weapon);
+            amount = strike.Damage;
+
+            if (Reach(target, _survivor.Inventory.RangeOf(weapon)) is not { } quarry) return false;
+
+            EmitNoise(strike.Noise, quarry.Position);
+            _survivor.Inventory.RegisterStrike(weapon);
+
+            return Strike(quarry, amount);
+        }
+
         if (Reach(target) is not { } zombie) return false;
 
+        return Strike(zombie, amount);
+    }
+
+    /// <summary>Le coup lui-meme, une fois su qui l'on frappe et avec quelle force.</summary>
+    private bool Strike(Zombie zombie, float amount)
+    {
         bool downed = zombie.TakeDamage(amount);
 
         Log(downed
@@ -265,7 +351,7 @@ public sealed class WorldPlanRuntime : IPlanRuntime
     /// Le zombie designe, s'il est reellement a portee de bras. La croyance a servi a batir le plan ;
     /// c'est la position reelle qui decide si le coup porte.
     /// </summary>
-    private Zombie? Reach(string target)
+    private Zombie? Reach(string target, int? range = null)
     {
         if (_horde is null)
         {
@@ -279,13 +365,130 @@ public sealed class WorldPlanRuntime : IPlanRuntime
             return null;
         }
 
-        if (zombie.Position.ChebyshevDistanceTo(AgentCell) > _settings.MeleeRange)
+        if (zombie.Position.ChebyshevDistanceTo(AgentCell) > (range ?? _settings.MeleeRange))
         {
             Log($"{_survivor.Name} vise {target} en {zombie.Position} : hors de portee depuis {AgentCell}");
             return null;
         }
 
         return zombie;
+    }
+
+    // --- Meubles et diversions (livrable 11) ------------------------------------------------------
+
+    /// <summary>
+    /// Pousse un meuble d'une case. L'action echoue quand la regle s'y oppose — case de depart
+    /// mauvaise, destination occupee, ou masse trop forte pour un seul — et la raison part au journal
+    /// plutot qu'un simple echec : une replanification qui sait pourquoi vaut mieux qu'une qui
+    /// reessaie a l'identique.
+    /// </summary>
+    public bool Push(string target)
+    {
+        if (_world.Heavy.Find(target) is not { } heavy)
+        {
+            Log($"{_survivor.Name} pousse {target}, mais il n'y a rien de tel ici");
+            return false;
+        }
+
+        var helpers = _band
+            .Where(other => other.Alive && !ReferenceEquals(other, _survivor))
+            .Select(other => other.Position);
+
+        var origin = heavy.Position;
+
+        // L'empreinte d'avant, relevee avant que le meuble ne bouge : une epave de voiture en occupe
+        // huit, et les huit doivent etre rendues au sol.
+        var vacated = heavy.Cells.ToList();
+
+        if (_world.Heavy.WhyCannotPush(heavy, AgentCell, _world.Grid, helpers) is { } refusal)
+        {
+            Log($"{_survivor.Name} ne peut pas pousser {heavy.Id} : {refusal}");
+            return false;
+        }
+
+        if (_world.Heavy.Push(heavy, AgentCell, _world.Grid, helpers) is not { } landing) return false;
+
+        // Le meuble est un obstacle de la grille : le deplacer, c'est deplacer l'obstacle. La
+        // navigation et les lignes de vue n'ont donc rien de nouveau a apprendre. L'ordre compte —
+        // on libere d'abord, on ferme ensuite, sinon un meuble qui n'avance que d'une case
+        // s'effacerait lui-meme.
+        foreach (var cell in vacated) _world.Grid.SetCell(cell, CellType.Floor);
+
+        if (heavy.BlocksMovement || heavy.BlocksSight)
+        {
+            foreach (var cell in heavy.Cells) _world.Grid.SetCell(cell, CellType.Obstacle);
+        }
+
+        EmitNoise(heavy.NoiseOfPush, landing);
+        Log($"{_survivor.Name} pousse {heavy.Id} de {origin} vers {landing}");
+
+        TellWitnesses(origin, landing);
+
+        WorldChanged?.Invoke($"{heavy.Id} pousse en {landing}");
+        return true;
+    }
+
+    /// <summary>
+    /// Met a jour la carte mentale des seuls survivants qui ont vu la scene. La contrainte de
+    /// perception partielle du livrable 2 vaut aussi pour le decor : un survivant qui revient sur une
+    /// case qu'il croit degagee peut se heurter a un meuble qu'un allie a pousse.
+    ///
+    /// Le pousseur en fait partie de droit — il a les mains dessus.
+    /// </summary>
+    private void TellWitnesses(params GridPosition[] cells)
+    {
+        var everyone = _band.Contains(_survivor) ? _band : [.. _band, _survivor];
+
+        foreach (var witness in everyone)
+        {
+            if (!witness.Alive) continue;
+
+            foreach (var cell in cells)
+            {
+                bool sees = ReferenceEquals(witness, _survivor)
+                    || (cell.ChebyshevDistanceTo(witness.Position) <= witness.VisionRange
+                        && LineOfSight.IsVisible(_world.Grid, witness.Position, cell));
+
+                if (!sees) continue;
+
+                witness.Knowledge.ObserveCell(
+                    cell, _world.Grid.GetCell(cell), _world.Grid.IsIndoor(cell), _world.Time);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Lance quelque chose de bruyant a une case visee, sans s'y trouver. C'est ce qui separe la
+    /// diversion de celui qui la provoque : <c>CreateNoiseDistraction</c> faisait deja du bruit, mais
+    /// sous ses propres pieds, ce qui attirait la horde sur soi.
+    /// </summary>
+    public bool ThrowNoise(string target, float amount)
+    {
+        if (_survivor.Knowledge.GetLocation(target)?.Value is not { } where
+            && !TryParseCell(target, out where))
+        {
+            Log($"{_survivor.Name} vise « {target} » : il ne sait pas ou c'est");
+            return false;
+        }
+
+        EmitNoise(amount, where, nameof(NoiseAction.Distraction));
+        Log($"{_survivor.Name} cree une diversion en {where} depuis {AgentCell}");
+
+        WorldChanged?.Invoke($"diversion en {where}");
+        return true;
+    }
+
+    /// <summary>Lit une cible ecrite en coordonnees, <c>"12,7"</c>, quand ce n'est pas un lieu connu.</summary>
+    private static bool TryParseCell(string target, out GridPosition cell)
+    {
+        cell = default;
+
+        var parts = target.Split(',');
+        if (parts.Length != 2) return false;
+        if (!int.TryParse(parts[0], out int x) || !int.TryParse(parts[1], out int y)) return false;
+
+        cell = new GridPosition(x, y);
+        return true;
     }
 
     /// <summary>
@@ -297,14 +500,10 @@ public sealed class WorldPlanRuntime : IPlanRuntime
     {
         bool named = Enum.TryParse(label, ignoreCase: true, out NoiseAction action);
 
-        // « Peu bruyante » decrit une facon de se deplacer, pas un pouvoir sur la matiere : la
-        // discretion du profil ne s'applique qu'aux pas. Une vitre brisee par Alice fait le bruit
-        // d'une vitre brisee, et le bareme de la section 18.1 reste celui de l'action. Ce qu'un
-        // survivant fait mieux ou moins bruyamment qu'un autre sur une action precise se dit dans
-        // ses competences (config/survivors.json), pas ici.
-        float heard = named && action is NoiseAction.Walk or NoiseAction.Run
-            ? _survivor.Profile.NoiseOf(level)
-            : level;
+        // Le bareme de la section 18.1 vaut pour tout le monde : une vitre brisee fait le bruit d'une
+        // vitre brisee, quel que soit celui qui la brise. Ce qui rend une action plus discrete est ce
+        // qu'on a en main (config/items.json), jamais qui on est.
+        float heard = level;
 
         if (heard <= 0f) return;
 
@@ -333,6 +532,71 @@ public sealed class WorldPlanRuntime : IPlanRuntime
         return true;
     }
 
+    /// <summary>
+    /// Barricader une porte. Il n'y a rien de nouveau a dessiner ni a modeliser : une porte
+    /// barricadee est une porte verrouillee, et le verrouillage est deja un etat d'execution que le
+    /// jeu sait poser depuis le MVP. Elle ne se rouvre donc plus qu'a l'effraction — pour le groupe
+    /// comme pour ce qui le suit, ce qui est tout l'interet de l'operation.
+    /// </summary>
+    private bool Barricade(GridPosition? where)
+    {
+        if (where is not { } cell || _world.Grid.GetCell(cell) != CellType.DoorClosed) return false;
+
+        _world.Grid.SetCell(cell, CellType.DoorLocked);
+        _survivor.Knowledge.ObserveCell(cell, CellType.DoorLocked, _world.Grid.IsIndoor(cell), _world.Time);
+
+        Log($"{_survivor.Name} barricade la porte en {cell}");
+        WorldChanged?.Invoke($"porte barricadee en {cell}");
+        return true;
+    }
+
+    /// <summary>
+    /// Prendre en main, ou reposer. Une arme occupe l'unique emplacement d'arme, un outil s'ajoute
+    /// aux autres : c'est l'inventaire qui connait la difference, pas le domaine.
+    /// </summary>
+    private bool Equip(string itemId, bool value)
+    {
+        if (!value) return _survivor.Inventory.Unequip(itemId);
+
+        var inventory = _survivor.Inventory;
+        return inventory.EquipWeapon(itemId) || inventory.EquipTool(itemId);
+    }
+
+    /// <summary>
+    /// Se servir d'un objet porte. Ce qu'il fait n'est pas ecrit ici : le catalogue le declare en
+    /// verbes primitifs, et cette methode ne fait que les executer dans l'ordre.
+    /// </summary>
+    private bool UseItem(string itemId)
+    {
+        if (_catalogue.Find(itemId) is not { } item) return false;
+        if (!_survivor.Carries(item.Id)) return false;
+
+        bool consumed = false;
+
+        foreach (var effect in item.Effects)
+        {
+            switch (effect.Verb)
+            {
+                case EffectVerb.Heal when effect.Target is "self":
+                    _survivor.Heal(effect.Amount > 0f ? effect.Amount : _survivor.Settings.HealAmount);
+                    break;
+
+                case EffectVerb.EmitNoise:
+                    EmitNoise(effect.Amount, AgentCell, nameof(NoiseAction.Distraction));
+                    break;
+
+                case EffectVerb.Consume:
+                    consumed = true;
+                    break;
+            }
+        }
+
+        if (consumed) _survivor.RemoveFromInventory(item.Id);
+
+        Log($"{_survivor.Name} utilise {item.Name}{(consumed ? " (consomme)" : string.Empty)}");
+        return true;
+    }
+
     /// <summary>Une vitre brisee laisse un passage : la cellule devient du sol.</summary>
     private bool BreakWindow(GridPosition? where)
     {
@@ -347,17 +611,17 @@ public sealed class WorldPlanRuntime : IPlanRuntime
     }
 
     /// <summary>
-    /// Fouiller une piece, c'est y trouver — ou non — ce qu'on esperait. L'action echoue quand les
-    /// medicaments ne sont pas la : c'est le declencheur « un objet attendu est absent » du livrable 6.
+    /// Fouiller une piece, c'est y trouver — ou non — ce qu'on esperait. L'action echoue quand l'objet
+    /// de la mission n'est pas la : c'est le declencheur « un objet attendu est absent » du livrable 6.
     ///
     /// Le resultat entre dans la memoire du survivant, y compris — surtout — quand il est negatif.
     /// Sans cela, la replanification qui suit l'echec reconstruit un plan depuis une carte mentale
     /// qui a oublie la deception, et redemande la meme fouille indefiniment.
     /// </summary>
-    private bool SearchForMedicine()
+    private bool SearchForObjective()
     {
         var found = _world.Items.Values
-            .Where(item => item.Kind == ItemKind.Medicine)
+            .Where(item => item.ItemId.Equals(_survivor.ObjectiveItem, StringComparison.OrdinalIgnoreCase))
             .Where(item => IsWithinReach(item.Position))
             .OrderBy(item => item.Position.ChebyshevDistanceTo(AgentCell))
             .FirstOrDefault();
@@ -367,11 +631,11 @@ public sealed class WorldPlanRuntime : IPlanRuntime
 
         if (found is null)
         {
-            Log($"{_survivor.Name} fouille {place ?? AgentCell.ToString()} : aucun medicament");
+            Log($"{_survivor.Name} fouille {place ?? AgentCell.ToString()} : rien de ce qu'il cherche");
             return false;
         }
 
-        _survivor.Knowledge.RememberItem(found.Id, found.Kind, found.Position, _world.Time);
+        _survivor.Knowledge.RememberItem(found.Id, found.ItemId, found.Position, _world.Time);
         Log($"{_survivor.Name} repere {found.Id} en {found.Position}");
         return true;
     }
@@ -383,16 +647,27 @@ public sealed class WorldPlanRuntime : IPlanRuntime
     /// </summary>
     private string? PlaceHere()
         => _world.Grid.ZonesAt(AgentCell)
-            .Select(zone => SymbolicStateBuilder.PlaceNameOf(zone.Kind))
+            .Select(zone => SymbolicStateBuilder.PlaceNameOf(zone, _survivor))
             .FirstOrDefault(name => name is not null);
 
     /// <summary>
-    /// Ce qu'on peut fouiller ou ramasser depuis la ou l'on est : ce qui est a portee immediate, et —
+    /// Ce qu'on peut <b>prendre</b> depuis la ou l'on se tient : ce qui est a portee de bras, et
+    /// rien d'autre. Une caisse au fond de la pharmacie demande d'aller la chercher, meme quand on
+    /// est deja dans la pharmacie — c'est la difference entre reperer et ramasser.
+    ///
+    /// Le plan sait s'en accommoder : la fouille a memorise l'emplacement, la replanification en
+    /// fait un lieu (<c>objective_spot</c>), et le survivant s'y rend avant de tendre la main.
+    /// </summary>
+    private bool IsWithinArmsLength(GridPosition cell)
+        => cell.ChebyshevDistanceTo(AgentCell) <= _settings.PickUpRadius;
+
+    /// <summary>
+    /// Ce qu'on peut <b>fouiller</b> depuis la ou l'on est : ce qui est a portee immediate, et —
     /// quand on est a l'interieur — ce qui se trouve n'importe ou dans le meme local.
     ///
     /// C'est la contrepartie de la granularite du plan : <c>at(agent, pharmacy)</c> ne designe pas une
     /// cellule mais un lieu, et une pharmacie fait dix cases de long. Fouiller une piece, c'est en
-    /// faire le tour et prendre ce qu'il y a sur les etageres, pas tendre le bras depuis la porte. En
+    /// faire le tour et regarder ce qu'il y a sur les etageres, pas tendre le bras depuis la porte. En
     /// revanche cela ne dit jamais rien de ce qui se trouve dehors.
     /// </summary>
     private bool IsWithinReach(GridPosition cell)
@@ -414,17 +689,48 @@ public sealed class WorldPlanRuntime : IPlanRuntime
     /// </summary>
     private bool Heal(string subject)
     {
-        if (Resolve(subject) is not { } patient) return false;
+        if (ResolveSurvivor(subject) is not { } patient) return false;
         if (!patient.Alive) return false;
-        if (!_survivor.RemoveFromInventory(ItemKind.Medicine)) return false;
 
-        patient.Heal(_survivor.Settings.HealAmount);
+        // Ce qui soigne n'est pas un objet nomme dans le code : c'est le premier objet porte qui
+        // declare un effet « heal ». Une trousse, un bandage, ou ce qu'un futur fichier ajoutera.
+        if (HealingItem() is not { } remedy) return false;
+        if (!_survivor.RemoveFromInventory(remedy.Id)) return false;
+
+        // Un remede a montant nul s'en remet a la fiche du soignant : c'est ce qui fait de Claire
+        // une secouriste, la meme trousse rendant davantage entre ses mains. Un bandage, lui, porte
+        // son propre montant et vaut la meme chose pour tout le monde.
+        float amount = remedy.AmountOf(EffectVerb.Heal) is > 0f and var declared
+            ? declared
+            : _survivor.Settings.HealAmount;
+
+        patient.Heal(amount);
 
         Log(ReferenceEquals(patient, _survivor)
-            ? $"{_survivor.Name} se soigne : sante {patient.Health:0}"
-            : $"{_survivor.Name} soigne {patient.Name} : sante {patient.Health:0}");
+            ? $"{_survivor.Name} se soigne avec {remedy.Name} : sante {patient.Health:0}"
+            : $"{_survivor.Name} soigne {patient.Name} avec {remedy.Name} : sante {patient.Health:0}");
 
         return true;
+    }
+
+    /// <summary>
+    /// Le premier objet porte qui sait soigner — et l'objet de la mission en dernier recours, pas en
+    /// premier.
+    ///
+    /// L'ordre a change et il compte. Tant que toute mission ramenait des medicaments, soigner avec
+    /// la caisse qu'on etait venu chercher revenait a perdre la mission pour un bobo ; le survivant
+    /// consomme donc d'abord un bandage, et n'entame ce qu'il rapporte que s'il n'a rien d'autre.
+    /// </summary>
+    private ItemDefinition? HealingItem()
+    {
+        var carried = _survivor.Inventory.ItemIds
+            .Select(_catalogue.Find)
+            .Where(item => item is not null && item.Effects.Any(effect => effect.Verb == EffectVerb.Heal))
+            .ToList();
+
+        return carried.FirstOrDefault(item =>
+                   !item!.Id.Equals(_survivor.ObjectiveItem, StringComparison.OrdinalIgnoreCase))
+            ?? carried.FirstOrDefault();
     }
 
     /// <summary>
@@ -434,7 +740,7 @@ public sealed class WorldPlanRuntime : IPlanRuntime
     /// </summary>
     private bool Calm(string subject)
     {
-        if (Resolve(subject) is not { } listener) return false;
+        if (ResolveSurvivor(subject) is not { } listener) return false;
         if (!listener.Alive || ReferenceEquals(listener, _survivor)) return false;
         if (!_sharing.CanTalk(_survivor, listener)) return false;
 
@@ -450,7 +756,7 @@ public sealed class WorldPlanRuntime : IPlanRuntime
     /// </summary>
     private bool ShareWith(string subject)
     {
-        if (Resolve(subject) is not { } listener) return false;
+        if (ResolveSurvivor(subject) is not { } listener) return false;
         if (!_sharing.CanTalk(_survivor, listener)) return false;
 
         int learned = _sharing.Talk(_survivor, listener, _world.Time);
@@ -463,7 +769,7 @@ public sealed class WorldPlanRuntime : IPlanRuntime
     /// du groupe. Un allie absent du groupe ne renvoie rien, et l'action echoue plutot que de reussir
     /// dans le vide.
     /// </summary>
-    private Survivor? Resolve(string subject)
+    private Survivor? ResolveSurvivor(string subject)
     {
         if (subject.Equals(PlanningProblem.Agent, StringComparison.OrdinalIgnoreCase)) return _survivor;
         if (subject.Equals(_survivor.Id, StringComparison.OrdinalIgnoreCase)) return _survivor;
@@ -476,6 +782,4 @@ public sealed class WorldPlanRuntime : IPlanRuntime
 
     private void Log(string message) => Logged?.Invoke(message);
 
-    private static bool TryParseItem(string name, out ItemKind kind)
-        => Enum.TryParse(name, ignoreCase: true, out kind);
 }

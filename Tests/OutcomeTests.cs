@@ -20,9 +20,6 @@ public class OutcomeTests
     /// La boucle complete, du depart a la victoire : le joueur donne « recuperer les medicaments »,
     /// et le reste est de l'initiative. Personne ne dit a Alice de rentrer — c'est la Utility AI qui
     /// bascule sur <c>ReachExtraction</c> une fois la caisse en poche, et le camp est la sortie.
-    ///
-    /// La mission remplie ne suffit pas a conclure : la partie ne se termine qu'une fois Alice
-    /// rentree au camp, c'est-a-dire sortie du terrain.
     /// </summary>
     [Fact]
     public void Une_partie_complete_se_joue_du_depart_jusqu_a_la_victoire()
@@ -42,48 +39,16 @@ public class OutcomeTests
         Assert.True(won, $"La partie ne s'est pas conclue. {mission.Trace()}");
         Assert.Equal(MissionOutcome.Victory, tracker.Outcome);
 
-        // La mission a bien ete remplie avant que la partie ne se termine, et la caisse est au camp.
-        Assert.True(tracker.Done);
+        // La caisse est au camp, et c'est elle qui conclut : le porteur est nomme dans le verdict.
         var camp = mission.Definition.CampIn(mission.Map)!;
         Assert.Contains(
             mission.Band.Survivors,
-            survivor => survivor.Carries(ItemKind.Medicine) && camp.Contains(survivor.Position));
+            survivor => survivor.Carries(Survivor.DefaultObjectiveItem) && camp.Contains(survivor.Position));
 
-        // Alice a quitte le terrain : elle est rentree, elle n'est pas morte.
-        Assert.True(mission.Alice.Returned);
+        Assert.NotNull(tracker.Courier);
         Assert.True(mission.Alice.Alive);
-        Assert.Empty(mission.Band.Standing);
 
         Assert.Contains("ReachExtraction", mission.Executed);
-    }
-
-    /// <summary>
-    /// La victoire n'arrete pas le jeu : la mission est remplie, puis la partie continue le temps
-    /// que le groupe rentre. Les deux moments sont distincts, et c'est l'objet du rappel.
-    /// </summary>
-    [Fact]
-    public void Remplir_la_mission_n_arrete_pas_la_partie()
-    {
-        var mission = new MissionRun(team: true);
-        var tracker = mission.Tracker;
-
-        foreach (var agent in mission.Band.Agents)
-        {
-            agent.Survivor.Mission = new MissionOrder(
-                "recuperer une caisse de medicaments",
-                mission.Spawn(ZoneKind.Pharmacy),
-                MissionRun.Config.UtilityAi.PlayerOrderPriority);
-        }
-
-        Assert.True(
-            mission.RunUntil(() => tracker.Done),
-            $"La mission n'a jamais ete remplie. {mission.Trace()}");
-
-        // La caisse est rentree, et pourtant rien n'est fini : il reste du monde dehors.
-        Assert.Equal(MissionOutcome.Running, tracker.Outcome);
-        Assert.False(tracker.IsOver);
-        Assert.NotEmpty(mission.Band.Standing);
-        Assert.NotNull(tracker.Courier);
     }
 
     [Fact]
@@ -119,7 +84,7 @@ public class OutcomeTests
     [Fact]
     public void Rentrer_au_camp_sans_les_medicaments_ne_remplit_pas_la_mission()
     {
-        var mission = new MissionRun(withMedicine: false);
+        var mission = new MissionRun(withObjective: false);
         var tracker = mission.Tracker;
 
         var camp = mission.Definition.CampIn(mission.Map)!;
@@ -127,7 +92,7 @@ public class OutcomeTests
 
         tracker.Evaluate(mission.World.Time);
 
-        Assert.False(tracker.Done);
+        Assert.Null(tracker.Courier);
         Assert.NotEqual(MissionOutcome.Victory, tracker.Outcome);
     }
 
@@ -137,11 +102,11 @@ public class OutcomeTests
         var mission = new MissionRun();
         var tracker = mission.Tracker;
 
-        mission.Alice.AddToInventory(ItemKind.Medicine);
+        mission.Alice.AddToInventory(Survivor.DefaultObjectiveItem);
         mission.Alice.Position = mission.Spawn(ZoneKind.Pharmacy);
 
         Assert.Equal(MissionOutcome.Running, tracker.Evaluate(mission.World.Time).Outcome);
-        Assert.False(tracker.Done);
+        Assert.Null(tracker.Courier);
     }
 
     // --- Defaite -------------------------------------------------------------------------------
@@ -186,13 +151,13 @@ public class OutcomeTests
         // Alice ramasse la caisse a la pharmacie : elle existe toujours, dans son sac. Il faut
         // l'y placer explicitement — laissee au camp, la ramasser remplirait la mission sur place.
         mission.Alice.Position = mission.Spawn(ZoneKind.Pharmacy);
-        mission.World.RemoveItem("medicine-1");
-        mission.Alice.AddToInventory(ItemKind.Medicine);
+        mission.World.RemoveItem("objective-1");
+        mission.Alice.AddToInventory(Survivor.DefaultObjectiveItem);
         Assert.Equal(MissionOutcome.Running, tracker.Evaluate(mission.World.Time).Outcome);
 
         // Elle s'en sert pour se soigner : il n'y a plus de medicaments nulle part.
         mission.Alice.TakeDamage(50f);
-        Assert.True(mission.Alice.RemoveFromInventory(ItemKind.Medicine));
+        Assert.True(mission.Alice.RemoveFromInventory(Survivor.DefaultObjectiveItem));
         mission.Alice.Heal(mission.Alice.Settings.HealAmount);
 
         var verdict = tracker.Evaluate(mission.World.Time);
@@ -209,7 +174,7 @@ public class OutcomeTests
 
         Assert.Empty(tracker.Carriers);
 
-        mission.Alice.AddToInventory(ItemKind.Medicine);
+        mission.Alice.AddToInventory(Survivor.DefaultObjectiveItem);
 
         Assert.Equal([mission.Alice], tracker.Carriers);
     }

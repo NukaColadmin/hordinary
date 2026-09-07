@@ -22,6 +22,7 @@ public sealed class SurvivorBand
     private readonly List<Survivor> _survivors = [];
     private readonly WorldState _world;
     private readonly GameConfig _config;
+    private readonly ItemCatalogue _catalogue;
 
     public IReadOnlyList<SurvivorAgent> Agents => _agents;
 
@@ -40,16 +41,12 @@ public sealed class SurvivorBand
     public IHorde? Horde { get; set; }
 
     /// <summary>
-    /// Survivants encore sur le terrain, c'est-a-dire capables d'agir. Deux facons d'en sortir, et
-    /// elles ne se ressemblent pas : etre mis hors de combat, ou etre rentre au camp. Dans les deux
-    /// cas l'agent cesse de percevoir, de decider et de recevoir des ordres — mais dans le second il
-    /// est vivant, et repartira.
+    /// Survivants encore sur le terrain, c'est-a-dire capables d'agir. On en sort d'une seule facon :
+    /// etre mis hors de combat. L'agent cesse alors de percevoir, de decider et de recevoir des
+    /// ordres.
     /// </summary>
     public IEnumerable<SurvivorAgent> Standing
-        => _agents.Where(agent => agent.Survivor is { Alive: true, Returned: false });
-
-    /// <summary>Survivants rentres au camp. Leur mission est finie, pas leur histoire.</summary>
-    public IEnumerable<SurvivorAgent> Home => _agents.Where(agent => agent.Survivor.Returned);
+        => _agents.Where(agent => agent.Survivor.Alive);
 
     /// <summary>
     /// Interrupteur du mode debug (livrable 8), lu dans <c>debug.panic_enabled</c> : a <c>false</c>,
@@ -71,10 +68,15 @@ public sealed class SurvivorBand
 
     private bool _panicEnabled = true;
 
-    public SurvivorBand(WorldState world, GameConfig config, PerceptionSystem? perception = null)
+    public SurvivorBand(
+        WorldState world,
+        GameConfig config,
+        PerceptionSystem? perception = null,
+        ItemCatalogue? catalogue = null)
     {
         _world = world ?? throw new ArgumentNullException(nameof(world));
         _config = config ?? throw new ArgumentNullException(nameof(config));
+        _catalogue = catalogue ?? ItemCatalogue.Empty;
 
         Perception = perception ?? new PerceptionSystem(config.Perception);
         Sharing = new KnowledgeSharing(config.Knowledge);
@@ -93,7 +95,7 @@ public sealed class SurvivorBand
     {
         var agent = new SurvivorAgent(
             profile, spawn, _world, _config, goals, domain, Perception, _survivors, Sharing,
-            new DeferredHorde(() => Horde));
+            new DeferredHorde(() => Horde), _catalogue);
 
         // Un survivant enrole apres une bascule du mode debug doit naitre dans le meme regime que
         // les autres, sinon le groupe panique a moitie.
@@ -118,16 +120,61 @@ public sealed class SurvivorBand
     {
         foreach (var kind in kinds)
         {
-            if (_world.Grid.GetZone(kind) is not { } zone) continue;
+            if (_world.Grid.GetZone(kind) is { } zone) Brief(zone);
+        }
+    }
 
-            var target = _world.Grid.FindWalkableIn(zone) ?? zone.Center;
+    /// <summary>
+    /// Annonce un lieu precis plutot qu'une categorie.
+    ///
+    /// La carte livree compte deux batiments, et le generateur peut en poser davantage : « allez
+    /// fouiller le batiment » ne designe alors rien. C'est par ici que l'objectif d'une mission est
+    /// annonce, parce que lui seul sait lequel des deux on vise.
+    /// </summary>
+    public void Brief(MapZone zone)
+    {
+        ArgumentNullException.ThrowIfNull(zone);
+
+        var target = _world.Grid.FindWalkableIn(zone) ?? zone.Center;
+
+        foreach (var agent in _agents)
+        {
+            agent.Survivor.Knowledge.RememberLocation(
+                zone.Name, zone.Kind, target, 0d, KnowledgeSource.Inference);
+        }
+    }
+
+    /// <summary>
+    /// La ceinture d'un quartier genere (livrable 13) : chacun sait des le depart qu'on ne va pas
+    /// par la.
+    ///
+    /// Ce n'est pas un confort d'affichage, c'est une condition de bon fonctionnement. Un explorateur
+    /// de frontieres appelle « frontiere » une case connue qui touche une case inconnue ; sans cette
+    /// mise au courant, le bord du monde en offrirait un millier, toutes infranchissables, et le
+    /// groupe passerait la mission a longer un brouillard qu'il redecouvre. Un survivant depose la
+    /// voit le brouillard : lui dire ou le monde s'arrete ne lui apprend rien qu'un regard ne donne.
+    ///
+    /// La source est donc <see cref="KnowledgeSource.Inference"/>, comme le briefing : c'est su, pas
+    /// observe. La carte dessinee n'a pas de ceinture — l'appel n'y marque alors aucune case.
+    /// </summary>
+    /// <returns>Le nombre de cases de ceinture portees a la connaissance du groupe.</returns>
+    public int KnowBorder()
+    {
+        int marked = 0;
+
+        foreach (var cell in _world.Grid.AllPositions())
+        {
+            if (_world.Grid.GetCell(cell) != CellType.Border) continue;
+            marked++;
 
             foreach (var agent in _agents)
             {
-                agent.Survivor.Knowledge.RememberLocation(
-                    zone.Name, kind, target, 0d, KnowledgeSource.Inference);
+                agent.Survivor.Knowledge.ObserveCell(
+                    cell, CellType.Border, indoor: false, 0d, KnowledgeSource.Inference);
             }
         }
+
+        return marked;
     }
 
     // --- Boucle ---------------------------------------------------------------------------------

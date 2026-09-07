@@ -46,11 +46,11 @@ Les livrables 11 à 15 portent chacun leur propre liste de tests, en fin de fich
 recopie pas ; il rappelle les **trois invariants** que ces listes vérifient toutes, sous une forme ou
 une autre, et qui sont la raison d'être de la suite :
 
-* **aucun système ne lit le `WorldState` à la place d'un agent** — résolveur d'expédition, résolveur de
+* **aucun système ne lit le `WorldState` à la place d'un agent** — résolveur de
   rencontre, contexte de dialogue ;
 * **`Hordinary.Core` ne référence ni Godot, ni un client HTTP** — c'est ce qui rend tout le reste
   testable sans lancer le jeu ;
-* **à graine égale, résultat égal** — roster généré, quartier généré, expédition, rencontre, mission
+* **à graine égale, résultat égal** — roster généré, quartier généré, rencontre, mission
   rejouée avec ses contraintes figées.
 
 Deux catégories de tests dérogent à la règle « aucune dépendance externe » et se marquent donc `Skip`

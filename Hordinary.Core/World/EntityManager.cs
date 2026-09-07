@@ -71,6 +71,33 @@ public sealed class EntityManager : IHorde
     }
 
     /// <summary>
+    /// Pose la horde aux emplacements deja choisis. C'est la voie des quartiers generes (livrable
+    /// 13) : le generateur a tire ces cases avec sa propre graine, en meme temps que le reste du
+    /// quartier, et refaire ici un tirage sur une autre graine reviendrait a decider deux fois.
+    ///
+    /// Une case injouable est ignoree plutot que corrigee : le generateur a deja garanti qu'elles
+    /// sont praticables et a distance, et rattraper silencieusement une erreur de sa part la
+    /// rendrait invisible.
+    /// </summary>
+    /// <returns>Le nombre de zombies reellement poses.</returns>
+    public int SpawnHorde(IReadOnlyList<GridPosition> cells)
+    {
+        ArgumentNullException.ThrowIfNull(cells);
+
+        int spawned = 0;
+
+        foreach (var cell in cells)
+        {
+            if (!_world.Grid.IsWalkable(cell)) continue;
+
+            Spawn($"zombie-{spawned + 1}", cell);
+            spawned++;
+        }
+
+        return spawned;
+    }
+
+    /// <summary>
     /// Repartit <see cref="ZombieSettings.Count"/> zombies sur des cases praticables distinctes, a
     /// bonne distance du point de depart des survivants. Le tirage suit
     /// <see cref="ZombieSettings.Seed"/> : la meme carte donne toujours la meme horde.

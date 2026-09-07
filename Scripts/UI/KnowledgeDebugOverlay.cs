@@ -74,7 +74,7 @@ public partial class KnowledgeDebugOverlay : Node2D
             // L'opacite traduit la confiance : une position ancienne s'efface au lieu de mentir.
             var color = belief.Kind == EntityKind.Zombie ? ZombieColor : AllyColor;
             DrawCircle(CellCenter(belief.Value), _tileSize * 0.30f, color with { A = confidence });
-            DrawRect(CellRect(belief.Value), color with { A = confidence * 0.8f }, filled: false, width: 1f);
+            DrawRect(CellRect(belief.Value), color with { A = confidence * 0.8f }, filled: false, width: 2f);
         }
 
         foreach (var belief in _knowledge.KnownItems.Values)
@@ -86,7 +86,7 @@ public partial class KnowledgeDebugOverlay : Node2D
         foreach (var belief in _knowledge.KnownLocations.Values)
         {
             DrawString(font, CellCenter(belief.Value) + new Vector2(-_tileSize, -_tileSize * 0.6f),
-                belief.Name, HorizontalAlignment.Center, _tileSize * 2f, 7, LocationColor);
+                belief.Name, HorizontalAlignment.Center, _tileSize * 2f, 14, LocationColor);
         }
     }
 

@@ -10,6 +10,7 @@ using Hordinary.Config;
 using Hordinary.Game;
 using Hordinary.UI;
 using Hordinary.World;
+using Hordinary.World.MapGeneration;
 
 // Godot expose un noeud 3D nomme GridMap : on desambigue en faveur de notre grille de jeu.
 using GridMap = Hordinary.World.GridMap;
@@ -40,14 +41,13 @@ namespace Hordinary.Game;
 /// panneaux. Ce noeud ne contient plus aucune regle de jeu — seulement des cadences, des touches et
 /// du texte.
 ///
-/// Une partie se deroule desormais en trois temps, et ce noeud les enchaine :
+/// Une partie se deroule en trois temps, et ce noeud les enchaine :
 /// <list type="number">
-/// <item>Le joueur choisit ses agents et sa mission (<see cref="MissionSetupScreen"/>). Rien ne
-/// tourne encore : la carte est la, personne n'est dessus.</item>
+/// <item>Le joueur compose son equipe et choisit sa destination au camp (<see cref="CampScreen"/>).
+/// Rien ne tourne encore : la carte est la, personne n'est dessus.</item>
 /// <item>La mission se joue. Elle commence au camp et s'y termine.</item>
-/// <item>La caisse rentre au camp : la mission est remplie, mais la partie <b>continue</b>. Celui
-/// qui l'a rapportee repart chercher les autres (<see cref="MissionRecall"/>), et chacun disparait
-/// de la carte en annoncant qu'il est rentre. Le verdict ne tombe qu'une fois le terrain vide.</item>
+/// <item>La caisse rentre au camp, et la partie est gagnee. Depart et arrivee au meme endroit :
+/// c'est ce qui donne un sens au mot « mission ».</item>
 /// </list>
 /// </summary>
 public partial class GameRoot : Node2D
@@ -59,6 +59,11 @@ public partial class GameRoot : Node2D
     [Export] public string PlannerDomainPath { get; set; } = "res://config/planner_domain.json";
     [Export] public string SurvivorsPath { get; set; } = "res://config/survivors.json";
     [Export] public string MissionsPath { get; set; } = "res://config/missions.json";
+    [Export] public string ItemsPath { get; set; } = "res://config/items.json";
+    [Export] public string WeaponsPath { get; set; } = "res://config/weapons.json";
+    [Export] public string ZonesPath { get; set; } = "res://config/zones.json";
+    [Export] public string CampPath { get; set; } = "res://config/camp.json";
+    [Export] public string MapGenPath { get; set; } = "res://config/mapgen.json";
 
     /// <summary>Noms des TileMapLayer, du fond vers le premier plan.</summary>
     [Export] public string[] LayerNames { get; set; } = ["Ground", "Wall-Door", "Window", "Objects"];
@@ -87,6 +92,46 @@ public partial class GameRoot : Node2D
     private SurvivorRoster _roster = SurvivorRoster.Empty;
     private MissionCatalogue _catalogue = MissionCatalogue.Empty;
 
+    /// <summary>Les objets et les armes livres (livrable 11), les deux fichiers reunis.</summary>
+    private ItemCatalogue _items = ItemCatalogue.Empty;
+
+    /// <summary>Les profils de zone : ce qu'un lieu contient, par-dessus ce qu'il est.</summary>
+    private ZoneCatalogue _zones = ZoneCatalogue.Empty;
+
+    /// <summary>
+    /// Le stock du camp. Il survit a la mission : c'est lui qui transforme « une mission, une caisse »
+    /// en boucle de survie, et l'ecran de preparation le montre avant chaque depart.
+    /// </summary>
+    private CampStock _camp = new();
+
+    /// <summary>Les profils de quartier (livrable 13). Vides, toute mission retombe sur la carte dessinee.</summary>
+    private MapGenConfig _mapgen = MapGenConfig.Empty;
+
+    /// <summary>Le quartier genere de la mission en cours, s'il y en a un.</summary>
+    private GeneratedDistrict? _district;
+
+    /// <summary>
+    /// La legende, gardee apres le chargement : elle sert a lire la carte dessinee, puis a en peindre
+    /// une generee. C'est le meme fichier dans les deux sens.
+    /// </summary>
+    private TileLegend _legend = new();
+
+    /// <summary>
+    /// Les couches de la scene, alignees sur <see cref="LayerNames"/> — une entree nulle pour une
+    /// couche absente. L'alignement compte : le peintre designe ses couches par indice, et tasser la
+    /// liste ferait dessiner les fenetres sur la couche des objets.
+    /// </summary>
+    private TileMapLayer?[] _layers = [];
+
+    /// <summary>La camera, gardee pour recadrer et borner quand la carte change sous elle.</summary>
+    private CameraController _camera = null!;
+
+    /// <summary>
+    /// Les vignettes d'objets, decoupees dans la meme planche que la carte. Il n'existe pas de serie
+    /// d'icones a part : ce qu'on voit dans un sac est la tuile qu'on voit au sol.
+    /// </summary>
+    private ItemIcons? _icons;
+
     private NavigationDebugOverlay _overlay = null!;
     private KnowledgeDebugOverlay _knowledgeOverlay = null!;
     private NoiseDebugOverlay _noiseOverlay = null!;
@@ -95,20 +140,30 @@ public partial class GameRoot : Node2D
     private AgentPanel _agentPanel = null!;
     private PlanPanel _planPanel = null!;
     private AgentRoster _team = null!;
-    private MissionSetupScreen _setup = null!;
+    private SurvivorPanel _survivorPanel = null!;
+    private CampScreen _campScreen = null!;
 
     private CommandManager _commands = null!;
     private MissionDefinition _mission = null!;
     private MissionTracker _tracker = null!;
-    private MissionRecall _recall = null!;
 
     private int _tileSize = 16;
+
+    /// <summary>La planche peinte dans l'editeur, gardee pour y decouper les vignettes d'inventaire.</summary>
+    private TileSet? _tileSet;
 
     /// <summary>Faux tant que le joueur n'a pas valide son equipe et sa mission.</summary>
     private bool _started;
 
     private readonly List<SurvivorNode> _nodes = [];
     private readonly Dictionary<string, ZombieNode> _zombieNodes = [];
+    private VanNode? _van;
+
+    /// <summary>
+    /// Le peintre, garde apres la generation : il ne sert plus alors qu'a une case a la fois, celle
+    /// d'un objet pose ou ramasse.
+    /// </summary>
+    private MapPainter _painter = null!;
 
     private double _sincePerception;
     private double _sinceZombieThink;
@@ -137,19 +192,50 @@ public partial class GameRoot : Node2D
 
         _config = LoadJson(GameConfigPath, GameConfig.FromJson, GameConfig.Default, "configuration");
         Trace.Enabled = _config.Debug.ShowsConsole;
+        Trace.UseChannels(_config.Debug.ConsoleChannels);
         Trace.Print($"[Config] configuration lue depuis {GameConfigPath}.");
 
-        var legend = LoadJson(TileLegendPath, TileLegend.FromJson, new TileLegend(), "legende des tuiles");
-        _tileSize = legend.TileSize;
+        _legend = LoadJson(TileLegendPath, TileLegend.FromJson, new TileLegend(), "legende des tuiles");
+        _tileSize = _legend.TileSize;
+        _painter = new MapPainter(_legend);
 
-        BuildMap(legend);
+        BuildMap(_legend);
+
+        // Les profils de quartier avant les missions : une mission qui en nomme un doit trouver a qui
+        // parler. Le fichier absent n'est pas une erreur — il n'y a alors que la carte dessinee.
+        _mapgen = LoadJson(MapGenPath, MapGenConfig.FromJson, MapGenConfig.Empty, "profils de quartier");
 
         _noiseRng = new Random(_config.Zombies.Seed);
 
         _goals = LoadJson(UtilityGoalsPath, UtilityGoalSet.FromJson, UtilityGoalSet.Empty, "objectifs");
         _domain = LoadJson(PlannerDomainPath, PlanningDomain.FromJson, PlanningDomain.Empty, "domaine de planification");
         _roster = LoadJson(SurvivorsPath, SurvivorRoster.FromJson, SurvivorRoster.Empty, "survivants");
-        _catalogue = LoadJson(MissionsPath, MissionCatalogue.FromJson, MissionCatalogue.Empty, "missions");
+        _zones = LoadJson(ZonesPath, ZoneCatalogue.FromJson, ZoneCatalogue.Empty, "zones");
+
+        // Les zones avant les missions : une mission peut viser un profil, et c'est le catalogue de
+        // zones qui lui donne alors sa categorie structurelle.
+        _catalogue = LoadJson(MissionsPath, json => MissionCatalogue.FromJson(json, _zones), MissionCatalogue.Empty, "missions");
+
+        _camp = new CampStock(LoadJson(CampPath, CampSettings.FromJson, CampSettings.Default, "camp"));
+
+        // Objets et armes partagent un espace d'identifiants unique : un inventaire ne connait qu'un
+        // id, jamais le fichier dont il vient.
+        _items = ItemCatalogue.Merge(
+            LoadJson(ItemsPath, ItemCatalogue.FromJson, ItemCatalogue.Empty, "objets"),
+            LoadJson(WeaponsPath, ItemCatalogue.FromJson, ItemCatalogue.Empty, "armes"));
+
+        _icons = new ItemIcons(_legend, _tileSet, _items);
+
+        // Une table de butin qui nomme un objet inexistant ne se verrait autrement qu'a la fouille,
+        // c'est-a-dire jamais, puisqu'elle ne produirait rien.
+        try
+        {
+            _zones.ValidateLoot(_items);
+        }
+        catch (Exception exception)
+        {
+            Trace.Error($"[Zone] {exception.Message}");
+        }
 
         CreateCamera();
 
@@ -162,9 +248,9 @@ public partial class GameRoot : Node2D
     // --- Preparation ----------------------------------------------------------------------------
 
     /// <summary>
-    /// Le premier ecran : la grille d'agents en bas, les missions au-dessus, et un bouton. La carte
-    /// est deja construite et cadree derriere — le joueur choisit son equipe en voyant le terrain
-    /// sur lequel il l'envoie.
+    /// Le premier ecran : le camp. Ce qu'il reste dans les reserves, qui est la, et ou on les envoie.
+    /// La carte est deja construite derriere : le joueur compose son equipe en voyant le terrain ou
+    /// il l'envoie.
     /// </summary>
     private void ShowSetup()
     {
@@ -182,16 +268,25 @@ public partial class GameRoot : Node2D
 
         if (_config.Debug.SkipsSetup)
         {
-            Trace.Print("[Debug] Ecran de preparation saute (config debug.skip_setup).");
+            Trace.Print("[Debug] Ecran de camp saute (config debug.skip_setup).");
             Begin(_catalogue.Missions[0], _roster.Survivors);
             return;
         }
 
-        _setup = new MissionSetupScreen { Name = "Setup" };
-        AddChild(_setup);
+        _campScreen = new CampScreen { Name = "Camp" };
+        AddChild(_campScreen);
 
-        _setup.Configure(_roster.Survivors, _catalogue.Missions, _config.Survivor);
-        _setup.Started += Begin;
+        _campScreen.Configure(
+            _roster.Survivors,
+            _catalogue.Missions,
+            _config.Survivor,
+            _camp,
+            _icons,
+            _config.Zombies.Seed);
+
+        _campScreen.Paint(RingColors);
+
+        _campScreen.MissionChosen += Begin;
     }
 
     /// <summary>
@@ -206,23 +301,36 @@ public partial class GameRoot : Node2D
             $"[Mission] {mission.Name} ({mission.Difficulty ?? "sans difficulte annoncee"}) — "
           + $"{team.Count} agent(s) : {string.Join(", ", team.Select(profile => profile.Name))}.");
 
+        // Le quartier d'abord : tout ce qui suit se pose sur une carte, et cette carte peut n'exister
+        // que depuis cette ligne.
+        if (mission.IsGenerated) GenerateDistrict(mission);
+
         PlaceSupplies(mission);
+        ShowItems();
+        ShowTerrain();
         CreateBand(team, mission);
 
         if (_band.Agents.Count == 0) return;
+
+        // La ceinture est connue avant le premier regard : sans cela, le bord du monde offrirait mille
+        // frontieres a explorer, toutes infranchissables.
+        if (_district is not null) Trace.Print($"[Carte] Ceinture connue du groupe : {_band.KnowBorder()} cases.");
 
         CreateHorde(mission);
         CreateOverlays();
         CreateHud();
         CreateSurvivorNodes();
         CreateZombieNodes();
+        CreateVan(mission);
 
         _commands = new CommandManager(_band, _map, _config.UtilityAi);
         _commands.SelectionChanged += _ => Follow();
+        // Sans personne a regarder, les overlays retombent sur le premier du groupe, comme le reste
+        // de l'affichage : une carte mentale orpheline serait celle de plus personne.
+        _commands.SelectionCleared += Follow;
         _commands.Executed += result => Trace.Print($"[Ordre] {result}.");
 
         _tracker = new MissionTracker(_world, _band, mission);
-        _recall = new MissionRecall(_band, _map, mission, _config.Mission);
 
         WatchMission();
         ApplyDebugSettings();
@@ -232,34 +340,9 @@ public partial class GameRoot : Node2D
         _started = true;
     }
 
-    /// <summary>
-    /// Le rappel du groupe. C'est le seul cablage de ce noeud qui ait encore l'air d'une regle, et
-    /// il n'en est pas une : <see cref="MissionTracker"/> constate que la caisse est rentree,
-    /// <see cref="MissionRecall"/> fait partir le messager. Ce noeud ne fait que les presenter.
-    /// </summary>
+    /// <summary>L'issue de la partie part au journal. Ce noeud ne fait que la relayer.</summary>
     private void WatchMission()
-    {
-        _tracker.Accomplished += courier =>
-        {
-            Trace.Print($"[Mission] {_mission.Name} remplie par {courier.Name} (t = {_tracker.DoneAt:0.0} s).");
-
-            if (_band.Find(courier.Id) is { } messenger) _recall.Begin(messenger);
-        };
-
-        _tracker.Finished += verdict => Trace.Print($"[Partie] {verdict} (t = {verdict.At:0.0} s).");
-
-        _recall.Said += line => Trace.Print($"[Rappel] {line}");
-
-        _recall.CameHome += survivor =>
-        {
-            // Le corps quitte la carte : le survivant est rentre, il n'est pas mort. Sa fiche reste
-            // dans la barre du bas, eteinte — la faire disparaitre laisserait un trou dans l'equipe.
-            var body = _nodes.FirstOrDefault(node => node.Name.ToString() == survivor.Id);
-            if (body is not null && IsInstanceValid(body)) body.QueueFree();
-
-            UpdateHud();
-        };
-    }
+        => _tracker.Finished += verdict => Trace.Print($"[Partie] {verdict} (t = {verdict.At:0.0} s).");
 
     /// <summary>
     /// Etat de depart du mode debug, lu dans <c>config/game_config.json</c>. Ouvrir la partie
@@ -287,14 +370,113 @@ public partial class GameRoot : Node2D
 
     // --- Construction ---------------------------------------------------------------------------
 
+    /// <summary>
+    /// Genere le quartier de la mission (livrable 13) et le substitue a la carte dessinee.
+    ///
+    /// Tout ce qui suit dans <see cref="Begin"/> — les caisses, le groupe, la horde, les overlays —
+    /// est ecrit contre une <see cref="GridMap"/> et un <see cref="WorldState"/>, sans jamais demander
+    /// d'ou ils viennent. C'est la raison pour laquelle brancher un generateur tient en une methode :
+    /// il produit exactement ce que le chargeur de tuiles produisait, et rien en aval n'apprend qu'il
+    /// existe.
+    ///
+    /// Un echec ne fait pas tomber la partie. Le fichier peut manquer, le profil peut etre mal
+    /// orthographie, et huit tentatives peuvent ne rien donner : dans ces trois cas la mission se joue
+    /// sur la carte dessinee, avec une ligne d'erreur qui dit laquelle des trois. Se rabattre en
+    /// silence serait pire — le joueur croirait avoir vu un quartier genere.
+    /// </summary>
+    private void GenerateDistrict(MissionDefinition mission)
+    {
+        if (_mapgen.Find(mission.MapProfile) is null)
+        {
+            Trace.Error(
+                $"[Carte] La mission « {mission.Id} » demande le profil « {mission.MapProfile} », "
+              + $"absent de {MapGenPath} : la carte dessinee sert de repli.");
+            return;
+        }
+
+        // La graine du joueur si l'ecran de camp est passe par la, celle du fichier sinon, celle de la
+        // partie a defaut. C'est le champ de saisie qui tranche : il a ete rempli avec la graine de la
+        // mission au moment ou elle a ete choisie.
+        int seed = _campScreen is not null && IsInstanceValid(_campScreen)
+            ? _campScreen.MapSeed
+            : mission.MapSeed ?? _config.Zombies.Seed;
+
+        var generator = new DistrictGenerator(_mapgen);
+
+        var request = new DistrictRequest
+        {
+            Mission = mission,
+            Seed = seed,
+            ZombieCount = mission.ZombieCount ?? _config.Zombies.Count,
+            MinimumSpawnDistance = _config.Zombies.MinimumSpawnDistance,
+        };
+
+        GeneratedDistrict district;
+
+        try
+        {
+            district = generator.Generate(request);
+        }
+        catch (Exception exception)
+        {
+            Trace.Error($"[Carte] Aucun quartier jouable pour la graine {seed} ({exception.Message}) ; "
+                      + "la carte dessinee sert de repli.");
+            return;
+        }
+        finally
+        {
+            // Les refus sont dits meme quand la generation finit par aboutir : ils expliquent pourquoi
+            // le quartier joue n'est pas celui de la graine demandee.
+            foreach (var refused in generator.Rejected) Trace.Warn($"[Carte] Quartier refuse — {refused}.");
+        }
+
+        _district = district;
+        _map = district.Map;
+        _world = new WorldState(_map, _config.Noise);
+
+        // Les meubles poussables du livrable 11 : le generateur les a poses en tenant compte de la
+        // navigation, le monde n'a plus qu'a les tenir — et le decor, les montrer.
+        foreach (var heavy in district.Heavy)
+        {
+            _world.Heavy.Add(heavy);
+
+            var body = new HeavyNode { Name = heavy.Id, ZIndex = 1 };
+            AddChild(body);
+            body.Configure(heavy, _tileSize);
+        }
+
+        int index = 0;
+        foreach (var item in district.Items)
+        {
+            _world.SetItem($"{item.ItemId}-{++index}".ToLowerInvariant(), item.ItemId, item.Position);
+        }
+
+        foreach (var missing in _painter.Paint(_layers, district, _world.Items.Values))
+            Trace.Warn($"[Carte] {missing}");
+
+        _camera.FrameDistrict(_map, _tileSize, district.Drop);
+
+        Trace.Print(
+            $"[Carte] {district} — {district.Border.Name}, ceinture de {district.BeltThickness} cases, "
+          + $"{district.Attempts} tentative(s), {district.Items.Count} objets au sol, "
+          + $"{district.Heavy.Count} meubles, {district.ZombieSpawns.Count} zombies prevus.");
+    }
+
     private void BuildMap(TileLegend legend)
     {
-        var layers = new List<TileMapLayer>();
-        foreach (var layerName in LayerNames)
+        _layers = new TileMapLayer?[LayerNames.Length];
+
+        for (int rank = 0; rank < LayerNames.Length; rank++)
         {
-            if (GetNodeOrNull<TileMapLayer>(layerName) is { } layer) layers.Add(layer);
-            else Trace.Warn($"[Carte] Couche '{layerName}' introuvable dans la scene.");
+            _layers[rank] = GetNodeOrNull<TileMapLayer>(LayerNames[rank]);
+            if (_layers[rank] is null) Trace.Warn($"[Carte] Couche '{LayerNames[rank]}' introuvable dans la scene.");
         }
+
+        var layers = _layers.OfType<TileMapLayer>().ToList();
+
+        // La planche des tuiles sert deux fois : a peindre la carte, et a decouper les vignettes
+        // d'inventaire. Les couches partagent toutes le meme TileSet, la premiere trouvee fait foi.
+        _tileSet = layers.FirstOrDefault()?.TileSet;
 
         var result = new MapLoader(legend).Load(layers);
         _map = result.Map;
@@ -309,8 +491,8 @@ public partial class GameRoot : Node2D
         int index = 0;
         foreach (var item in result.Items)
         {
-            string id = $"{item.Kind}-{++index}".ToLowerInvariant();
-            _world.SetItem(id, ItemKind.Medicine, item.Position);
+            string id = $"{item.ItemId}-{++index}".ToLowerInvariant();
+            _world.SetItem(id, item.ItemId, item.Position);
             Trace.Print($"[Monde] Objet {id} en {item.Position}.");
         }
     }
@@ -358,33 +540,86 @@ public partial class GameRoot : Node2D
     }
 
     /// <summary>
+    /// Met le decor d'accord avec le monde, et l'y maintient : chaque objet reellement pose au sol
+    /// se voit, et lui seul.
+    ///
+    /// Deux mensonges disparaissent ici, et le second etait le plus couteux. Les caisses de la
+    /// mission sont posees <b>apres</b> la peinture du quartier : elles n'apparaissaient donc nulle
+    /// part, et le joueur voyait un survivant entrer dans la pharmacie et en ressortir avec des
+    /// medicaments qu'aucune image n'avait annonces. Et rien n'effacait ce qui etait ramasse : la
+    /// tuile d'un objet emporte restait au sol.
+    ///
+    /// Le peintre ne decide de rien : c'est <see cref="WorldState"/> qui annonce, ici comme partout.
+    /// </summary>
+    /// <summary>
+    /// Met le decor d'accord avec le terrain, et l'y maintient.
+    ///
+    /// Une porte forcee, une vitre brisee : le jeu change le type d'une case, et jusqu'ici l'image ne
+    /// bougeait pas. Le joueur voyait donc un survivant franchir une porte dessinee fermee — le seul
+    /// endroit du prototype ou l'ecran contredisait la simulation.
+    ///
+    /// Comme pour les objets, le peintre ne decide de rien : c'est la grille qui annonce
+    /// (<see cref="GridMap.CellChanged"/>), et l'abonnement est pris <b>apres</b> la peinture du
+    /// quartier — la generation pose des milliers de cases, et aucune n'a besoin d'etre repeinte.
+    /// </summary>
+    private void ShowTerrain()
+        => _map.CellChanged += (cell, type) => _painter.ShowCell(_layers, cell, type);
+
+    private void ShowItems()
+    {
+        foreach (var item in _world.Items.Values) _painter.ShowItem(_layers, item.Position, item.ItemId);
+
+        _world.ItemPlaced += item => _painter.ShowItem(_layers, item.Position, item.ItemId);
+
+        // Deux objets peuvent partager une case — un sac tombe sur une caisse. La case revient donc
+        // a ce qu'il y reste, et non a rien.
+        _world.ItemTaken += item => _painter.ShowItem(
+            _layers, item.Position, _world.ItemsAt(item.Position).FirstOrDefault()?.ItemId);
+    }
+
+    /// <summary>
     /// Enrole les profils que le joueur a retenus dans l'ecran de preparation. Aucun d'eux n'est
     /// nomme dans le code : Alice, Bob et Claire sont des donnees, et un quatrieme profil entrerait
     /// en jeu sans recompilation.
     /// </summary>
     private void CreateBand(IReadOnlyList<SurvivorProfile> team, MissionDefinition mission)
     {
-        _band = new SurvivorBand(_world, _config);
+        _band = new SurvivorBand(_world, _config, catalogue: _items);
 
         // Les agents commencent et finissent au meme endroit : le camp est le point de depart.
         var spawn = FindSpawn(mission);
 
+        // Le lieu exact vise par la mission, pas seulement sa categorie : deux batiments partagent la
+        // meme, et le domaine de planification n'a qu'un « objective_zone » a offrir.
+        var objective = mission.ObjectiveIn(_map);
+        var site = objective is null ? null : new ObjectiveSite(objective.Name, objective.Kind);
+
         foreach (var profile in team)
         {
             var agent = _band.Enlist(profile, spawn, _goals, _domain);
+
+            // Le survivant sait ce qu'on l'envoie chercher, et ou : c'est la mission qui le dit, et
+            // c'est la seule raison pour laquelle ni le code ni le domaine de planification n'ont jamais
+            // a nommer un objet ni un lieu. Le domaine parle d'« objective » et d'« objective_zone » ;
+            // ces deux lignes sont ce qui leur donne un sens, et elles changent a chaque mission.
+            agent.Survivor.ObjectiveItem = mission.Item;
+            agent.Survivor.ObjectiveZone = site;
+
             Watch(agent);
 
             Trace.Print(
-                $"[Agent] {profile.Name} ({profile.Role}) demarre en {spawn} — " +
-                $"vision {agent.Survivor.VisionRange} cases, {profile.Personality}, " +
-                $"discretion x{profile.NoiseMultiplier:0.##}, {profile.Skills.Count} competences, " +
-                $"HP {agent.Survivor.Health:0}/{agent.Survivor.Settings.MaxHealth:0}, " +
-                $"SANITY {agent.Survivor.Sanity:0}/{agent.Survivor.Settings.MaxSanity:0}.");
+                $"[Agent] {profile.Name} demarre en {spawn} — " +
+                $"vision {agent.Survivor.VisionRange} cases, " +
+                $"HP {agent.Survivor.Health:0}/{agent.Survivor.Settings.MaxHealth:0}.");
         }
 
         // Briefing du joueur : les lieux de la mission, pas leur contenu. C'est une connaissance
         // transmise, pas une observation — le terrain reste entierement a decouvrir.
         _band.Brief([.. mission.BriefedZones()]);
+
+        // Et le lieu vise nommement : sans cette ligne, une mission qui envoie au hangar sud briefe le
+        // premier batiment venu, et le groupe part fouiller l'entrepot ouest.
+        if (objective is not null) _band.Brief(objective);
 
         _band.Sharing.Exchanged += exchange =>
         {
@@ -397,7 +632,10 @@ public partial class GameRoot : Node2D
     {
         string who = agent.Survivor.Name;
 
-        agent.Logged += message => Trace.Print($"[Plan] {who} : {message}.");
+        // Canal a part, et ferme par defaut : ce sont les details d'execution — chaque pas fait du
+        // bruit, chaque fouille dit ce qu'elle n'a pas trouve. Utile quand on cherche pourquoi une
+        // action a echoue, illisible quand on suit un plan, que « Plan » resume deja.
+        agent.Logged += message => Trace.Print($"[Action] {who} : {message}.");
 
         agent.Executor.ActionStarted += action =>
         {
@@ -417,9 +655,13 @@ public partial class GameRoot : Node2D
             => Trace.Print($"[Plan] {who} : {plan.Goal} — {plan.Status}"
                          + $"{(plan.FailureReason is { } why ? $" ({why})" : string.Empty)}.");
 
+        // « IA » est le journal de decision complet. Les replanifications en sont exclues : elles
+        // arrivent aussi par Replanned, qui imprime le bloc de quatre lignes que la specification
+        // impose — les laisser ici les ecrivait deux fois, mot pour mot, et cela faisait a soi seul
+        // un quart du journal d'une mission.
         agent.Brain.Journal.Written += entry =>
         {
-            if (entry.Kind is DecisionKind.Action) return;
+            if (entry.Kind is DecisionKind.Action or DecisionKind.Replan) return;
             Trace.Print($"[IA] {entry}");
         };
 
@@ -448,7 +690,13 @@ public partial class GameRoot : Node2D
     private void CreateHorde(MissionDefinition mission)
     {
         _entities = new EntityManager(_world, _config.Zombies, _config.Knowledge, _config.Perception);
-        int spawned = _entities.SpawnHorde(FindSpawn(mission), mission.ZombieCount);
+
+        // Sur un quartier genere, les emplacements sont deja tires — avec la graine du quartier, en
+        // meme temps que le reste. Refaire ici un tirage sur la graine de la horde reviendrait a
+        // decider deux fois, et deux quartiers identiques n'auraient plus la meme horde.
+        int spawned = _district is { } district
+            ? _entities.SpawnHorde(district.ZombieSpawns)
+            : _entities.SpawnHorde(FindSpawn(mission), mission.ZombieCount);
 
         // Les survivants peuvent desormais frapper (livrable 8) : la horde se branche apres coup,
         // parce qu'elle est placee en fonction du point de depart du groupe.
@@ -470,7 +718,7 @@ public partial class GameRoot : Node2D
         _entities.Attacked += (zombie, target) => Bite(zombie, target);
 
         Trace.Print(
-            $"[Monde] {spawned} zombies places (graine {_config.Zombies.Seed}, " +
+            $"[Monde] {spawned} zombies places (graine {_district?.Seed ?? _config.Zombies.Seed}, " +
             $"a {_config.Zombies.MinimumSpawnDistance} cases minimum du camp).");
     }
 
@@ -484,14 +732,14 @@ public partial class GameRoot : Node2D
         if (_band.Find(targetId) is not { } agent) return;
 
         var victim = agent.Survivor;
-        if (!victim.Alive || victim.Returned) return;
+        if (!victim.Alive) return;
 
         victim.Knowledge.RememberEntity(zombie.Id, EntityKind.Zombie, zombie.Position, _world.Time);
         victim.TakeDamage(_config.Zombies.AttackDamage);
 
         Trace.Print(
             $"[Combat] {zombie.Id} frappe {victim.Name} : sante {victim.Health:0}, " +
-            $"panique {victim.Panic:P0}, motivation {victim.Sanity:0}.");
+            $"panique {victim.Panic:P0}.");
 
         if (victim.Alive)
         {
@@ -540,6 +788,21 @@ public partial class GameRoot : Node2D
         }
     }
 
+    /// <summary>
+    /// Pose le van sur la zone de camp : un skin visuel, sans aucune fonction de jeu. Une seule
+    /// mission par partie dans ce prototype, mais la garde evite un doublon si <see cref="Begin"/>
+    /// devait un jour se rejouer.
+    /// </summary>
+    private void CreateVan(MissionDefinition mission)
+    {
+        if (_van is not null) return;
+        if (mission.CampIn(_map) is not { } camp) return;
+
+        _van = new VanNode { Name = "Van", ZIndex = 2 };
+        AddChild(_van);
+        _van.Configure(camp, _tileSize);
+    }
+
     private GridPosition FindSpawn(MissionDefinition mission)
     {
         if (mission.CampIn(_map) is { } camp && _map.FindWalkableIn(camp) is { } cell) return cell;
@@ -550,9 +813,9 @@ public partial class GameRoot : Node2D
 
     private void CreateCamera()
     {
-        var camera = new CameraController { Name = "Camera" };
-        AddChild(camera);
-        camera.FrameMap(_map, _tileSize);
+        _camera = new CameraController { Name = "Camera" };
+        AddChild(_camera);
+        _camera.FrameMap(_map, _tileSize);
     }
 
     private void CreateOverlays()
@@ -626,11 +889,23 @@ public partial class GameRoot : Node2D
         _planPanel.AnchorTo(HorizontalAlignment.Right, VerticalAlignment.Bottom);
         layer.AddChild(_planPanel);
 
+        _survivorPanel = new SurvivorPanel { Name = "SurvivorPanel" };
+        AddChild(_survivorPanel);
+        _survivorPanel.Configure(_icons);
+
         _team = new AgentRoster { Name = "Team" };
         AddChild(_team);
 
-        _team.Configure(_band.Agents);
+        _team.Configure(_band.Agents, _camp, _icons);
+        _team.Paint(RingColors);
         _team.Picked += agent => _commands.Execute(PlayerCommand.Select(agent.Survivor.Id));
+
+        // Double-clic sur une fiche : le meme geste que sur la carte, et le meme effet.
+        _team.Centered += agent =>
+        {
+            _commands.Execute(PlayerCommand.Select(agent.Survivor.Id));
+            FollowWithCamera(agent);
+        };
     }
 
     // --- Boucle ---------------------------------------------------------------------------------
@@ -678,18 +953,16 @@ public partial class GameRoot : Node2D
         _band.Think((float)delta);
 
         // Et pour finir : ou en est la mission ? La question vient apres tout le reste, sur le monde
-        // tel que la passe vient de le laisser. Remplir la mission n'arrete rien — c'est le rappel
-        // qui demarre, et le verdict n'arrive qu'une fois le terrain vide.
+        // tel que la passe vient de le laisser.
         _tracker.Evaluate(_world.Time);
-        _recall.Advance(_world.Time);
 
         if (_tracker.IsOver) UpdateHud();
     }
 
     /// <summary>
     /// Se deplacer fait du bruit (specification section 18.1). Franchir une porte fermee, c'est
-    /// l'ouvrir : le bareme le facture deux fois plus cher qu'un pas. La discretion du profil
-    /// (livrable 7) s'applique ici : Alice ne s'entend pas comme Bob.
+    /// l'ouvrir : le bareme le facture deux fois plus cher qu'un pas. Le bareme vaut pour tout le
+    /// monde — courir s'entend, quel que soit celui qui court.
     /// </summary>
     private void EmitFootsteps()
     {
@@ -705,7 +978,7 @@ public partial class GameRoot : Node2D
                 ? NoiseAction.OpenDoor
                 : _running ? NoiseAction.Run : NoiseAction.Walk;
 
-            float level = agent.Profile.NoiseOf(_config.Noise.LevelOf(action));
+            float level = _config.Noise.LevelOf(action);
             var noise = _world.Noises.EmitRaw(cell, level, _world.Time, agent.Survivor.Id, action);
 
             // Les pas ne meritent pas une ligne de journal ; ouvrir une porte, si.
@@ -799,9 +1072,8 @@ public partial class GameRoot : Node2D
                 ToggleRun();
                 break;
 
-            case Key.Key1: _commands.Execute(PlayerCommand.FetchMedicine(toAll)); break;
+            case Key.Key1: _commands.Execute(PlayerCommand.FetchObjective(toAll)); break;
             case Key.Key2: _commands.Execute(PlayerCommand.ReachExtraction(toAll)); break;
-            case Key.Key3: SendToCamp(toAll); break;
             case Key.Key4: _commands.Execute(PlayerCommand.Explore(ZoneUnderCursor(), toAll)); break;
             case Key.Key5: _commands.Execute(PlayerCommand.Regroup(toAll)); break;
 
@@ -913,23 +1185,18 @@ public partial class GameRoot : Node2D
     private MapZone? ZoneUnderCursor() => _map.ZonesAt(WorldToCell(GetGlobalMousePosition())).FirstOrDefault();
 
     /// <summary>
-    /// « Rentrez au camp. » Ce n'est pas une commande de la specification, mais c'est celle qui rend
-    /// la boucle jouable : le joueur peut rappeler son equipe sans attendre que la mission soit
-    /// remplie — et un agent rappele qui atteint le camp en sort, comme les autres.
+    /// Le clic gauche sur la carte, et ses trois lectures.
+    ///
+    /// <list type="bullet">
+    /// <item>Sur un survivant : il devient celui qu'on regarde.</item>
+    /// <item>Deux fois sur un survivant : la camera part avec lui. C'est le seul moyen de garder un
+    /// oeil sur quelqu'un pendant qu'il traverse le quartier, et cela n'enleve rien au joueur — la
+    /// molette continue de zoomer, un glissement au bouton du milieu reprend la main.</item>
+    /// <item>A cote : plus personne. Le panneau lateral se ferme, l'anneau s'eteint, la camera cesse
+    /// de suivre. Un ecran qui montre une fiche detaillee alors qu'on vient de cliquer ailleurs
+    /// laisse croire que le clic n'a pas ete recu.</item>
+    /// </list>
     /// </summary>
-    private void SendToCamp(bool toAll)
-    {
-        var addressed = toAll || _commands.GroupSelected
-            ? _band.Standing.ToList()
-            : [Current];
-
-        foreach (var agent in addressed)
-        {
-            if (!_recall.Abandon(agent, "rappele au camp par le joueur"))
-                Trace.Warn($"[Ordre] {agent.Survivor.Name} rentrait deja.");
-        }
-    }
-
     private void HandleClick(InputEventMouseButton mouse)
     {
         var cell = WorldToCell(GetGlobalMousePosition());
@@ -937,9 +1204,14 @@ public partial class GameRoot : Node2D
         switch (mouse.ButtonIndex)
         {
             case MouseButton.Left:
-                // Un clic sur un survivant le selectionne.
-                if (_band.Standing.FirstOrDefault(agent => agent.Survivor.Position == cell) is { } clicked)
-                    _commands.Execute(PlayerCommand.Select(clicked.Survivor.Id));
+                if (_band.Standing.FirstOrDefault(agent => agent.Survivor.Position == cell) is not { } clicked)
+                {
+                    Deselect();
+                    break;
+                }
+
+                _commands.Execute(PlayerCommand.Select(clicked.Survivor.Id));
+                if (mouse.DoubleClick) FollowWithCamera(clicked);
                 break;
 
             case MouseButton.Right when _config.Debug.AcceptsCommands:
@@ -948,18 +1220,40 @@ public partial class GameRoot : Node2D
         }
     }
 
+    /// <summary>
+    /// Colle la camera au corps du survivant. C'est bien le corps qui est suivi et non la case :
+    /// <see cref="PathFollower"/> interpole entre deux cellules, et suivre la case donnerait une vue
+    /// qui avance par sauts.
+    /// </summary>
+    private void FollowWithCamera(SurvivorAgent agent)
+    {
+        // Les corps sont crees dans l'ordre du groupe : le rang suffit a retrouver le bon.
+        int rank = _band.Agents.ToList().IndexOf(agent);
+        if (rank < 0 || rank >= _nodes.Count || !IsInstanceValid(_nodes[rank])) return;
+
+        var body = _nodes[rank];
+
+        // Un survivant rentre au camp voit son corps libere : la fermeture doit y survivre, sans quoi
+        // la camera lirait un noeud detruit a chaque image.
+        _camera.Follow(() => IsInstanceValid(body) ? body.GlobalPosition : _camera.GlobalPosition);
+        Trace.Print($"[Camera] Suit {agent.Survivor.Name}.");
+    }
+
+    /// <summary>Le joueur a clique a cote : on lache celui qu'on regardait, et la camera avec.</summary>
+    private void Deselect()
+    {
+        if (_commands.Deselect()) _camera.Unfollow();
+    }
+
     // --- Bruit ----------------------------------------------------------------------------------
 
     private void ToggleRun()
     {
         _running = !_running;
 
-        foreach (var agent in _band.Agents)
-        {
-            agent.Follower.Speed = _running
-                ? agent.Survivor.Settings.RunSpeed
-                : agent.Survivor.Settings.WalkSpeed;
-        }
+        // C'est l'agent qui fixe la vitesse : la penalite de surcharge s'y applique, et un survivant
+        // charge ne court pas aussi vite que les autres.
+        foreach (var agent in _band.Agents) agent.SetPace(_running);
 
         Trace.Print(
             $"[Bruit] Le groupe {(_running ? "court" : "marche")} : chaque case fait desormais " +
@@ -1012,15 +1306,19 @@ public partial class GameRoot : Node2D
     {
         _team.Refresh(_commands.Selected);
 
+        int rank = _commands.SelectedIndex;
+        _survivorPanel.RingColor = RingColors[rank % RingColors.Length];
+        _survivorPanel.Refresh(_commands.Selected, rank, _world.Time);
+
         for (int i = 0; i < _nodes.Count; i++)
         {
             if (!IsInstanceValid(_nodes[i])) continue;
-            _nodes[i].Selected = i == _commands.SelectedIndex;
+            _nodes[i].Selected = _commands.HasSelection && i == _commands.SelectedIndex;
         }
 
         if (!ShowsText) return;
 
-        _hud.Refresh(_map, _world, _band, _commands, _tracker, _recall, _entities.Zombies, _running);
+        _hud.Refresh(_map, _world, _band, _commands, _tracker, _entities.Zombies, _running);
         _agentPanel.Refresh(Current, _world.Time);
         _planPanel.Refresh(Current);
     }
@@ -1056,6 +1354,20 @@ public partial class GameRoot : Node2D
             $"[Partage] Portee de communication {_config.Knowledge.CommunicationRange} cases, " +
             $"echange toutes les {_config.Knowledge.SharingInterval:0.##} s" +
             $"{(_config.Knowledge.RadioEnabled ? ", radio de groupe activee" : string.Empty)}.");
+
+        Trace.Print(
+            $"[Objet] {_items.Items.Count} objets et armes charges " +
+            $"({_items.OfCategory(ItemCategory.Weapon).Count()} armes, " +
+            $"{_items.Items.Count(item => item.ActionModifiers.Count > 0)} d'entre eux ponderent une action).");
+
+        if (_zones.Zones.Count > 0)
+        {
+            Trace.Print(
+                $"[Zone] {_zones.Zones.Count} profils charges : " +
+                $"{string.Join(", ", _zones.Zones.Select(zone => zone.ToString()))}.");
+        }
+
+        Trace.Print($"[Camp] Stock au depart : {_camp}.");
     }
 
     // --- Utilitaires ----------------------------------------------------------------------------

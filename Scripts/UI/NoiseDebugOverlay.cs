@@ -81,17 +81,17 @@ public partial class NoiseDebugOverlay : Node2D
             if (zombie.Destination is { } destination && zombie.State != ZombieState.Idle)
             {
                 var color = ColorFor(zombie.State);
-                DrawLine(from, CellCenter(destination), color with { A = 0.55f }, 1f);
+                DrawLine(from, CellCenter(destination), color with { A = 0.55f }, 2f);
 
                 // La cible d'une enquete sonore est ce que le zombie croit, pas ou est le survivant.
                 if (zombie.State == ZombieState.InvestigateNoise)
                 {
-                    DrawRect(CellRect(destination), BelievedNoiseColor with { A = 0.8f }, filled: false, width: 1f);
+                    DrawRect(CellRect(destination), BelievedNoiseColor with { A = 0.8f }, filled: false, width: 2f);
                 }
             }
 
             DrawString(font, from + new Vector2(-_tileSize, -_tileSize * 0.55f),
-                Label(zombie.State), HorizontalAlignment.Center, _tileSize * 2f, 6,
+                Label(zombie.State), HorizontalAlignment.Center, _tileSize * 2f, 12,
                 ColorFor(zombie.State));
         }
     }

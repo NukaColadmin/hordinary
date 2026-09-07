@@ -33,7 +33,7 @@ public partial class AgentPanel : InfoPanel
         var survivor = agent.Survivor;
 
         Write($"""
-            {survivor.Name} — {survivor.Profile.Role}
+            {survivor.Name}
             {StateLine(survivor)}
 
             Objectif :
@@ -59,27 +59,21 @@ public partial class AgentPanel : InfoPanel
     // --- Etat -------------------------------------------------------------------------------
 
     /// <summary>
-    /// Sante, motivation et panique. La panique porte la mention du mode debug quand elle est
-    /// neutralisee : sans cela, un zero permanent passerait pour un survivant imperturbable au lieu
-    /// d'un interrupteur qu'on a oublie de remettre.
-    ///
-    /// La motivation figure ici sous la meme forme que sur la fiche du bas — <c>SANITY 150/200</c> —
-    /// pour qu'un joueur n'ait jamais a convertir mentalement entre deux affichages du meme chiffre.
+    /// Sante et panique. La panique porte la mention du mode debug quand elle est neutralisee :
+    /// sans cela, un zero permanent passerait pour un survivant imperturbable au lieu d'un
+    /// interrupteur qu'on a oublie de remettre.
     /// </summary>
     private static string StateLine(Survivor survivor)
     {
-        if (survivor.Returned) return $"rentre au camp a t = {survivor.ReturnedAt:0.0} s";
         if (!survivor.Alive) return "hors de combat";
 
         string panic = survivor.PanicEnabled
             ? $"panique {survivor.Panic:P0}"
             : "panique neutralisee (debug)";
 
-        string carrying = survivor.Carries(ItemKind.Medicine) ? ", porte les medicaments" : string.Empty;
-        string recalled = survivor.Recalled ? $"\nrappele : « {survivor.RecallMessage} »" : string.Empty;
+        string carrying = survivor.CarriesObjective ? ", porte l'objet de la mission" : string.Empty;
 
-        return $"HP {survivor.Health:0}/{survivor.Settings.MaxHealth:0}, "
-             + $"SANITY {survivor.Sanity:0}/{survivor.Settings.MaxSanity:0}, {panic}{carrying}{recalled}";
+        return $"HP {survivor.Health:0}/{survivor.Settings.MaxHealth:0}, {panic}{carrying}";
     }
 
     private static string GoalLine(SurvivorAgent agent, double now)

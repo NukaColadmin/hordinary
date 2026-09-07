@@ -1,4 +1,4 @@
-# Livrable 12 — Refonte de l'interface, survivants générés et van d'extraction
+# Livrable 12 — Refonte de l'interface et survivants générés
 
 > Voir [00-INDEX.md](./00-INDEX.md) pour le contexte général du projet.
 
@@ -6,55 +6,39 @@
 actuelle ne sait pas montrer : un inventaire, une arme équipée, un stock de camp, des survivants qui ne
 s'appellent plus Alice, Bob et Claire. Sans ce livrable, le 11 est jouable mais illisible.
 
-**Dépendances** : livrable 11 (le van consomme l'essence du stock de camp ; le panneau latéral affiche
-l'inventaire). **Bloqué au départ** par le prérequis humain ci-dessous.
+**Dépendances** : livrable 11 (le panneau latéral affiche l'inventaire et le stock de camp).
+**Bloqué au départ** par le prérequis humain ci-dessous.
 
 ## Objectif
 
 Remplacer l'interface de démonstration du livrable 8 par une interface de jeu : grille de survivants en
-bas d'écran, panneau latéral détaillé, menus, sprites de survivants ; et faire de la zone d'extraction
-un véhicule qui coûte de l'essence à faire rouler.
+bas d'écran, panneau latéral détaillé, menus.
+
+Le rendu en jeu des survivants et des zombies **reste le cercle + anneau** déjà produit par
+[SurvivorNode.cs](../Scripts/Agents/SurvivorNode.cs) et
+[ZombieNode.cs](../Scripts/Agents/ZombieNode.cs) : aucun sprite de personnage (« pawn ») n'est prévu, ni
+pour ce livrable ni pour un suivant. La zone d'extraction porte le skin du van
+([VanNode.cs](../Scripts/World/VanNode.cs), `Assets/Others/Van.png`) : une image posée au centre de la
+zone de camp, sans aucune logique de jeu associée — ni stock d'essence, ni capacité, ni bruit de
+démarrage. Mécaniquement, l'extraction reste entièrement portée par `ZoneKind.Extraction`, comme
+n'importe quelle autre zone.
 
 ## Prérequis (humain, bloquant)
 
-Livrés dans `Assets/`, au format des existants. Le registre graphique, la charte technique et **un
-prompt de génération par sprite** sont dans
-[F-direction-artistique-et-prompts.md](./F-direction-artistique-et-prompts.md), section 5. Le détail
-image par image — nom de fichier, dimensions, vue, silhouette — est dans le **catalogue de sprites**
-plus bas ; les six lignes ci-dessous sont la liste de contrôle.
+Le registre graphique et la charte technique sont dans
+[F-direction-artistique-et-prompts.md](./F-direction-artistique-et-prompts.md). Les portraits
+(`Assets/Portraits/`) et le skin du van (`Assets/Others/Van.png`) sont déjà livrés. Il ne reste que
+l'interface :
 
-* [ ] **Survivants** : 18 images de **32 × 48 px** — **6 personnages entiers** (3 femmes, 3 hommes),
-      chacun en 3 vues ;
-* [ ] **Zombies** : 9 images de **32 × 48 px** — 3 variantes entières, en 3 vues ;
-* [ ] **Armes tenues** : 5 sprites de profil en **32 × 16 px** ;
-* [ ] **Portraits** : 6 images de **64 × 64 px** — un par personnage ;
-* [ ] **Van d'extraction** : 3 états de **64 × 96 px** ;
-* [ ] **Interface** : 6 planches, soit **25 images** une fois découpées.
-
-**47 livraisons au total** — 41 images individuelles plus 6 planches d'interface, soit **66 fichiers**
-une fois les planches découpées. C'est 47 qui sert à planifier et 66 qui sert à cocher ; les deux
-chiffres sont dans le catalogue, avec leur détail. Aucun de ces fichiers n'est une frame d'animation, et
-aucun n'est un calque.
+* [ ] **Interface** : 6 planches, soit **24 images** une fois découpées.
 
 Comme au livrable 11, le code peut être écrit et testé avant, mais le livrable n'est pas terminé tant
 que le résultat n'est pas visible en jeu.
 
-## Personnages : modèle pawn, animation par code
+## Identification des survivants : l'anneau et le nom
 
-**Aucun sprite de personnage n'est une frame d'animation.** Un survivant comme un zombie est un *pawn*
-au sens de RimWorld : une image fixe, dessinée en **trois vues** (face, dos, profil), la quatrième
-orientation étant le profil retourné par le code.
-
-**Il n'y a pas de calques.** Un personnage est livré entier et en couleur : corps, tenue, visage et
-cheveux dans la même image. Six personnages existent — trois femmes, trois hommes — et seule l'arme
-tenue se dessine par-dessus, avec sa rotation libre. Ce qui est abandonné avec les calques : l'ordre
-d'empilement normatif, l'alignement au pixel près entre quatre images, la livraison en niveaux de gris
-et la recoloration par palette.
-
-### Qui est qui : l'anneau et le nom
-
-Six sprites pour un roster qui peut en compter davantage — **deux survivants peuvent partager un
-personnage**. C'est assumé : l'identification est produite par le code, pas par le dessin.
+Déjà implémenté, inchangé par ce livrable — documenté ici parce que le panneau latéral et la grille du
+bas s'appuient dessus.
 
 | Signe | Production | Règle |
 |-------|-----------|-------|
@@ -62,156 +46,15 @@ personnage**. C'est assumé : l'identification est produite par le code, pas par
 | **Nom au-dessus de la tête** | Texte taille 8, contour sombre de 2 px, **teinté de la couleur de l'anneau** | Toujours affiché, jamais réservé au mode debug |
 | Sélection | Arc blanc à l'extérieur de l'anneau | S'ajoute à l'anneau, ne le remplace pas |
 
-L'anneau est au sol et non un contour du personnage : teinter le contour entrerait en conflit avec la
-règle de contour de la charte (1 px, teinte foncée, jamais noir pur) et disparaîtrait sur un sol de la
-même famille chromatique.
-
-**Les deux signes existent déjà** dans [SurvivorNode.cs](../Scripts/Agents/SurvivorNode.cs), avec les
-couleurs de `RingColors` dans [GameRoot.cs](../Scripts/Game/GameRoot.cs) : ce livrable remplace le rond
-par le sprite, il n'a pas à réinventer l'identification. **Un zombie n'a ni anneau ni nom** — ce qui
-porte une couleur au sol est quelqu'un.
-
-Tout le mouvement est produit par `Scripts/Agents/` et remplace le cercle actuellement dessiné par
-[SurvivorNode.cs](../Scripts/Agents/SurvivorNode.cs) et
-[ZombieNode.cs](../Scripts/Agents/ZombieNode.cs) :
-
-| Effet | Production |
-|-------|-----------|
-| Orientation | Choix parmi les 3 vues, miroir horizontal pour l'ouest |
-| Marche / course | Oscillation verticale de 2 à 4 px, cadence proportionnelle à la vitesse |
-| Attaque | Bond de 6 px vers la cible puis retour |
-| Visée | Rotation libre du sprite d'arme — le seul sprite du jeu qui pivote à 360° |
-| Dégât reçu | Teinte blanche 0,1 s (`Modulate`) |
-| Blessé | Inclinaison permanente de 6°, légère désaturation |
-| Panique | Tremblement de 2 px, haute fréquence |
-| Fouille | Oscillation accélérée et léger rétrécissement vertical |
-| À terre / mort | Rotation à 90° du pawn entier, puis fondu |
-| État du zombie | Les quatre teintes déjà en place dans `ZombieNode.cs`, appliquées au pawn |
-
-Les amplitudes sont en **pixels monde** et valent le double de ce qu'elles valaient avant le passage de
-la tuile à 32 px : une oscillation de 1 px sur une tuile de 32 se verrait deux fois moins qu'elle ne se
-voyait sur une tuile de 16. Les angles et les durées ne dépendent pas de l'échelle et ne changent pas.
-
-Ce choix divise la production graphique par deux et rend les zombies possibles dans le même budget ;
-l'abandon des calques la divise encore, de 45 à 27 images pour les deux familles — voir
-[F-direction-artistique-et-prompts.md](./F-direction-artistique-et-prompts.md), section 5.
+Les deux signes existent déjà dans [SurvivorNode.cs](../Scripts/Agents/SurvivorNode.cs), avec les
+couleurs de `RingColors` dans [GameRoot.cs](../Scripts/Game/GameRoot.cs). **Un zombie n'a ni anneau ni
+nom** — ce qui porte une couleur au sol est quelqu'un.
 
 ## Catalogue de sprites
 
-L'équivalent, pour ce livrable, du catalogue de tuiles du livrable 11 : la liste exhaustive de ce qu'il
-faut produire, nommée, dimensionnée, prête à servir de bon de commande. Les prompts correspondants sont
-dans la section 5 de [F-direction-artistique-et-prompts.md](./F-direction-artistique-et-prompts.md).
+Ce qu'il reste à produire pour ce livrable, au-delà de ce qui est déjà livré (portraits, van).
 
-**Trois règles valables pour tout ce qui suit :**
-
-* **un personnage est une image entière**, livrée **en couleur** : corps, tenue, visage et cheveux
-  ensemble. Aucun calque, aucun empilement, aucune recoloration ;
-* **les trois vues sont `face` (sud), `dos` (nord) et `profil` (est)**. L'ouest est le profil retourné
-  par le code. Il n'existe pas de quatrième vue à dessiner ;
-* **les six personnages doivent se distinguer par la silhouette seule.** Plus rien ne varie par
-  recoloration : capuche, chignon, casque, bonnet, salopette et sac sont ce qui les sépare à 32 px. Le
-  test : passés en noir plein, les six restent-ils reconnaissables ?
-
-### Convention de nommage
-
-```text
-pawn_{female,male}_{1,2,3}_{vue}.png    survivants
-zpawn_{variante}_{vue}.png              zombies
-held_{arme}.png                         armes tenues
-portrait_{female,male}_{1,2,3}.png      portraits
-van_{etat}.png                          van
-ui_{famille}_{variante}.png             interface
-```
-
-### 1. Survivants — 18 images de 32 × 48 px
-
-Six personnages entiers : trois femmes, trois hommes. Les sujets, silhouettes et détails décalés sont en
-section 5.1 de [F-direction-artistique-et-prompts.md](./F-direction-artistique-et-prompts.md).
-
-| # | Personnage | Fichiers | Silhouette | Vues | Images |
-|---|-----------|----------|-----------|------|--------|
-| 1 | Femme 1 | `pawn_female_1_{face,dos,profil}` | Capuche relevée, gilet à badges | 3 | **3** |
-| 2 | Femme 2 | `pawn_female_2_{face,dos,profil}` | Chignon, cardigan et tablier | 3 | **3** |
-| 3 | Femme 3 | `pawn_female_3_{face,dos,profil}` | Casque de vélo, nattes courtes | 3 | **3** |
-| 4 | Homme 1 | `pawn_male_1_{face,dos,profil}` | Sac à dos, veste de travail ouverte | 3 | **3** |
-| 5 | Homme 2 | `pawn_male_2_{face,dos,profil}` | Manteau long, bonnet, écharpe | 3 | **3** |
-| 6 | Homme 3 | `pawn_male_3_{face,dos,profil}` | Salopette, ceinture à outils, crâne nu | 3 | **3** |
-| | | | | | **18** |
-
-Aucun n'est recolorable : la couleur du personnage est celle de son dessin, et la couleur qui identifie
-le survivant est celle de son anneau.
-
-**La vue de dos est la moins intéressante à dessiner et la plus regardée.** Un survivant qui explore
-s'éloigne du joueur : c'est le dos qu'on voit la majorité du temps. Ne pas la bâcler — et c'est la vue
-où la silhouette fait tout le travail, puisque le visage a disparu.
-
-#### Extension (facultative)
-
-Il n'y a pas de « jeu étendu » par couches : la seule extension possible est **un septième personnage
-entier, +3 images**. Elle est facultative et sans urgence — six personnages pour un roster de trois à
-cinq survivants suffisent, et un doublon reste séparé par l'anneau et le nom.
-
-`config/survivor_generation.json` est **créé par ce livrable**. Ses compteurs
-`appearance.characters_female` et `appearance.characters_male` valent le **nombre de personnages
-réellement livrés**, jamais un objectif, et le chargement **échoue** s'ils dépassent les fichiers
-présents dans `Assets/`.
-
-Deux façons de tenir cette règle ; celle retenue est la seconde. Que le générateur **borne
-silencieusement son tirage** au nombre de fichiers présents fait dépendre le comportement du contenu
-d'`Assets/`, ce qui se découvre trois semaines plus tard. Qu'il **échoue au chargement** est plus brutal,
-se teste, et donne l'erreur au bon moment. C'est ce que vérifie le test « aucun index de personnage ne
-dépasse le nombre de sprites présents ».
-
-> **La variété ne vient plus des couches.** Elle vient de six dessins distincts, de la couleur d'anneau
-> et du nom. Ajouter un huitième `pawn_female_4` est une extension légitime ; réintroduire un calque de
-> coiffure ne l'est pas.
-
-### 2. Zombies — 9 images de 32 × 48 px
-
-Même format, mêmes vues. Ce qui change est la palette (famille froide) et la posture — voûtée, bras
-pendants, tête inclinée.
-
-| # | Variante | Fichiers | Ce qu'elle raconte | Vues | Images |
-|---|----------|----------|--------------------|------|--------|
-| 1 | Civil | `zpawn_civil_{face,dos,profil}` | Le fond de la horde | 3 | **3** |
-| 2 | Employé | `zpawn_employe_{face,dos,profil}` | Il travaillait au supermarché où vous êtes entré | 3 | **3** |
-| 3 | Secours | `zpawn_secours_{face,dos,profil}` | Les secours sont venus, et sont restés | 3 | **3** |
-| | | | | | **9** |
-
-Le vêtement fait partie du personnage : les trois variantes *sont* trois tenues (civil, tablier
-d'employé, gilet de secours), cheveux compris. La mutualisation des coiffures des survivants n'a plus
-d'objet — sans calques, il n'y a rien à réemprunter, et il n'y en a plus besoin : neuf images entières
-coûtent moins que quinze calques.
-
-**Un zombie n'a ni anneau ni nom.** C'est ce qui, sur la carte, sépare instantanément les vôtres des
-autres : ce qui porte une couleur au sol est quelqu'un.
-
-**Aucun détail décalé, aucune blague, aucun gore.** C'est la seule famille de sprites du projet à
-laquelle la règle du décalé ne s'applique pas : si la menace ne pèse pas, l'arbitrage fuir / combattre /
-aider de la Utility AI perd son enjeu.
-
-### 3. Armes tenues — 5 images de 32 × 16 px
-
-| Fichier | Arme | Vue |
-|---------|------|-----|
-| `held_revolver` | Revolver | profil, poignée à gauche |
-| `held_shotgun` | Fusil à pompe | profil, poignée à gauche |
-| `held_baseball_bat` | Batte de baseball | profil, poignée à gauche |
-| `held_crowbar` | Pied-de-biche | profil, poignée à gauche |
-| `held_machete` | Machette | profil, poignée à gauche |
-
-**Le seul sprite du jeu qui pivote à 360°**, donc le seul dont la position sur la toile est une donnée
-et pas une mise en page. La poignée doit tomber **au même pixel sur les cinq**, sinon les armes ne
-tiennent pas dans la main au même endroit et le défaut se voit à chaque rotation. Le point de pivot se
-fixe une fois, sur `held_revolver`, et les quatre autres s'y calent.
-
-Ces cinq armes existent déjà en deux autres versions au livrable 11 — tuile au sol 32 × 32 vue de dessus
-et icône d'inventaire 48 × 48 en trois quarts. Trois cadrages, trois tailles, le même objet, et le même
-détail décalé sur les trois.
-
-Non recolorable : une arme a sa couleur.
-
-### 4. Portraits — 6 images de 64 × 64 px
+### Portraits — 6 images de 64 × 64 px (déjà livrées)
 
 Buste de face trois quarts, tête et épaules, pour la grille du bas et le panneau latéral.
 
@@ -221,35 +64,11 @@ Buste de face trois quarts, tête et épaules, pour la grille du bas et le panne
 | 2 | Un par personnage | `portrait_male_{1,2,3}` | **3** |
 | | | | **6** |
 
-**Un portrait est une image entière, non recolorable**, comme le pawn qu'il montre. Le nombre ne change
-pas ; ce qui change est que ces six images sont six personnes au lieu de six morceaux — et que le
-portrait montre exactement le personnage de la carte, coiffure comprise, ce que le découpage en couches
-ne garantissait jamais tout à fait.
-
 Le portrait ne suit pas les trois vues : il est toujours de face. La vignette de la grille du bas
 l'entoure de l'**anneau de couleur** du survivant : c'est le même signe que sur la carte, donc le même
-geste de reconnaissance — et c'est lui, pas le portrait, qui distingue deux survivants partageant un
-personnage.
+geste de reconnaissance — et c'est lui qui distingue deux survivants partageant un portrait.
 
-### 5. Van — 3 images de 64 × 96 px
-
-Empreinte de 2 × 3 cases, donc 64 × 96 px à 32 px la case. **L'empreinte est la donnée normative** ; les
-pixels s'en déduisent.
-
-| Fichier | État | Quand |
-|---------|------|-------|
-| `van_idle` | À l'arrêt, portière latérale ouverte | Garé au camp, ou en attente au point de dépose |
-| `van_running` | Moteur en marche, phares allumés | Pendant `departure_delay`, et au départ |
-| `van_dry` | Penché sur un pneu à plat, bouchon ouvert | `fuel_return_reserve: false` et réservoir vide |
-
-Les trois états sont **superposables au pixel près** : le van ne doit pas se déplacer d'un cheveu en
-changeant d'état. Le panache d'échappement et la trépidation du moteur sont des particules et une
-oscillation de 2 px produites par le code, pas des images.
-
-C'est le sprite le plus regardé du jeu — départ et retour de chaque mission. C'est celui sur lequel il
-faut passer le plus de temps.
-
-### 6. Interface — 6 planches, 25 images
+### Interface — 6 planches, 24 images
 
 Les planches se génèrent groupées, pour que les pièces d'une interface soient dessinées ensemble ; elles
 se découpent ensuite en images. Le décompte ci-dessous est celui des images découpées.
@@ -258,61 +77,23 @@ se découpent ensuite en images. Le décompte ci-dessous est celui des images d�
 |---------|----------|-----------|--------|
 | Cadres de panneaux | `ui_frame_{small,medium,large}` | 9-slice, bordure **16 px** | **3** |
 | Boutons de menu | `ui_button_{idle,hover,pressed}` | 9-slice, bordure **8 px** | **3** |
-| Jauges | `ui_gauge_{health,sanity,panic,stamina}_{empty,full}` | **96 × 16** | **8** |
-| Icônes d'état | `ui_icon_{wounded,panicked,overloaded,armed,radio,recalled}` | **24 × 24** | **6** |
+| Jauges | `ui_gauge_{health,panic,stamina}_{empty,full}` | **96 × 16** | **6** |
+| Icônes d'état | `ui_icon_{wounded,panicked,overloaded,armed,radio}` | **24 × 24** | **5** |
 | Curseurs | `ui_cursor_{select,move,forbidden,target}` | **32 × 32** | **4** |
 | Fond de titre | `ui_bg_title` | **1920 × 1080** | **1** |
-| | | | **25** |
+| | | | **22** |
 
-Les quatre jauges correspondent aux quatre valeurs affichées par le panneau latéral : santé,
-`sanity` (motivation), panique, stamina. Les six icônes d'état correspondent exactement aux six états
-listés par la grille des survivants — blessé, paniqué, surchargé, arme équipée, radio, rappelé au camp.
-Aucune des deux listes n'est décorative : les ajouter ou en retirer demande de toucher au panneau.
+Les trois jauges correspondent aux valeurs affichées par le panneau latéral : santé, panique, stamina.
+Les cinq icônes d'état correspondent exactement aux cinq états listés par la grille des survivants —
+blessé, paniqué, surchargé, arme équipée, radio. Aucune des deux listes n'est décorative : les
+ajouter ou en retirer demande de toucher au panneau.
 
 **Un seul fond plein écran.** Les quatre écrans du livrable — titre, camp, préparation de mission, fin
 de partie — ne demandent pas quatre fonds : les trois derniers réutilisent le cadre de panneau sur un
-aplat de la palette. C'est une économie de trois images grand format, et ça donne une interface plus
-cohérente qu'un fond illustré par écran.
+aplat de la palette.
 
 `ui_bg_title` est la seule image du projet qui n'est pas du pixel art à densité fixe : elle est rendue
 plein écran sans mise à l'échelle entière.
-
-### Récapitulatif
-
-| Groupe | Dimensions | Images |
-|--------|-----------|--------|
-| Survivants — 6 personnages × 3 vues | 32 × 48 | 18 |
-| Zombies — 3 variantes × 3 vues | 32 × 48 | 9 |
-| Armes tenues | 32 × 16 | 5 |
-| Portraits — un par personnage | 64 × 64 | 6 |
-| Van — 3 états | 64 × 96 | 3 |
-| Interface — 6 planches découpées | variable | 25 |
-| **Total** | | **66** |
-
-Le total de **47 livraisons** annoncé dans les prérequis est le même travail compté à la commande : les
-41 images des cinq premières lignes, plus les six planches d'interface comptées **comme six planches**
-et non comme les 25 fichiers qu'elles donnent une fois découpées. 47 pour planifier, 66 pour cocher.
-
-**Extension facultative** : +3 images par personnage supplémentaire.
-
-### Ordre de production
-
-Chaque étape doit rendre le jeu plus jouable que la précédente, sinon l'ordre ne sert à rien.
-
-1. **`pawn_male_1`, trois vues — 3 images.** C'est le lot qui permet de remplacer le rond de
-   `SurvivorNode.cs` et de vérifier toute la chaîne : choix de vue, miroir ouest, anneau au sol sous les
-   pieds, nom au-dessus de la tête, oscillation de marche. Tant que ces trois-là ne s'affichent pas
-   correctement, produire les 63 autres est un pari.
-2. **Les cinq autres personnages — 15 images.** Le générateur produit alors des survivants réellement
-   distincts, et c'est là que se vérifie la règle de silhouette : trois d'entre eux côte à côte à
-   l'écran doivent se reconnaître sans lire les noms.
-3. **Les trois zombies — 9 images.** La menace cesse d'être un rond vert.
-4. **Le van et les portraits — 9 images.** Ce que le joueur regarde à chaque mission.
-5. **Les jauges, icônes d'état et curseurs — 18 images.** L'interface devient lisible sans texte.
-6. **Le reste — 12 images** : les cinq armes tenues (5), les cadres, les boutons et le fond de titre (7).
-   Les armes tenues sont dans ce lot parce qu'un pawn sans arme visible reste jouable, pas parce qu'elles
-   sont faciles — leur point de pivot commun est le calage le plus exigeant du livrable, et depuis
-   l'abandon des calques c'est le **seul** alignement au pixel près qui reste dans tout le projet.
 
 ## Interface
 
@@ -325,12 +106,10 @@ interface d'observation : trois blocs de texte dont deux ne s'affichent qu'en mo
 ┌──────────────────────────────────────────────┬────────────────────────┐
 │                                              │  PANNEAU SURVIVANT     │
 │                                              │  ────────────────      │
-│                                              │  Portrait  Nom, rôle   │
+│                                              │  Portrait  Nom         │
 │                CARTE                         │                        │
 │                                              │  Jauges                │
 │                                              │  Caractéristiques      │
-│                                              │  Personnalité          │
-│                                              │  Aptitudes             │
 │                                              │  Inventaire (6 slots)  │
 │                                              │  Objectif / action     │
 │                                              │  Plan courant          │
@@ -345,12 +124,12 @@ Remplace [AgentRoster.cs](../Scripts/UI/AgentRoster.cs) / [AgentCard.cs](../Scri
 Une vignette par survivant, toujours visible :
 
 * portrait, nom, jauges de santé et de panique en barres courtes ;
-* icônes d'état : blessé, paniqué, surchargé, arme équipée, radio, rappelé au camp ;
+* icônes d'état : blessé, paniqué, surchargé, arme équipée, radio ;
 * clic = sélection (remplace la sélection actuelle), `Ctrl`+clic = ajout à la sélection ;
 * double-clic = centrer la caméra sur le survivant ;
 * **bordure de la couleur de son anneau sur la carte**, pour qu'on le retrouve à l'œil. C'est le seul
-  signe qui tient quand deux survivants partagent un personnage : ni le portrait ni le sprite ne les
-  distinguent, la couleur et le nom si ;
+  signe qui tient quand deux survivants partagent un portrait : ni le portrait ni la couleur au sol ne
+  les distinguent l'un sans l'autre, ensemble ils suffisent ;
 * le stock du camp (livrable 11) occupe le coin droit de la barre : nourriture, eau, essence, munitions.
 
 ### Panneau latéral
@@ -358,19 +137,18 @@ Une vignette par survivant, toujours visible :
 Remplace `AgentPanel` et `PlanPanel`, et les rend permanents plutôt que conditionnés au mode debug. Il
 affiche, pour le survivant sélectionné :
 
-* **Identité** : portrait, nom, rôle, description ;
-* **Jauges** : santé / santé max, motivation (`sanity`), panique, stamina ;
-* **Caractéristiques** : vitesse de marche et de course, portée de vision, angle de vue, multiplicateur
-  de bruit, rayon de fouille, montant de soin — celles de
-  [survivors.json](../config/survivors.json), pas une liste réinventée ;
-* **Personnalité** : `courage`, `loyalty`, `caution`, en trois barres, avec la phrase de lecture qui va
-  avec (« prudente », « téméraire », « loyal ») dérivée de seuils configurables, jamais écrite en dur ;
-* **Aptitudes** : `exploration`, `support`, `breaching`, `stealth` et toute aptitude déclarée dans le
-  profil — le panneau lit le dictionnaire, il ne connaît pas les noms ;
-* **Compétences** : les entrées `skills` du profil, avec leur `description` telle qu'elle est écrite
-  dans le fichier de configuration ;
+* **Identité** : portrait, nom. Il n'y a ni rôle ni description : un profil ne déclare qu'un
+  identifiant, un nom et une image ;
+* **Jauges** : santé / santé max, panique, stamina ;
+* **Caractéristiques** : vitesse de marche et de course, portée de vision, angle de vue, rayon de
+  fouille, montant de soin — celles de la section `survivor` de
+  [game_config.json](../config/game_config.json), et les mêmes pour tout le monde. Le panneau les
+  montre parce qu'elles expliquent ce qu'on voit à l'écran, pas pour distinguer celui-ci de
+  celui-là ;
 * **Inventaire** : les 6 emplacements du livrable 11, avec l'arme équipée mise en évidence, le poids
-  porté et la limite ;
+  porté et la limite. Un emplacement montre la **tuile 32 × 32** de l'objet, à un facteur d'échelle
+  entier — il n'existe pas de série d'icônes séparée. `ItemIcons` (`Scripts/UI/`) la découpe dans
+  l'atlas à partir de l'`id` ;
 * **Décision** : objectif courant, action courante, plan, dernière cause de replanification. Les
   informations exigées par le livrable 8 restent toutes présentes ; elles cessent seulement d'être
   réservées au mode debug.
@@ -382,11 +160,9 @@ rejetés. Ce qui change, c'est que le joueur n'en a plus besoin pour jouer.
 ### Menus
 
 * **Écran titre** : nouvelle partie, continuer, options, quitter ;
-* **Écran de camp** : stock, roster complet, départ en expédition (livrable 11), choix de la mission ;
-* **Écran de préparation de mission** : refonte de
-  [MissionSetupScreen.cs](../Scripts/UI/MissionSetupScreen.cs) — briefing, composition d'équipe,
-  chargement de l'inventaire de chacun, coût en essence du van, bouton de départ désactivé si le
-  réservoir ne suffit pas ;
+* **Écran de camp** : stock, roster complet, choix de la mission ;
+* **Écran de préparation de mission** : refonte de [CampScreen.cs](../Scripts/UI/CampScreen.cs) —
+  briefing, composition d'équipe, chargement de l'inventaire de chacun, bouton de départ ;
 * **Écran de fin** : résultat, journal de mission, pertes, butin rapporté.
 
 ## Survivants générés aléatoirement
@@ -414,155 +190,78 @@ doit être adapté.
     "last": ["Marchand", "Okonkwo", "Sorensen", "Vargas", "Nowak"]
   },
 
-  "archetypes": [
-    {
-      "id": "eclaireur",
-      "weight": 25,
-      "role": "Eclaireur",
-      "personality": { "courage": [0.4, 0.6], "loyalty": [0.5, 0.8], "caution": [0.7, 0.9] },
-      "max_health": [70, 90],
-      "walk_speed": [4.5, 5.5],
-      "vision_range": [10, 12],
-      "noise_multiplier": [0.5, 0.7],
-      "aptitudes": { "exploration": [0.85, 1.0], "stealth": [0.8, 0.95], "support": [0.2, 0.4], "breaching": [0.1, 0.3] },
-      "skills": ["Explore", "Observe", "MoveToLocation"]
-    }
-  ],
-
-  "traits": [
-    { "id": "insomniaque", "weight": 10, "text": "Dort mal. Recupere moins vite sa motivation.", "modifiers": { "sanity_recovery_per_second": 0.6 } },
-    { "id": "estomac_solide", "weight": 10, "text": "Mange n'importe quoi sans broncher.", "modifiers": { "hunger_sanity_penalty": 0.5 } }
-  ],
-
   "appearance": {
-    "characters_female": 3,
-    "characters_male": 3,
+    "portrait_female": 3,
+    "portrait_male": 3,
     "ring_colors": ["#4fc7ff", "#ffb54a", "#8ceb8c", "#eb8ceb", "#f2f280", "#ff7f6b"]
   }
 }
 ```
 
+**Il n'y a pas d'archétypes**, et c'est la conséquence directe du profil réduit : un survivant ne
+déclare qu'un identifiant, un nom et une image, donc générer un survivant, c'est tirer un nom et un
+portrait. Rien d'autre ne le distinguerait — les caractéristiques sont communes, et ce qui décide de
+son comportement est ce qu'il a vu et ce que le joueur lui dit.
+
 Règles :
 
-* toute valeur d'archétype est un **intervalle** ; le générateur tire dedans avec la graine ;
-* un à deux `traits` par survivant, qui multiplient un réglage existant de `config/game_config.json` —
-  aucun trait n'introduit une mécanique nouvelle, sinon le générateur devient une seconde source de
-  règles ;
-* l'apparence est **un personnage tiré parmi les six** et **une couleur d'anneau**, rien d'autre. Il n'y
-  a plus de tirage de couches ni de teinte : les sprites sont livrés en couleur ;
-* **le prénom suit le personnage.** Un sprite visiblement féminin nommé « Bob » est un défaut, pas une
-  variation : le générateur tire d'abord le personnage, puis le prénom dans la liste correspondante ;
-* **les deux compteurs d'`appearance` valent le nombre de sprites réellement livrés**, jamais un
+* l'apparence est **un portrait tiré parmi les six** et **une couleur d'anneau**, rien d'autre ;
+* **le prénom suit le portrait.** Un portrait visiblement féminin nommé « Bob » est un défaut, pas une
+  variation : le générateur tire d'abord le portrait, puis le prénom dans la liste correspondante ;
+* **les deux compteurs d'`appearance` valent le nombre de portraits réellement livrés**, jamais un
   objectif, et le chargement échoue s'ils les dépassent — un test le vérifie ;
 * **la couleur d'anneau est unique parmi les survivants vivants.** `ring_colors` en contient au moins
-  autant que le van peut en transporter ; épuiser la liste est une erreur de chargement, pas un
-  recyclage silencieux. Deux survivants peuvent partager un personnage, jamais une couleur ;
+  autant que le roster peut en compter ; épuiser la liste est une erreur de chargement, pas un recyclage
+  silencieux. Deux survivants peuvent partager un portrait, jamais une couleur ;
 * **déterminisme** : à graine égale, roster identique, apparences comprises. Un roster généré peut être
   écrit dans un fichier au format `config/survivors.json` pour être rejoué ou corrigé à la main ;
 * les trois profils du livrable 7 restent livrés en dur dans `config/survivors.json` et servent de
-  roster de départ et de référence de test. La génération est ce qui peuple le camp **ensuite** — au
-  recrutement (livrable 14).
-
-## Zone d'extraction : le van
-
-La zone d'extraction cesse d'être un rectangle de `config/map_locations.json` et devient un véhicule.
-
-```json
-{
-  "van": {
-    "footprint": [2, 3],
-    "fuel_per_cell": 0.08,
-    "fuel_minimum": 4,
-    "fuel_return_reserve": true,
-    "capacity_survivors": 4,
-    "capacity_weight": 60,
-    "engine_noise": 9,
-    "departure_delay": 3
-  }
-}
-```
-
-Règles :
-
-* le van est **garé au camp** au départ et roule jusqu'à un point de dépose près de l'objectif ; le coût
-  en essence est `distance × fuel_per_cell`, au minimum `fuel_minimum` ;
-* `fuel_return_reserve` à `true` réserve le carburant du retour au moment du départ : le jeu refuse une
-  mission qu'on ne pourrait pas terminer. À `false`, partir avec un aller simple devient un choix
-  possible, et une panne sèche une manière de perdre ;
-* l'essence vient du stock du camp (livrable 11) et se trouve en `fuel_can` ou en expédition ;
-* le van a une **capacité** : quatre survivants, et un poids total. Une caisse encombrante peut obliger
-  à laisser quelqu'un — ou à faire deux voyages ;
-* démarrer le moteur émet `engine_noise 9` pendant `departure_delay` secondes : la horde entend le
-  départ. L'extraction cesse d'être une case sûre et devient un moment à défendre ;
-* mécaniquement, le van reste une `MapZone` de `kind: Extraction` pour tout le reste du code : les
-  conditions de victoire du livrable 8 et l'action `ReachExtraction` du domaine de planification ne
-  changent pas.
+  roster de départ et de référence de test. La génération est ce qui peuple le camp **ensuite**.
 
 ## Architecture concernée
 
-`Scripts/UI/*` (refonte complète), `Game/SurvivorGenerator`, `Game/Van`, `Config/VanConfig`,
-`Config/SurvivorGenerationConfig` — voir [A-architecture-et-donnees.md](./A-architecture-et-donnees.md).
-La séparation simulation / IA / interface exigée par
+`Scripts/UI/*` (refonte complète), `Game/SurvivorGenerator`, `Config/SurvivorGenerationConfig` — voir
+[A-architecture-et-donnees.md](./A-architecture-et-donnees.md). La séparation simulation / IA /
+interface exigée par
 [D-qualite-et-definition-of-done.md](./D-qualite-et-definition-of-done.md) est le point de vigilance de
-ce livrable : le générateur de survivants et la logique du van vivent dans `Hordinary.Core`, testables
-sans Godot ; `Scripts/UI` ne fait qu'afficher, et ne décide de rien — pas même du texte de lecture d'un
-trait de personnalité, qui vient de seuils de configuration.
+ce livrable : le générateur de survivants vit dans `Hordinary.Core`, testable sans Godot ;
+`Scripts/UI` ne fait qu'afficher, et ne décide de rien.
 
-Nouveaux fichiers de configuration : `config/survivor_generation.json`, section `van` dans
-`config/game_config.json`.
+Nouveau fichier de configuration : `config/survivor_generation.json`.
 
 ## Étapes à créer
 
-* [ ] **(humain)** Livrer les 66 fichiers du **catalogue de sprites** (47 livraisons), dans l'ordre de
-      production qu'il donne — les 3 premiers avant tout le reste, ce sont eux qui valident la chaîne
-      d'affichage.
-* [ ] Écrire `config/survivor_generation.json` avec `appearance` aligné sur les personnages réellement
+* [ ] **(humain)** Livrer les 22 images de la planche d'interface — les portraits et le skin du van
+      sont déjà livrés.
+* [ ] Écrire `config/survivor_generation.json` avec `appearance` aligné sur les portraits réellement
       livrés, et faire échouer le chargement quand un compteur les dépasse ou quand `ring_colors` est
       trop court.
 * [ ] Refondre le HUD en trois zones (carte, panneau latéral, grille du bas).
 * [ ] Construire la grille des survivants (vignettes, jauges, icônes d'état, sélection multiple).
-* [ ] Construire le panneau latéral complet (identité, jauges, caractéristiques, personnalité,
-      aptitudes, compétences, inventaire, décision).
+* [ ] Construire le panneau latéral complet (identité, jauges, caractéristiques, inventaire,
+      décision).
 * [ ] Rendre les informations du livrable 8 visibles hors mode debug, sans supprimer le mode debug.
-* [ ] Afficher le pawn : un sprite entier par survivant, choisi par son index de personnage.
-* [ ] Dessiner l'anneau au sol à la couleur du survivant et garder le nom au-dessus de sa tête, tous
-      deux visibles hors mode debug — le comportement actuel de `SurvivorNode.cs`, conservé.
-* [ ] Implémenter le choix des trois vues et le miroir horizontal pour l'ouest.
-* [ ] Implémenter les effets par code : oscillation, bond d'attaque, teinte de dégât, inclinaison de
-      blessure, tremblement de panique, rotation à terre.
-* [ ] Faire pivoter le sprite d'arme tenue vers la cible.
-* [ ] Remplacer les ronds de `SurvivorNode` et `ZombieNode` par le pawn, en conservant les quatre
-      teintes d'état du zombie — et sans donner d'anneau ni de nom aux zombies.
-* [ ] Écrire le générateur de survivants (archétypes, intervalles, traits, apparence), déterministe.
+* [ ] Écrire le générateur de survivants (noms, apparence), déterministe.
 * [ ] Permettre l'export d'un roster généré au format `config/survivors.json`.
-* [ ] Ajouter le van : empreinte, capacité, coût en essence, réserve de retour, bruit de démarrage.
-* [ ] Brancher le coût en essence sur le stock du camp et bloquer le départ en cas de réservoir vide.
 * [ ] Refondre l'écran de préparation de mission et ajouter l'écran de camp.
 * [ ] Ajouter l'écran titre et l'écran de fin de partie.
 
 ## Critère de validation
 
 Une partie se joue de bout en bout sans jamais activer le mode debug : le joueur compose une équipe de
-survivants générés, lit leurs caractéristiques et leur personnalité dans le panneau latéral, paie
-l'essence du van au départ, et voit dans la grille du bas lequel est blessé sans avoir à cliquer.
+survivants générés, lit leurs caractéristiques dans le panneau latéral, et voit dans la grille du bas
+lequel est blessé sans avoir à cliquer.
 
 ## Tests associés
 
 À ajouter dans `Tests/` (voir [C-tests.md](./C-tests.md)) :
 
-* deux générations avec la même graine produisent des rosters identiques, traits et apparences compris ;
-* aucun index de personnage tiré par le générateur ne dépasse le nombre de sprites réellement présents
-  dans `Assets/` — le test qui empêche un survivant sans sprite par erreur de configuration ;
+* deux générations avec la même graine produisent des rosters identiques, apparences comprises ;
+* aucun index de portrait tiré par le générateur ne dépasse le nombre de portraits réellement présents
+  dans `Assets/` — le test qui empêche un survivant sans portrait par erreur de configuration ;
 * **deux survivants vivants n'ont jamais la même couleur d'anneau**, et une liste `ring_colors` plus
   courte que le roster échoue au chargement plutôt que de recycler une couleur ;
-* le prénom d'un survivant vient de la liste correspondant au genre de son personnage ;
-* les six personnages ont tous les trois mêmes vues aux mêmes dimensions, sans quoi le choix de vue
-  échoue à l'affichage ;
+* le prénom d'un survivant vient de la liste correspondant au genre de son portrait ;
 * tout survivant généré est chargeable par le lecteur de `config/survivors.json` sans traitement
   particulier ;
-* un trait ne modifie qu'un réglage existant de `config/game_config.json` ;
-* le coût en essence d'un trajet est proportionnel à la distance et jamais inférieur à `fuel_minimum` ;
-* avec `fuel_return_reserve: true`, une mission dont le retour n'est pas payable est refusée au départ ;
-* le van refuse un embarquement dépassant sa capacité en poids ou en survivants ;
-* le démarrage du van émet un bruit du barème et est perçu par les zombies à portée ;
-* `Hordinary.Core` ne référence aucun type Godot dans le générateur ni dans la logique du van.
+* `Hordinary.Core` ne référence aucun type Godot dans le générateur.

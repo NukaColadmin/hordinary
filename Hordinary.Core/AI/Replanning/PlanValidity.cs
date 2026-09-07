@@ -31,7 +31,7 @@ public static class PlanValidity
     /// </summary>
     private static readonly Dictionary<string, ReplanCause> CauseByPredicate = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["medicine_found"] = ReplanCause.ItemMissing,
+        ["objective_found"] = ReplanCause.ItemMissing,
         ["item_at"] = ReplanCause.ItemMissing,
         ["has"] = ReplanCause.ItemMissing,
         ["known"] = ReplanCause.ObstacleDiscovered,

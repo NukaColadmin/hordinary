@@ -38,7 +38,17 @@ public sealed class Planner
         Settings = settings ?? new PlannerSettings();
     }
 
-    public PlanningDomain Domain { get; }
+    public PlanningDomain Domain { get; private set; }
+
+    /// <summary>
+    /// Remplace le domaine specialise, sans changer d'instance de planificateur : ce qu'un survivant
+    /// prend en main modifie le prix de ses actions (livrable 11), et le moniteur de replanification
+    /// qui tient ce planificateur doit continuer de le tenir.
+    ///
+    /// Le repertoire d'actions change, jamais la recherche : GBFS decouvre le nouveau plan tout seul.
+    /// </summary>
+    public void Respecialize(PlanningDomain domain)
+        => Domain = domain ?? throw new ArgumentNullException(nameof(domain));
 
     public PlannerSettings Settings { get; }
 

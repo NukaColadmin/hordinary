@@ -63,14 +63,15 @@ Les six types de `parameters` se transposent directement :
 
 ### Constantes
 
-Certaines préconditions nomment des objets en dur (`at(agent, pharmacy)`,
-`has(agent, medicine)`). Elles deviennent des constantes du domaine :
+Certaines préconditions nomment des objets en dur (`at(agent, objective_zone)`,
+`has(agent, objective)`). Elles deviennent des constantes du domaine :
 
 ```lisp
-(:constants agent - object  medicine - item)
+(:constants agent - object  objective remedy - item)
 ```
 
-`pharmacy` reste un objet du **problème** : c'est un lieu connu, pas une entité du langage.
+`objective_zone` reste un objet du **problème** : c'est un lieu connu, pas une entité du langage — et
+c'est la mission qui décide lequel, ce que le domaine n'a pas à savoir.
 
 ### Prédicats
 

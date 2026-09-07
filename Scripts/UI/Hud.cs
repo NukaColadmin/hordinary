@@ -31,7 +31,6 @@ public partial class Hud : InfoPanel
         SurvivorBand band,
         CommandManager commands,
         MissionTracker mission,
-        MissionRecall recall,
         IReadOnlyList<Zombie> horde,
         bool running)
     {
@@ -39,9 +38,8 @@ public partial class Hud : InfoPanel
             Hordinary — {mission.Mission.Name}
             Carte {map.Width} x {map.Height}, origine {map.Origin} — t = {world.Time:0.0} s
             {OutcomeLine(mission)}
-            {RecallLine(recall)}
             {BandLine(band, commands)}
-            {MedicineLine(mission)}
+            {ObjectiveLine(mission)}
             {HordeLine(horde)}
             {ExplorationLine(commands.Selected)}
             {CommandLine(commands)}
@@ -52,34 +50,11 @@ public partial class Hud : InfoPanel
     /// <summary>
     /// L'issue de la partie. Tant qu'elle court, la ligne rappelle ce qu'on attend du joueur : le
     /// joueur ne devrait jamais avoir a ouvrir la specification pour savoir ce qu'il fait la.
-    ///
-    /// Les trois etats sont distincts, et ce n'est pas cosmetique : entre « mission en cours » et
-    /// « partie finie » il y a « mission remplie », pendant laquelle le jeu tourne toujours et ou le
-    /// groupe rentre. Les confondre etait le defaut que ce livrable corrige.
     /// </summary>
     private static string OutcomeLine(MissionTracker mission)
-    {
-        if (mission.IsOver) return $"*** {mission.Verdict} ***";
-
-        if (mission.Done)
-        {
-            return $"Mission remplie par {mission.Courier?.Name ?? "le groupe"} "
-                 + $"(t = {mission.DoneAt:0.0} s) — rappel en cours, la partie continue";
-        }
-
-        return $"Mission : rapporter {mission.Mission.Item} au camp — depart et retour au meme endroit";
-    }
-
-    /// <summary>Ou en est le rappel : qui porte la nouvelle, et combien l'ont recue.</summary>
-    private static string RecallLine(MissionRecall recall)
-    {
-        if (!recall.Started) return $"Camp : {recall.CampZone?.Name ?? recall.Camp.ToString()}";
-
-        string tour = recall.Everyone ? "tout le monde est prevenu" : "tournee en cours";
-
-        return $"Rappel : {recall.Messenger?.Survivor.Name} annonce « {MissionRecall.Message} » "
-             + $"— {recall.Told.Count} prevenu(s), {tour}";
-    }
+        => mission.IsOver
+            ? $"*** {mission.Verdict} ***"
+            : $"Mission : rapporter {mission.Mission.Item} au camp — depart et retour au meme endroit";
 
     private static string BandLine(SurvivorBand band, CommandManager commands)
     {
@@ -92,10 +67,8 @@ public partial class Hud : InfoPanel
 
             string state = survivor switch
             {
-                { Returned: true } => "rentre au camp",
                 { Alive: false } => "hors de combat",
-                _ => $"{survivor.HealthRatio:P0}, {survivor.SanityRatio:P0}, "
-                   + $"{survivor.CurrentGoal ?? "sans objectif"}",
+                _ => $"{survivor.HealthRatio:P0}, {survivor.CurrentGoal ?? "sans objectif"}",
             };
 
             // « a portee » : ce que le survivant affiche sait, celui-ci peut l'apprendre a la
@@ -114,13 +87,18 @@ public partial class Hud : InfoPanel
         return $"Groupe (ordres au {addressee}) : {string.Join("  ", parts)}";
     }
 
-    private static string MedicineLine(MissionTracker mission)
+    /// <summary>
+    /// Ce que la mission envoie chercher, et qui le porte. Le HUD ne nomme pas plus les medicaments
+    /// que le reste du jeu : il affiche l'identifiant que la mission a choisi.
+    /// </summary>
+    private static string ObjectiveLine(MissionTracker mission)
     {
         var carriers = mission.Carriers.ToList();
+        string what = mission.Mission.Item;
 
         return carriers.Count == 0
-            ? "Medicaments : pas encore ramasses"
-            : $"Medicaments : portes par {string.Join(", ", carriers.Select(survivor => survivor.Name))}";
+            ? $"{what} : pas encore ramasse"
+            : $"{what} : porte par {string.Join(", ", carriers.Select(survivor => survivor.Name))}";
     }
 
     private static string HordeLine(IReadOnlyList<Zombie> horde)
@@ -167,7 +145,7 @@ public partial class Hud : InfoPanel
 
         Tab / clic / fiche : changer de point de vue    Maj + ordre : au groupe entier
         Clic gauche : donner un objectif                Clic droit : cycler le danger
-        1 pharmacie  2 retour au camp  3 rappeler au camp  4 explorer  5 regrouper
+        1 pharmacie  2 retour au camp  4 explorer  5 regrouper
         B : interdire / autoriser le bruit              Z : interdire / autoriser la zone visee
         R : marcher / courir     Espace : distraction     C : effacer le danger
         F1 chemin A*  F2 carte mentale  F3 bruits  F4 scores  F5 plan  F6 journal  F7 groupe

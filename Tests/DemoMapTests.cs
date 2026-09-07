@@ -193,7 +193,7 @@ public class DemoMapTests
     public void Au_depart_le_survivant_ignore_l_interieur_de_la_pharmacie()
     {
         var world = new WorldState(Map);
-        world.SetItem("medicine-1", ItemKind.Medicine, new GridPosition(11, 4));
+        world.SetItem("objective-1", Survivor.DefaultObjectiveItem, new GridPosition(11, 4));
 
         var knowledge = new AgentKnowledge("alice", Map.Width, Map.Height, Map.Origin);
         var alice = new Survivor("alice", "Alice", knowledge, new PerceptionSettings { FieldOfViewDegrees = 360f })

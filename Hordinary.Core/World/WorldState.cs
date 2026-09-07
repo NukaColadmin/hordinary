@@ -5,8 +5,12 @@ namespace Hordinary.World;
 /// <summary>Entite reelle du monde : sa position est la verite, pas une croyance.</summary>
 public sealed record WorldEntity(string Id, EntityKind Kind, GridPosition Position);
 
-/// <summary>Objet reellement pose sur la carte.</summary>
-public sealed record WorldItem(string Id, ItemKind Kind, GridPosition Position);
+/// <summary>
+/// Objet reellement pose sur la carte. <c>ItemId</c> est un identifiant du catalogue
+/// (<c>config/items.json</c>, <c>config/weapons.json</c>) : le monde ne connait pas plus les objets
+/// que les agents, il sait seulement lequel se trouve la.
+/// </summary>
+public sealed record WorldItem(string Id, string ItemId, GridPosition Position);
 
 /// <summary>
 /// Verite complete du jeu (specification section 9.1) : la grille reelle, les entites et les objets.
@@ -31,6 +35,13 @@ public sealed class WorldState(GridMap grid, NoiseSettings? noise = null)
     /// <summary>Temps de jeu ecoule, en secondes. Horodate toutes les observations.</summary>
     public double Time { get; private set; }
 
+    /// <summary>
+    /// Les meubles poussables (livrable 11). Ils occupent une cellule <see cref="CellType.Obstacle"/>
+    /// de la grille : la navigation et les lignes de vue n'ont donc rien de nouveau a apprendre, et
+    /// pousser un rayonnage revient a deplacer un obstacle d'une case.
+    /// </summary>
+    public HeavyObjects Heavy { get; } = new();
+
     public IReadOnlyDictionary<string, WorldEntity> Entities => _entities;
     public IReadOnlyDictionary<string, WorldItem> Items => _items;
 
@@ -53,10 +64,32 @@ public sealed class WorldState(GridMap grid, NoiseSettings? noise = null)
     public IEnumerable<WorldEntity> EntitiesAt(GridPosition position)
         => _entities.Values.Where(entity => entity.Position == position);
 
-    public void SetItem(string id, ItemKind kind, GridPosition position)
-        => _items[id] = new WorldItem(id, kind, position);
+    /// <summary>
+    /// Emis quand un objet parait ou disparait du sol. Le monde n'a pas d'affichage et n'en veut
+    /// pas ; mais un objet pose que le decor ne montre pas, ou ramasse que le decor montre encore,
+    /// fait mentir la carte au joueur — d'ou ces deux annonces, que la couche moteur ecoute pour
+    /// tenir la couche « Objets » a jour.
+    /// </summary>
+    public event Action<WorldItem>? ItemPlaced;
 
-    public void RemoveItem(string id) => _items.Remove(id);
+    public event Action<WorldItem>? ItemTaken;
+
+    public void SetItem(string id, string itemId, GridPosition position)
+    {
+        // Un objet deplace quitte d'abord sa case : sans cela le decor garderait les deux.
+        if (_items.TryGetValue(id, out var previous)) ItemTaken?.Invoke(previous);
+
+        var item = new WorldItem(id, itemId, position);
+        _items[id] = item;
+        ItemPlaced?.Invoke(item);
+    }
+
+    public void RemoveItem(string id)
+    {
+        if (!_items.Remove(id, out var removed)) return;
+
+        ItemTaken?.Invoke(removed);
+    }
 
     public IEnumerable<WorldItem> ItemsAt(GridPosition position)
         => _items.Values.Where(item => item.Position == position);

@@ -14,8 +14,8 @@ public enum PlayerCommandKind
     /// <summary>« Va voir la-bas » : explorer une zone, ou la frontiere si aucune n'est designee.</summary>
     ExploreArea,
 
-    /// <summary>« Rapportez les medicaments ».</summary>
-    FetchMedicine,
+    /// <summary>« Rapportez ce qu'on est venu chercher » : le lieu vient de la mission, pas du code.</summary>
+    FetchObjective,
 
     /// <summary>« Rejoignez l'extraction ».</summary>
     ReachExtraction,
@@ -62,8 +62,8 @@ public sealed record PlayerCommand(
     public static PlayerCommand Explore(MapZone? zone = null, bool toAll = false)
         => new(PlayerCommandKind.ExploreArea, toAll, Zone: zone);
 
-    public static PlayerCommand FetchMedicine(bool toAll = false)
-        => new(PlayerCommandKind.FetchMedicine, toAll);
+    public static PlayerCommand FetchObjective(bool toAll = false)
+        => new(PlayerCommandKind.FetchObjective, toAll);
 
     public static PlayerCommand ReachExtraction(bool toAll = false)
         => new(PlayerCommandKind.ReachExtraction, toAll);
@@ -92,7 +92,7 @@ public sealed record PlayerCommand(
         PlayerCommandKind.SelectSurvivor => $"selectionner {SurvivorId}",
         PlayerCommandKind.SelectGroup => "selectionner le groupe",
         PlayerCommandKind.ExploreArea => Zone is null ? "explorer" : $"explorer {Zone.Name}",
-        PlayerCommandKind.FetchMedicine => "recuperer les medicaments",
+        PlayerCommandKind.FetchObjective => "recuperer l'objet de la mission",
         PlayerCommandKind.ReachExtraction => "rejoindre l'extraction",
         PlayerCommandKind.Regroup => "se regrouper",
         PlayerCommandKind.ForbidNoise => "interdire les actions bruyantes",

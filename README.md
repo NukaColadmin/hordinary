@@ -29,14 +29,14 @@ Le point d'architecture central : **la logique de décision ne référence jamai
 `Hordinary.Core` est un projet .NET pur, testable sans Godot ; la couche moteur n'est qu'un
 afficheur et un fournisseur de perception.
 
-**316 tests** (`xUnit`, ~0,5 s), exécutés sans moteur, sur la carte et les fichiers de `config/`
+**382 tests** (`xUnit`, ~0,5 s), exécutés sans moteur, sur la carte et les fichiers de `config/`
 réellement livrés — pas des copies.
 
 ## Démarrage
 
 ```bash
 dotnet build Hordinary.sln
-dotnet test Tests/Hordinary.Tests.csproj   # 316 tests, sans Godot
+dotnet test Tests/Hordinary.Tests.csproj   # 382 tests, sans Godot
 ```
 
 Puis ouvrir le dossier dans **Godot 4.7** et lancer `Scenes/Main.tscn`.

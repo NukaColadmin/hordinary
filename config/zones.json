@@ -1,0 +1,176 @@
+// Le catalogue de zones (specification, livrable 11).
+//
+// Une zone est une donnee, comme une mission ou un survivant. Le code ne nomme ni « supermarche » ni
+// « poste de police » : il sait seulement poser quatre agencements sur une empreinte.
+//
+// UNE ZONE N'EST PAS UNE TABLE DE BUTIN. C'est le critere de selection des cinq ci-dessous, et la
+// raison de leur rendement. Une zone qui ne fait que changer ce qu'on ramasse est une ligne de
+// configuration deguisee en contenu : elle coute des tuiles et ne produit aucune decision. Les cinq
+// retenues posent chacune un probleme tactique distinct, et surtout : aucune n'ajoute de mecanique.
+// Chacune recompose des systemes deja livres — lignes de vue, verrouillage, bruit, fouille, objets
+// lourds — dans une geometrie qui les fait enfin compter.
+//
+// « kind » reste la categorie STRUCTURELLE, celle que la navigation et le planificateur connaissent
+// (ZoneKind : Building, Street, Alley, Pharmacy...). Y ajouter cinq valeurs serait cinq
+// recompilations ; le profil, lui, est une chaine, et une chaine ne se recompile pas.
+//
+// « layout » est le seul champ qui demande du code : quatre agencements primitifs seulement —
+//   aisles     allees paralleles : la vue porte le long d'une allee, jamais a travers ;
+//   open       volume libre : longues lignes de vue, aucun couvert ;
+//   cells      couloirs et petites salles : on ne voit rien, il faut fouiller partout ;
+//   forecourt  esplanade et cabane : tout est a decouvert sauf un petit interieur.
+// Cinq zones, quatre agencements : c'est la qu'est le rendement, et pas dans les tables de butin.
+//
+// « loot » nomme des identifiants de config/items.json et config/weapons.json. Un intervalle s'ecrit
+// [min, max].
+{
+  "zones": [
+    {
+      // LE PROBLEME. La plus grande surface interieure du jeu, et la seule ou l'on ne voit rien. Une
+      // vision_range de huit cases devient sans objet : on croise un zombie a deux cases ou on ne le
+      // croise pas. Le bruit redevient la seule perception qui porte loin — exactement le comportement
+      // que le livrable 3 a construit et que la carte actuelle ne met jamais a l'epreuve.
+      //
+      // L'entree est libre, les portes vitrees sont deja brisees. Mais le vrai stock est dans la
+      // reserve du fond, verrouillee : le seul ForceDoor de la zone est donc a l'endroit le plus
+      // profond, au bruit maximal, avec le plus long chemin de retour.
+      "id": "supermarche",
+      "name": "Supermarche",
+      "kind": "Building",
+      "description": "Les allees sont longues et on n'y voit qu'en enfilade. La reserve du fond n'a jamais ete ouverte.",
+
+      "footprint": [[18, 14], [30, 22]],
+      "layout": "aisles",
+      "aisle_spacing": 3,
+
+      "access": { "entry_doors": [1, 2], "locked_chance": 0.0, "inner_room": { "locked_chance": 1.0 } },
+      "zombie_density": 0.85,
+
+      "loot": {
+        "canned_food": [4, 9],
+        "water_can": [3, 7],
+        "bandage": [0, 2],
+        "baseball_bat": [0, 1]
+      },
+      "search_rooms": [1, 2]
+    },
+
+    {
+      // LE PROBLEME. L'esplanade est totalement a decouvert : aucun couvert entre la route et la
+      // boutique. C'est la seule zone du jeu ou tirer un coup de feu revient a se signaler a tout le
+      // monde a la fois, et donc la seule ou l'arbitrage discretion / puissance se pose sans
+      // echappatoire. Les pompes sont dehors : gratuites, mais exposees.
+      //
+      // CE QU'ELLE REND VRAI : l'economie d'essence du van. Sans source d'essence identifiable, le
+      // cout du van est une contrainte sans reponse — c'est-a-dire une taxe. Avec elle, c'est une
+      // boucle : le van coute de l'essence, l'essence est ici, y aller coute de l'essence.
+      "id": "station_service",
+      "name": "Station-service",
+      "kind": "Street",
+      "description": "Cent metres sans un mur, puis une boutique avec une seule porte.",
+
+      "footprint": [[4, 24], [16, 32]],
+      "layout": "forecourt",
+
+      "access": { "entry_doors": 1, "locked_chance": 0.7 },
+      "zombie_density": 0.5,
+
+      "loot": {
+        "fuel_can": [3, 6],
+        "canned_food": [0, 2],
+        "water_can": [0, 2],
+        "firecracker": [0, 2]
+      },
+      "search_rooms": 1
+    },
+
+    {
+      // LE PROBLEME. La seule armurerie, et le seul batiment qu'on n'ouvre pas discretement. Porte
+      // blindee (locked_chance 1.0), fenetres a barreaux qui DESACTIVENT BreakWindow. Il ne reste
+      // qu'un chemin : ForceDoor, bruit 6, au milieu d'un batiment plein. C'est le seul endroit du jeu
+      // ou le joueur choisit deliberement de faire du bruit, et ou il le sait a l'avance.
+      //
+      // CE QU'ELLE REND VRAI : l'arbitrage GBFS entre le cout et le bruit d'une meme intention.
+      "id": "poste_police",
+      "name": "Poste de police",
+      "kind": "Building",
+      "description": "La porte a tenu, les barreaux aussi. Ce qui est dedans y est encore, et ce qui est derriere la porte aussi.",
+
+      "footprint": [[22, 2], [32, 10]],
+      "layout": "cells",
+
+      "access": { "entry_doors": 1, "locked_chance": 1.0, "inner_room": { "locked_chance": 1.0 } },
+      "zombie_density": 0.9,
+
+      "loot": {
+        "revolver": [0, 1],
+        "shotgun": [0, 1],
+        "ammo_box": [1, 3],
+        "crowbar": [0, 1],
+        "bandage": [0, 2]
+      },
+      "search_rooms": [2, 3]
+    },
+
+    {
+      // LE PROBLEME. Des allees etroites saturees d'objets lourds. On ne traverse pas la zone, on s'y
+      // degage un passage. C'est la vitrine de PushHeavyObject, et l'inverse exact du supermarche : la
+      // difficulte vient de la geometrie, pas des occupants.
+      //
+      // La densite de zombies est faible, deliberement. Une zone difficile n'a pas besoin d'etre une
+      // zone dangereuse, et alterner les deux est ce qui empeche toutes les missions de se ressembler.
+      // Le rideau metallique a moitie baisse fait une entree unique et etroite — donc facile a tenir
+      // au retour, ce qui en fait un bon point de repli.
+      "id": "quincaillerie",
+      "name": "Quincaillerie",
+      "kind": "Building",
+      "description": "Le rideau est a moitie baisse et les allees ne laissent pas passer deux personnes.",
+
+      "footprint": [[2, 12], [12, 20]],
+      "layout": "aisles",
+      "aisle_spacing": 2,
+
+      "access": { "entry_doors": 1, "locked_chance": 0.0 },
+      "zombie_density": 0.25,
+
+      "loot": {
+        "toolbox": [1, 2],
+        "crowbar": [0, 2],
+        "machete": [0, 1],
+        "bandage": [0, 2],
+        "fuel_can": [0, 2]
+      },
+      "search_rooms": [1, 2]
+    },
+
+    {
+      // LE PROBLEME. Un gymnase ou les gens se sont regroupes, donc ou ils sont morts : grand volume
+      // ouvert, longues lignes de vue, aucun couvert. La ou l'agencement « aisles » supprime la vue,
+      // celui-ci la rend totale — et c'est le meme systeme de perception qui produit les deux.
+      //
+      // Le butin est disperse et individuel : beaucoup de petites quantites dans des lits de camp et
+      // des casiers. Le total est excellent, mais il faut fouiller partout — c'est la seule zone qui
+      // exige des SearchRoom repetes plutot qu'un seul bon. C'est ce qui recompense enfin une
+      // exploration methodique plutot qu'un trajet direct.
+      "id": "centre_accueil",
+      "name": "Centre d'accueil",
+      "kind": "Building",
+      "description": "On s'y est regroupe, donc on y est mort. Le gymnase se voit d'un bout a l'autre.",
+
+      "footprint": [[16, 26], [30, 34]],
+      "layout": "open",
+
+      "access": { "entry_doors": [2, 3], "locked_chance": 0.2, "inner_room": { "locked_chance": 0.5 } },
+      "zombie_density": 0.95,
+
+      "loot": {
+        "bandage": [2, 5],
+        "flashlight": [1, 3],
+        "radio": [0, 2],
+        "canned_food": [2, 5],
+        "medikit": [0, 1]
+      },
+      "search_rooms": [3, 4]
+    }
+  ]
+}

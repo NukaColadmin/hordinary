@@ -18,6 +18,7 @@ La specification complete est dans [`Specs/`](Specs/00-INDEX.md), decoupee en hu
 | 6 — Replanification | fait |
 | 7 — Survivants et partage | fait |
 | 8 — Interface et boucle complete | fait |
+| 11 — Objets, armes et economie du camp | fait (code, tests et tuiles ; rendu a verifier dans l'editeur) |
 
 Le MVP est complet : une partie se joue du choix de l'equipe jusqu'a la victoire ou la defaite.
 
@@ -27,11 +28,9 @@ Au-dela des huit livrables, la boucle de jeu est passee de « une partie » a «
   mission dans `config/missions.json`, puis demarre. Voir [Preparation de mission](#preparation-de-mission).
 * **Le camp** — une mission commence et finit au meme endroit. La zone d'extraction est posee sur la
   zone de depart : on part du camp, on y revient.
-* **Le rappel** — remplir la mission **n'arrete pas le jeu**. Celui qui rapporte la caisse repart
-  chercher les autres pour leur annoncer « Mission terminee, rentrez au camp s'il vous plait », et
-  chacun disparait de la carte en annoncant son retour. Le verdict ne tombe qu'une fois le terrain
-  vide. Voir [Le rappel au camp](#le-rappel-au-camp).
-* **La motivation** — une seconde jauge, `SANITY`, a cote de la sante. Voir [Sante et motivation](#sante-et-motivation).
+* **La ligne d'arrivee** — la partie est gagnee des que la caisse revient au camp avec quelqu'un.
+  Depart et arrivee au meme endroit : c'est ce qui donne un sens au mot « mission ». Voir
+  [Fin de partie](#fin-de-partie).
 * **Le mode debug s'eteint** — console, touches d'observation, panneaux de texte et overlays se
   coupent depuis `config/game_config.json`. Voir [Mode debug](#mode-debug).
 
@@ -77,16 +76,12 @@ verifiee, pas une copie.
 son invalidation differee, la fouille infructueuse, la carte de chaleur des menaces et son oubli, le
 type d'un bruit entendu, et le coup d'oeil par-dessus l'epaule.
 
-`RecallTests` couvre le rappel au camp : la mission remplie qui n'arrete pas la partie, le message
-qui ne se transmet qu'a portee de voix, le messager qui part chercher celui qui ignore encore et qui
-ne rentre pas avant, le survivant qui quitte le terrain sans mourir, et le verdict qui ne tombe qu'au
-dernier retour. `SanityTests` couvre la jauge de motivation, `MissionCatalogueTests` le catalogue de
-missions et sa validation.
+`MissionCatalogueTests` couvre le catalogue de missions et sa validation.
 
-`BandTests` couvre le livrable 7 : les trois profils et leurs competences, `merge_belief` ligne par
-ligne, la portee de communication, la repartition des frontieres, l'entraide — et le critere de
-validation, « une information decouverte par Alice peut etre utilisee ensuite par Bob apres
-communication ».
+`BandTests` couvre le livrable 7 : les trois profils — identiques, et c'est le propos —, le prix
+d'une action que seul l'equipement change, `merge_belief` ligne par ligne, la portee de
+communication, la repartition des frontieres, l'entraide — et le critere de validation, « une
+information decouverte par Alice peut etre utilisee ensuite par Bob apres communication ».
 
 `CommandTests`, `OutcomeTests`, `CombatTests` et `DebugModeTests` couvrent le livrable 8 : les
 commandes du joueur et les deux refus qui comptent (un lieu inconnu, un groupe qu'on ne sait pas
@@ -110,7 +105,6 @@ meme code, pas deux copies qui divergent.
 | `Maj` + un ordre | adresser l'ordre au groupe entier plutot qu'au seul survivant selectionne |
 | Clic droit | cycler le niveau de danger d'une case : aucun -> suspecte -> zombie proche |
 | `1` / `2` | recuperer les medicaments / rentrer au camp (la sortie, qui est aussi le depart) |
-| `3` | rappeler au camp : l'agent vise abandonne la mission et rentre, puis disparait en arrivant |
 | Clic sur une fiche du bas | changer de point de vue, comme `Tab` |
 | `4` | explorer la zone sous le curseur, ou la frontiere retenue si le curseur n'en survole aucune |
 | `5` | se regrouper |
@@ -174,8 +168,8 @@ Hordinary.Core/          logique pure, aucune reference a Godot
 ├── Agents/              Survivor, SurvivorAgent, SurvivorBand, Zombie, IPerceivingAgent,
 │                        AgentKnowledge, KnowledgeSharing, BeliefMerge, DangerMemory,
 │                        Belief (Cell/Entity/Item/Location/Noise/Search/Intent/Danger),
-│                        RearGlance, Personality, MissionOrder, SurvivorSettings,
-│                        SurvivorProfile, SurvivorSkill, SurvivorRoster
+│                        RearGlance, MissionOrder, SurvivorSettings,
+│                        SurvivorProfile, SurvivorRoster
 ├── AI/Navigation/       NavigationGrid, AStar, PathFollower, NavigationSettings, NavigationProfile
 ├── AI/Utility/          UtilityGoal, Consideration, ResponseCurve, UtilityInputs, UtilityContext,
 │                        UtilityScorer, UtilitySelector, UtilityGoalSet, UtilityAiSettings,
@@ -189,22 +183,25 @@ Hordinary.Core/          logique pure, aucune reference a Godot
 ├── AI/Zombies/          ZombieStateMachine, ZombieState, HordeBehaviour, ZombieSettings
 ├── Commands/            PlayerCommand, PlayerCommandKind, CommandManager, StandingOrders
 ├── Game/                MissionTracker, MissionOutcome, MissionVerdict,
-│                        MissionDefinition, MissionCatalogue, MissionRecall
+│                        MissionDefinition, MissionCatalogue, CampStock
 └── Config/              GameConfig, MapLocationsConfig, TileLegend, DebugSettings,
-                         MissionSettings
+                         InventorySettings
 
 Scripts/                 couche Godot (projet Hordinary.csproj)
 ├── World/MapLoader      convertit les TileMapLayer en GridMap
+├── World/VanNode        skin visuel de la zone d'extraction, aucune logique de jeu
 ├── Agents/SurvivorNode  affichage et pas de simulation d'un survivant
 ├── Agents/ZombieNode    affichage d'un zombie, couleur selon l'etat
 ├── Game/GameRoot        assemblage, cadences, entrees joueur
 ├── Game/Trace           robinet de la console, commande par debug.enabled
 ├── Game/CameraController
-├── UI/MissionSetupScreen  ecran de preparation : agents, mission, demarrage
-├── UI/AgentCard         une fiche d'agent : nom, role, jauges HP et SANITY
+├── UI/CampScreen          ecran de camp : reserves, equipe, mission
+├── UI/SurvivorPanel       panneau lateral : identite, jauges, inventaire, decision
+├── UI/UiSkin              cadres 9-slice, boutons et icones d'etat d'Assets/UI
+├── UI/AgentCard         une fiche d'agent : nom, jauges HP et panique
 ├── UI/AgentRoster       la barre d'equipe du bas, en mission (interface du joueur)
 ├── UI/InfoPanel         socle commun des trois panneaux de texte (mode debug)
-├── UI/Hud               etat de la partie : mission, rappel, groupe, horde, ordres
+├── UI/Hud               etat de la partie : mission, groupe, horde, ordres
 ├── UI/AgentPanel        etat d'un survivant : objectif, action, plan, replanification
 ├── UI/PlanPanel         etat de la recherche : noeuds GBFS, plans rejetes, journal
 ├── UI/NavigationDebugOverlay
@@ -214,9 +211,9 @@ Scripts/                 couche Godot (projet Hordinary.csproj)
 Tests/                   xUnit, sans Godot
 config/                  parametres externes (aucune valeur de gameplay codee en dur)
 ├── game_config.json     navigation, perception, bruit, survivant, zombies, utility_ai, planner,
-│                        replanning, knowledge, exploration, mission, debug
+│                        replanning, knowledge, exploration, inventory, debug
 ├── missions.json        les missions proposees : objectif, camp, caisses, taille de horde
-├── survivors.json       les trois profils, leurs caracteristiques, competences et aptitudes
+├── survivors.json       les trois profils : un identifiant, un nom, une image
 ├── utility_goals.json   les objectifs et leurs considerations
 ├── planner_domain.json  les actions du planificateur et la traduction des objectifs en buts
 ├── map_locations.json   zones nommees de la carte
@@ -248,8 +245,7 @@ changement : `AStar` bascule seul de l'heuristique de Manhattan a celle de Cheby
 
 Le danger **remplace** le cout de base au lieu de s'y ajouter, conformement au bareme de la
 specification. Une cellule inconnue est franchissable mais jamais consideree comme surement libre :
-A* prefere un detour connu plus long a un raccourci non observe. `NavigationProfile.FromCaution`
-module ces penalites selon la personnalite (affine au livrable 7).
+A* prefere un detour connu plus long a un raccourci non observe.
 
 L'heuristique est la distance de grille multipliee par le cout minimal d'une cellule : jamais
 surestimee, donc A* reste optimal.
@@ -338,7 +334,7 @@ plutot que magique, et c'est exactement le declencheur « un objet attendu est a
 replanification. Voir une case voisine ne suffit pas — il faut voir *la* case.
 
 Meme regle pour les fouilles. Une pharmacie fouillee sans rien y trouver laisse une `SearchBelief`,
-qui redevient le fait `searched_in_vain(pharmacy)` cote planificateur. Sans cette memoire, un
+qui redevient le fait `searched_in_vain(objective_zone)` cote planificateur. Sans cette memoire, un
 survivant dont la fouille echoue replanifie la meme fouille indefiniment : le plan est reconstruit
 depuis une carte mentale qui a oublie la deception.
 
@@ -489,8 +485,7 @@ specification sont douze entrees de [`config/utility_goals.json`](config/utility
   "considerations": [
     { "input": "threat_pressure",      "curve": "linear" },
     { "input": "health_ratio",         "curve": "inverse", "min": 0.7 },
-    { "input": "panic",                "curve": "linear",  "min": 0.7 },
-    { "input": "personality.caution",  "curve": "linear",  "min": 0.6 }
+    { "input": "panic",                "curve": "linear",  "min": 0.7 }
   ]
 }
 ```
@@ -499,7 +494,7 @@ Les considerations sont multipliees : **une seule a 0 annule l'objectif**. C'est
 `min`/`max` qui decide de ce droit de veto. `threat_pressure` va de 0 a 1 : sans menace, pas de
 fuite. `panic` va de 0,7 a 1 : la panique amplifie la fuite, elle ne la conditionne pas — un
 survivant calme fuit quand meme un zombie qui lui saute dessus. C'est la lecture honnete de la
-formule `flee = danger * sante * panique * prudence` de la specification, qui sinon rendrait toute
+formule `flee = danger * sante * panique` de la specification, qui sinon rendrait toute
 fuite impossible a froid.
 
 | Consideration | Lue dans | Va de 0 a 1 quand |
@@ -510,12 +505,11 @@ fuite impossible a froid.
 | `ally_danger` | menaces autour d'un allie croyable | allie tranquille -> allie assailli |
 | `pursued` | cap memorise des menaces proches | personne ne la cherche -> on lui court apres |
 | `health_ratio`, `panic` | etat du survivant | agonisant -> intact, calme -> panique |
-| `has_medicine`, `has_ally`, `medicine_known` | inventaire et memoire | non -> oui |
+| `has_objective`, `has_ally`, `objective_known` | inventaire et memoire | non -> oui |
 | `unexplored_ratio` | carte mentale | terrain connu -> terrain vierge |
 | `player_priority`, `plan_confidence` | ordre du joueur, plan courant | ignore -> imperatif |
 | `mission_reached` | ordre du joueur et position | en route -> arrivee a destination |
 | `heard_noise` | dernier bruit credible | silence -> vacarme |
-| `personality.courage / loyalty / caution` | profil | — |
 | `distance_to(cible)` | memoire | sur place -> a `distance_scale` cases |
 
 `pursued` n'est pas un synonyme de `perceived_danger` : on peut etre cerne par des zombies qui ne
@@ -525,7 +519,7 @@ le survivant. `Hide` s'en sert en `inverse` : se terrer marche contre ce qui ne 
 contre ce qui vous suit.
 
 `distance_to(...)` et la cible d'un objectif partagent le meme vocabulaire : `ally`, `group`,
-`medicine`, `pharmacy`, `extraction`, `start`, `cover`, `frontier`, `danger`, `away_from_danger`,
+`objective`, `objective_zone`, `pharmacy`, `extraction`, `start`, `cover`, `frontier`, `danger`, `away_from_danger`,
 `mission`. Une cible inconnue vaut « infiniment loin », donc 1 : une consideration `inverse` la
 ramene a 0 et l'objectif s'annule tout seul. Alice ne peut pas courir vers une pharmacie dont elle
 ignore l'existence.
@@ -559,7 +553,7 @@ dans le journal :
 [Utility] Alice : ExploreUnknownArea est retombe sous le seuil de 0.05 :
           FleeDanger prend la suite (0.52) — zombie-21 repere
 [Utility]    FleeDanger  0.52  = threat_pressure 0.85->0.85 x health_ratio 1.00->0.70
-                                 x panic 0.85->0.96 x personality.caution 0.80->0.92
+                                 x panic 0.85->0.96
 ```
 
 ### Sante et panique : l'inertie qui empeche l'oscillation
@@ -586,35 +580,6 @@ Le danger percu s'accumule en probabilite plutot qu'en maximum : trois zombies a
 inquietent plus qu'un seul. Un bruit compte pour moitie (`noise_danger_weight`) — entendre n'est pas
 voir.
 
-### Sante et motivation : deux jauges qui ne mesurent pas la meme duree
-
-La fiche d'un agent porte deux barres, et elles repondent a deux questions differentes.
-
-`HP` dit ce que le **corps** encaisse pendant une mission. `SANITY` dit ce que la **tete** encaisse
-sur la duree — c'est la motivation, ce qui distingue un survivant frais d'un survivant qui revient de
-trois missions.
-
-La motivation suit la **panique**, pas le danger percu, et la nuance porte tout le sens de la jauge :
-voir un zombie de loin sans s'affoler ne coute rien, c'est d'avoir eu peur qui coute.
-
-```
-sanity += (sanity_recovery_per_second * (1 - panique) - sanity_drain_per_second * panique) * dt
-```
-
-Elle se refait deux fois plus lentement qu'elle ne se vide (`3` contre `6`) : souffler ne rattrape
-pas une poursuite, ce qui donne a la jauge une pente descendante sur la duree. Une blessure l'entame
-en plus (`sanity_per_wound`), et ce **n'est pas** neutralise par `panic_enabled` — l'interrupteur
-eteint la peur, pas ses causes. Rassurer un allie (`CalmAlly`, l'action de Claire) lui en rend :
-c'est ce qui fait de Claire autre chose qu'une infirmiere, elle est la raison pour laquelle le groupe
-ne rentre pas a mi-chemin.
-
-A zero, `mission.abandon_at_zero_sanity` fait rentrer le survivant au camp de lui-meme. C'est ce qui
-empeche la jauge d'etre decorative ; a `false`, elle redevient un simple indicateur, ce qui est
-parfois ce qu'on veut pour observer autre chose.
-
-Le maximum se redit par profil, comme la sante — Alice tient 180, Claire 200, Bob 240 — et la Utility
-AI peut la lire par les entrees `sanity` et `weariness`.
-
 ### Ce que fait Alice de son objectif
 
 Chaque objectif porte une cible, que `UtilityContext.Locate` traduit en cellule **a partir de la
@@ -624,7 +589,7 @@ s'ecarte de l'un pour tomber sur trois autres — moins le prix du trajet. `fron
 connue la plus proche voisine d'une cellule jamais observee.
 
 Depuis le livrable 5, cette cible n'est plus la reponse finale mais le vocabulaire commun entre la
-Utility AI et le planificateur : les memes noms — `pharmacy`, `cover`, `frontier`,
+Utility AI et le planificateur : les memes noms — `objective_zone`, `cover`, `frontier`,
 `away_from_danger` — deviennent les **lieux** du probleme symbolique. La Utility AI, elle, n'a pas
 change : elle choisit un objectif, pas un chemin.
 
@@ -644,9 +609,9 @@ ouverte — la desillusion est le sujet du livrable 6.
 Ce qu'Alice sait au demarrage sur la carte livree, une fois briefee et apres un premier coup d'oeil :
 
 ```
-at(agent, start)  known(start)  accessible(start)  known(pharmacy)  accessible(pharmacy)
+at(agent, start)  known(start)  accessible(start)  known(objective_zone)  accessible(objective_zone)
 known(extraction)  extraction_known  known(cover)  known(frontier)  at(agent, frontier)
-door_closed(door_6_m2)  door_of(door_6_m2, pharmacy)
+door_closed(door_6_m2)  door_of(door_6_m2, objective_zone)
 ```
 
 Les objets ne sont pas declares en configuration, ils sont derives de la memoire : un lieu par cible
@@ -654,7 +619,7 @@ resolvable, une porte ou une fenetre par cellule memorisee, un allie par croyanc
 zombie memorise. Un lieu est `accessible` tant qu'une de ses ouvertures connues n'est pas verrouillee
 — c'est cette precondition qui **oblige** le plan a intercaler une action adaptee.
 
-`at(agent, pharmacy)` designe un **lieu**, pas une case : la pharmacie fait dix cases de long. C'est
+`at(agent, objective_zone)` designe un **lieu**, pas une case : la pharmacie fait dix cases de long. C'est
 pourquoi fouiller ou ramasser porte sur le local entier quand on est a l'interieur
 (`survivor.search_radius` sinon) — la granularite du plan est la piece.
 
@@ -678,7 +643,7 @@ vingt entrees de [`config/planner_domain.json`](config/planner_domain.json) :
 
 Une valeur `?x` est une variable, declaree dans `parameters` avec son type d'objet ; tout autre jeton
 est une constante. Le schema est ensuite **instancie** sur les objets que l'agent connait :
-`ForceDoor(door_6_m2, pharmacy)`. `!` nie une precondition ou retire un fait, et `!at(agent, *)`
+`ForceDoor(door_6_m2, objective_zone)`. `!` nie une precondition ou retire un fait, et `!at(agent, *)`
 retire toute position memorisee avant que le deplacement n'en pose une nouvelle — les suppressions
 sont appliquees avant les ajouts.
 
@@ -731,12 +696,16 @@ valide : le tri ne change aucun resultat, seulement le temps pour y arriver.
 
 ### Le plan produit, et son execution
 
-Pour « recuperer les medicaments » depuis le depart, pharmacie fermee a clef :
+Pour « recuperer ce qu'on est venu chercher » depuis le depart, lieu de mission ferme a clef :
 
 ```
-MoveToLocation(pharmacy) -> ForceDoor(door_5_5, pharmacy) -> SearchRoom(pharmacy)
--> LocateMedicine -> PickUpMedicine
+MoveToLocation(objective_zone) -> ForceDoor(door_5_5, objective_zone) -> SearchRoom(objective_zone)
+-> LocateObjective -> PickUpObjective
 ```
+
+Aucune pharmacie n'est nommee, et c'est le point : `objective_zone` est le lieu que la mission a
+designe. La meme suite d'actions joue un ravitaillement de pharmacie, une fouille d'entrepot ou une
+traversee de hangar — c'est `config/missions.json` qui en decide, pas le domaine.
 
 C'est exactement la suite donnee en exemple par la specification. Sur la carte livree, dont la porte
 de pharmacie est simplement fermee, la meme demande rend le plan sans `ForceDoor` — et si Alice a deja
@@ -776,7 +745,7 @@ immediatement. Alice va voir ailleurs plutot que de rester plantee.
 satisfaire. C'est le seul lien entre les deux fichiers, et c'est un nom :
 
 ```json
-{ "name": "PickUpMedicine",  "conditions": [ "has(agent, medicine)" ] },
+{ "name": "PickUpObjective",  "conditions": [ "has(agent, objective)" ] },
 { "name": "ReachExtraction", "conditions": [ "extracted" ] }
 ```
 
@@ -845,7 +814,7 @@ objets, et reconduire une croyance perimee serait exactement l'erreur qu'on cher
 dont un objectif fait sa **reussite** est ecarte aussi (`PlanningDomain.GoalPredicates`) : reconduire
 `explored` rendrait « explorer » satisfait des la premiere sortie, et le survivant ne bougerait plus.
 
-Reste l'acquis durable — `searched(pharmacy)`, `window_broken`, `shared_with` — qui survit. La regle
+Reste l'acquis durable — `searched(objective_zone)`, `window_broken`, `shared_with` — qui survit. La regle
 est entierement derivee de `planner_domain.json` : ajouter un objectif y ajoute automatiquement son
 marqueur.
 
@@ -884,16 +853,16 @@ Chaque replanification produit le bloc impose par la specification, aux noms de 
 
 ```
 [00:00:31] Alice replanifie
-Raison : SearchRoom(pharmacy) : « accessible(pharmacy) » n'est plus vrai (une porte est verrouillee)
-Objectif precedent : SearchForMedicine
-Nouvel objectif : SearchForMedicine
-Nouveau plan : SearchForMedicine : MoveToLocation(pharmacy) -> ForceDoor(door_6_2, pharmacy)
-               -> SearchRoom(pharmacy) -> LocateMedicine (4 actions, cout 8.5, bruit 8, 10 s)
+Raison : SearchRoom(objective_zone) : « accessible(objective_zone) » n'est plus vrai (une porte est verrouillee)
+Objectif precedent : SearchForObjective
+Nouvel objectif : SearchForObjective
+Nouveau plan : SearchForObjective : MoveToLocation(objective_zone) -> ForceDoor(door_6_2, objective_zone)
+               -> SearchRoom(objective_zone) -> LocateObjective (4 actions, cout 8.5, bruit 8, 10 s)
 ```
 
-La cause n'est pas devinee au nom de la precondition : c'est `accessible(pharmacy)` qui devient faux,
-et c'est bien de verrouillage qu'il faut parler. `PlanValidity` remonte de l'argument en defaut vers
-ce que l'etat affirme des objets qui s'y rattachent — `door_of(door_6_2, pharmacy)` et
+La cause n'est pas devinee au nom de la precondition : c'est `accessible(objective_zone)` qui devient
+faux, et c'est bien de verrouillage qu'il faut parler. `PlanValidity` remonte de l'argument en defaut
+vers ce que l'etat affirme des objets qui s'y rattachent — `door_of(door_6_2, objective_zone)` et
 `door_locked(door_6_2)`. La lecture ne suppose aucun nom de predicat, seulement la forme du fait.
 
 `DecisionJournal` est une memoire bornee (`journal_capacity`) qui vit dans le coeur ; la console
@@ -916,37 +885,42 @@ cases l'un de l'autre en savent exactement autant que deux inconnus.
 ### Les trois profils
 
 Alice, Bob et Claire ne sont pas trois classes du code — aucun fichier de `Hordinary.Core` ne les
-nomme. Ce sont trois entrees de [`config/survivors.json`](config/survivors.json). Ajouter un
-quatrieme survivant, ou echanger deux roles le temps d'un essai, ne demande pas de recompiler.
+nomme. Ce sont trois entrees de [`config/survivors.json`](../config/survivors.json), et une entree
+ne declare que trois choses : un identifiant, un nom, une image.
 
-| | Alice — eclaireuse | Bob — bricoleur | Claire — secouriste |
-|---|---|---|---|
-| courage / loyaute / prudence | 0,5 / 0,7 / 0,8 | 0,8 / 0,5 / 0,4 | 0,4 / 0,9 / 0,7 |
-| sante | 80 | 120 | 100 |
-| vitesse (marche / course) | 5 / 8,5 | 4 / 7 | 4 / 6,5 |
-| vision | 11 cases, 200° | 8 cases, 180° | 8 cases, 180° |
-| discretion des pas | x0,6 | x1 | x0,9 |
-| soin rendu | 45 | 25 | 90 |
+Il n'y a **ni role, ni caracteristiques, ni aptitudes, ni competences par action**, et c'est le
+choix qui structure le reste. Les trois partent avec la meme sante, la meme vue, la meme vitesse et
+le meme repertoire d'actions au meme prix — tout cela se regle une fois pour tous dans la section
+`survivor` de `game_config.json`.
 
-Un profil ne redit que ce qui le distingue : toute valeur absente retombe sur la section `survivor`
-de `game_config.json`.
+Ce qui les distingue tient en deux choses, et ce sont exactement celles que le projet demontre :
 
-### Les competences, ou comment on evite les `if (survivor is Bob)`
+1. **chacun ne connait que ce qu'il a vu** (livrable 2) — deux survivants cote a cote n'ont pas la
+   meme carte mentale, donc pas les memes plans ;
+2. **le joueur leur parle** (livrable 15) — une contrainte en langage naturel change ce qu'ils
+   peuvent planifier.
 
-Une competence est une ponderation des trois grandeurs qu'une action du planificateur porte deja —
-son cout, son bruit, sa duree — plus le droit de l'interdire. `PlanningDomain.Specialize` en derive
-une copie du domaine par survivant ; le domaine commun n'est jamais modifie.
+Une fiche de personnage aurait mis une troisieme explication a cote des deux autres. Devant un
+survivant qui contourne une porte au lieu de la forcer, « il est maladroit » et « le joueur a
+interdit le bruit » se seraient disputes la meme observation — et la premiere aurait toujours ete la
+plus facile a croire.
+
+### Ce qui change le prix d'une action
+
+Le prix d'une action ne depend pas de qui la fait, mais de **ce qu'on a en main**. Un
+`ActionModifier` pondere les trois grandeurs qu'une action porte deja — son cout, son bruit, sa
+duree — plus le droit de l'interdire. Ils viennent tous de l'equipement, via les `effects` de
+`config/items.json` et `config/weapons.json`.
+
+`PlanningDomain.Specialize` en derive une copie du domaine ; le domaine commun n'est jamais modifie,
+et le domaine d'un survivant se recalcule quand son sac change
+(`Inventory.EquipmentChanged` -> `SurvivorAgent.RefreshDomain`).
 
 Cela suffit a produire des comportements distincts, **sans aucune branche par personnage** : GBFS
-minimise le cout, et ce n'est pas le meme cout pour tout le monde. `ForceDoor` vaut 3 dans le domaine
-commun, 1,5 pour Bob et 6 pour Alice — devant une porte verrouillee, Bob propose spontanement de la
-forcer la ou Alice cherche la fenetre ou le detour. Claire, elle, a `BreakWindow` a `"enabled": false` :
-l'action sort simplement de son repertoire.
-
-Cote Utility AI, chaque profil declare des **aptitudes** (`exploration`, `support`, `breaching`,
-`stealth`), lues par la consideration parametrable `aptitude(nom)`. Le vocabulaire est libre : il
-n'appartient qu'a `survivors.json` et `utility_goals.json`, qui doivent s'accorder. Une aptitude
-jamais declaree vaut 0,5, ni douee ni maladroite.
+minimise le cout. `ForceDoor` vaut 3 dans le domaine commun et 1,5 pour qui porte la caisse a outils
+— devant une porte verrouillee, celui qui l'a ramassee propose spontanement de la forcer la ou les
+autres cherchent la fenetre ou le detour. La difference sort de la recherche, et elle tient a une
+situation, pas a une identite : elle s'inverse des qu'on se passe la caisse.
 
 ### Frontier exploration
 
@@ -1025,7 +999,7 @@ Une entree clavier ne pose plus directement un objectif : elle fabrique un `Play
 `CommandManager` traduit. La distinction n'est pas cosmetique — elle separe deux choses qui n'ont pas
 le meme statut :
 
-* un **ordre** (`FetchMedicine`, `ReachExtraction`, `ExploreArea`, `Regroup`) pose un
+* un **ordre** (`FetchObjective`, `ReachExtraction`, `ExploreArea`, `Regroup`) pose un
   `MissionOrder` que la Utility AI met en concurrence avec ses propres objectifs. Il peut etre mis de
   cote au profit d'un danger immediat, et il peut aussi **echouer a etre donne** : on n'envoie
   personne a un endroit dont il ignore l'existence. Chaque ordre est resolu dans la memoire de celui
@@ -1040,53 +1014,24 @@ le meme statut :
 Les consignes sont **individuelles**. Interdire une zone a Alice ne l'interdit pas a Bob, exactement
 comme sa carte mentale n'est pas la sienne.
 
-### Mission remplie, partie finie : deux moments differents
+### Fin de partie
 
-`MissionTracker` observe le monde et ne modifie rien. Il distingue **deux** moments que le prototype
-confondait, et cette distinction est ce qui fait exister le rappel :
+`MissionTracker` observe le monde et ne modifie rien. La ligne d'arrivee est une seule et meme
+chose : **la caisse revient au camp avec quelqu'un**, et la partie est gagnee. Depart et arrivee au
+meme endroit — la zone d'extraction est posee sur la zone de depart — et c'est ce qui donne un sens
+au mot « mission ». Il faut la caisse **et** quelqu'un dans la zone : c'est elle qui doit franchir la
+ligne, pas seulement un survivant.
 
-1. **La mission est remplie** — la caisse est revenue au camp avec quelqu'un. C'est un evenement
-   (`Accomplished`), pas une fin : le jeu continue, et c'est le rappel qui demarre.
-2. **La partie est finie** — il ne reste plus personne sur le terrain. Soit tout le monde est rentre
-   et la caisse est au camp, et c'est une **victoire** ; soit le groupe est rentre les mains vides,
-   ou plus personne n'est en etat d'agir, et c'est une **defaite**.
+Deux facons de perdre :
 
-La defaite se produit aussi quand il n'y a plus aucun medicament nulle part, tant que la mission
-n'est pas remplie. Cette clause n'est pas decorative — `HealSelf` et `HealAlly` consomment la caisse
-que la mission demandait de rapporter, et soigner un blesse avec le dernier stock perd donc la partie.
+* plus aucun survivant en etat d'agir ;
+* plus aucun medicament nulle part. Cette clause n'est pas decorative — `HealSelf` et `HealAlly`
+  consomment la caisse que la mission demandait de rapporter, et soigner un blesse avec le dernier
+  stock perd donc la partie.
 
 `OutcomeTests` joue une partie entiere sur la carte livree, du depart a la victoire, sans jamais
 placer personne a la main : le joueur demande les medicaments, la Utility AI bascule seule sur
-`ReachExtraction` une fois la caisse en poche, et la partie ne se conclut qu'au dernier retour.
-
-### Le rappel au camp
-
-La caisse est rentree, mais les autres ne le savent pas : ils sont a l'autre bout de la carte,
-occupes a fouiller un entrepot pour rien. Quelqu'un doit aller le leur dire. C'est cela, `MissionRecall` :
-**l'agent qui a fini la mission repart chercher les autres**, un par un, pour leur annoncer
-
-> Mission terminee, rentrez au camp s'il vous plait.
-
-Trois choses en decoulent, et les trois tiennent au modele de connaissance du livrable 7 :
-
-* Le message se transmet **de vive voix**, a portee de communication — le meme canal que le partage
-  de connaissances. Il n'existe pas d'annonce globale : un allie qu'on n'a pas rejoint continue sa
-  mission, et c'est correct, il n'a aucun moyen de savoir.
-* Le messager cherche ses allies **la ou il croit qu'ils sont**. Une position vieille de vingt
-  secondes l'envoie a un endroit qu'ils ont quitte, et il recommence. Le journal le montre bien :
-  `Claire part prevenir Alice vers (1,-7)` puis `vers (3,11)` puis `vers (5,0)`.
-* Rentrer **n'est pas un pilotage** : le rappel pose un `MissionOrder` que la Utility AI met en
-  concurrence avec le reste, avec le poids `mission.recall_priority`. Un survivant poursuivi par une
-  horde ne rentre pas tout droit — il fuit d'abord, et rentre apres.
-
-Un survivant qui atteint le camp **disparait** du terrain : il quitte `WorldState`, cesse de percevoir
-et de decider, et sa fiche s'eteint en annoncant « rentre au camp ». Il n'est pas mort — c'est le
-meme qui repartira, avec la sante et la motivation qu'il rapporte. Le sortir du monde n'est pas
-cosmetique : sans cela, la horde continuerait de le poursuivre jusque dans le camp, et les allies
-restes dehors le verraient encore la ou il n'est plus.
-
-Deux autres facons de rentrer, qui passent par le meme chemin : le joueur peut rappeler un agent
-(`3`), et un survivant a bout de motivation rentre de lui-meme.
+`ReachExtraction` une fois la caisse en poche, et le camp est la sortie.
 
 ### Preparation de mission
 
@@ -1095,7 +1040,7 @@ assistant en trois pages : on choisit ses agents en regardant la mission, et on 
 lisant la difficulte.
 
 1. **Les agents**, dans une grille horizontale de fiches en bas d'ecran. Chaque fiche porte le nom, le
-   role, et les deux jauges : `HP 80/80` et `SANITY 180/180`. Un clic enrole ou retire.
+   role, et la jauge `HP 80/80`. Un clic enrole ou retire.
 2. **La mission**, choisie dans [`config/missions.json`](config/missions.json) : nom, difficulte,
    equipe conseillee, et le briefing en clair.
 3. **Demarrer** — et rien n'existait avant : ni les survivants, ni la horde, ni les caisses.
@@ -1173,7 +1118,7 @@ L'ecran porte deux interfaces qui ne s'adressent pas au meme public.
 
 La **barre d'equipe** en bas est celle du **joueur** : les memes fiches que l'ecran de preparation,
 aux memes coordonnees, mais vivantes. Elle montre qui est encore dehors, dans quel etat (`HP`,
-`SANITY`, objectif courant), et sur qui portent les ordres. Un agent rentre au camp n'en disparait
+objectif courant), et sur qui portent les ordres. Un agent rentre au camp n'en disparait
 pas : sa fiche s'eteint et annonce `rentre au camp` — le faire disparaitre laisserait un trou, et le
 joueur se demanderait qui manque. Elle reste allumee quand le mode debug est eteint.
 
@@ -1182,7 +1127,7 @@ mode debug (`debug.hud_text`). Leur partage suit celui de la specification, et i
 distinction que le livrable 2 rend obligatoire : **ce que le joueur sait n'est pas ce qu'un survivant
 sait**.
 
-* **HUD** (haut gauche) : l'etat de la partie — la mission, l'heure, le rappel, le groupe, la horde
+* **HUD** (haut gauche) : l'etat de la partie — la mission, l'heure, le groupe, la horde
   entiere, les ordres donnes, le verdict. C'est la vue du joueur.
 * **AgentPanel** (haut droite) : l'etat d'**un** survivant, dans le format impose par la
   specification — nom, objectif, action actuelle, plan, derniere replanification — augmente de la
@@ -1230,7 +1175,7 @@ rallumer l'interrupteur rend exactement le regime qu'on avait ecrit.
 
 | Reglage | Ce qu'il coupe |
 |---|---|
-| `console_output` | le journal : plans, replanifications, bruits, ordres, partages, rappel |
+| `console_output` | le journal : plans, replanifications, bruits, ordres, partages |
 | `commands` | `F1` a `F7`, `C`, `Espace`, clic droit — les touches de l'observateur, pas celles du joueur |
 | `hud_text` | les trois panneaux de texte ; il reste la carte et la barre d'equipe |
 | `skip_setup` | rien : il **saute** l'ecran de preparation et demarre la premiere mission |
@@ -1253,6 +1198,100 @@ restent bien reels : c'est la peur qu'on retire, pas les zombies. Le panneau d'a
 Les trois `show_*` fixent l'etat de depart des overlays `F1`, `F2` et `F3`, qui restent eux
 basculables en jeu : allumer un calque ne change rien a ce que les agents decident, contrairement a
 la panique.
+
+## Objets, armes et economie du camp
+
+Le livrable 11 ajoute quatre choses au monde — un sac, des armes, des meubles qu'on pousse, et un
+camp qui mange — sans ajouter une seule classe par objet de jeu.
+
+### Aucun objet n'existe dans le code
+
+`config/items.json` et `config/weapons.json` decrivent quinze entrees ; `Hordinary.Core` n'en nomme
+aucune. Un objet est un identifiant, un poids, une categorie, et une liste d'**effets** ecrits dans un
+vocabulaire de verbes primitifs : `heal`, `feed`, `drink`, `refuel`, `modify`, `emit_noise`. Les deux
+fichiers partagent un espace d'identifiants unique (`ItemCatalogue.Merge`) : un inventaire ne connait
+qu'un `id`, jamais le fichier dont il vient.
+
+`Inventory` porte les quatre limites de `game_config.json` (`inventory`) : emplacements, poids,
+emplacements d'arme, penalite de surcharge. Un sac plein **refuse** un ramassage — et c'est cet echec
+d'action qui declenche une replanification. Le poids, lui, n'interdit rien : il ralentit.
+
+### Une arme equipee ne fait que changer un prix
+
+C'est le point de conception du livrable. Un pied-de-biche en main ne declenche aucun code
+particulier : ses effets sont traduits en `ActionModifier`, et `SurvivorAgent.RefreshDomain`
+recompose le domaine en multipliant ceux de tout ce qui est equipe. GBFS decouvre le nouveau plan
+tout seul, et **aucune ligne de code ne teste ce qu'un survivant porte**.
+
+C'est aussi le seul mecanisme qui differencie deux survivants devant la meme porte — voir
+[Ce qui change le prix d'une action](#ce-qui-change-le-prix-dune-action).
+
+Une arme a feu sans munitions ne disparait pas : elle retombe sur `unloaded_damage` / `unloaded_noise`
+et sur une portee de 1. Une arme a durabilite nulle reste dans le sac, cassee — c'est une information
+a ramener au camp, pas un objet qui s'evapore.
+
+### Objets lourds
+
+`HeavyObject` est un meuble, `HeavyObjects` la regle. La regle vit a part parce qu'elle porte sur la
+scene entiere : la case d'ou l'on pousse, celle ou l'on pousse, et le nombre de bras. Au-dela de
+`SoloMassLimit` (3), il faut un allie adjacent — c'est la seule regle du jeu qui exige d'etre deux au
+meme endroit, et elle donne au regroupement une raison mecanique plutot qu'une consigne.
+
+`WhyCannotPush` renvoie une **raison**, pas un booleen : c'est elle qui part au journal quand l'action
+echoue, et une replanification qui sait pourquoi vaut mieux qu'une qui reessaie a l'identique.
+
+Un meuble deplace n'est appris que par les temoins (`WorldPlanRuntime.TellWitnesses`). La perception
+partielle du livrable 2 vaut aussi pour le decor : un survivant qui revient sur une case qu'il croit
+degagee peut s'y heurter.
+
+### Ce que les tuiles rendent impossible
+
+Deux indisponibilites du livrable ne sont ecrites nulle part dans le planificateur. `WindowBarred` est
+un `CellType.Wall` pour la carte : `BreakWindow` n'a donc **aucun objet** sur lequel s'appliquer.
+`ShutterHalf` est une `DoorClosed` qu'aucune donnee ne verrouille, et `GridMap` marque sa case
+infranchissable pour qu'une passe ulterieure ne la verrouille pas par accident. Une action devient
+inapplicable parce que son objet n'existe pas — c'est plus solide qu'une condition ecrite quelque part.
+
+### Une seule image par objet
+
+Il n'existe pas de serie d'icones d'inventaire. La vignette d'un objet **est** sa tuile de 32 px :
+`TileLegend.TileOf(id)` donne son adresse dans l'atlas (`TileAddress`, la cle `source:x,y` relue en
+trois nombres), et `ItemIcons` (`Scripts/UI/`) y decoupe un `AtlasTexture`, affiche a un facteur
+d'echelle entier. Quand un objet apparait sur plusieurs tuiles — `medikit` en a deux, dont une heritee
+du MVP qui peint aussi un sol — la vignette prend celle qui ne pose que l'objet.
+
+La direction artistique commandait quinze dessins de plus, vus de trois quarts, en 48 x 48. Les
+abandonner n'est pas qu'une economie d'images : deux dessins pour un objet, ce sont deux verites a
+tenir accordees, et la premiere fois qu'on repeint l'une sans l'autre, une conserve n'a plus la meme
+tete selon qu'on la regarde par terre ou dans un sac. Ici, repeindre l'atlas repeint l'inventaire.
+
+L'ecran de preparation s'en sert deja : chaque reserve du camp porte la vignette de l'objet qui la
+remplit. Aucun code ne nomme cet objet — `CampStock.StockerOf` cherche dans le catalogue celui dont un
+effet alimente la reserve, et changer d'objet nourricier reste une modification de
+`config/items.json`.
+
+### Le camp
+
+`CampStock` resout une journee — une mission — hors simulation : il ne connait ni
+carte ni `WorldState`. La faim est **collective**, il n'y a pas de faim individuelle a suivre case par
+case. Un survivant non ravitaille voit sa sante maximale plafonnee.
+
+Les trois etats de chaque reserve (`empty_threshold`, `full_threshold` de `config/camp.json`) sont lus
+la et nulle part ailleurs : l'ecran de preparation les affiche sans redecider a partir de quel chiffre
+une reserve est basse.
+
+### Zones et agencements
+
+`ZoneKind` reste la categorie **structurelle**, celle que la navigation et le planificateur
+connaissent. Un champ `profile` s'y ajoute : une chaine pointant vers `config/zones.json`, et une
+chaine ne se recompile pas. Cinq zones, **quatre** agencements primitifs (`aisles`, `open`, `cells`,
+`forecourt`) : c'est la que se trouve le rendement, et pas dans les tables de butin. Aucune zone
+n'ajoute de mecanique — chacune recompose des systemes deja livres dans une geometrie qui les fait
+enfin compter.
+
+Le champ `objective` de `config/missions.json` accepte desormais les deux vocabulaires dans la meme
+chaine : `"Pharmacy"` designe un `ZoneKind`, `"station_service"` un profil. La carte de demonstration
+ne declare aucun `profile` et reste jouable.
 
 ## Carte de demonstration
 
@@ -1288,6 +1327,43 @@ surcout de 3, ce qui garde la pharmacie atteignable et le critere du livrable 1 
 Depuis le livrable 5, ouvrir une porte est une action du plan : `OpenDoor` et `ForceDoor` echangent
 reellement la tuile et mettent a jour la carte mentale, avec le bruit du bareme (2 et 6).
 `BreakWindow` transforme la fenetre en sol — une vitre brisee laisse un passage — pour 8 de bruit.
+
+Le decor suit, et il ne l'a pas toujours fait : le terrain changeait dans `GridMap` sans que rien ne
+repeigne la case, et le joueur voyait un survivant franchir une porte **dessinee fermee**. C'etait le
+seul endroit ou l'ecran contredisait la simulation. `GridMap.CellChanged` annonce maintenant les cases
+dont le terrain change — et seulement celles-la, sans quoi une generation de quartier en emettrait des
+milliers — et `MapPainter.ShowCell` repeint la case annoncee. Le sol, lui, ne bouge pas : c'est
+justement celui qu'une porte ouverte doit laisser voir.
+
+## Sols
+
+Le quartier declarait quatre sols exterieurs et n'en peignait qu'un. `TileLegend.TileFor` rend
+toujours la **meme** tuile pour un terrain donne — la plus petite cle — et une carte entiere se
+rendait donc en bitume : ni trottoir, ni herbe, ni les deux carrelages d'interieur.
+
+Le choix se fait maintenant dans `MapPainter.FloorAt`, et il se lit sur la carte elle-meme plutot que
+sur un tirage :
+
+| Case | Sol |
+|---|---|
+| dans une zone `Street` ou `Alley` | `FloorRoad` — la chaussee |
+| exterieure, touchant une voie | `FloorSidewalk` — le trottoir |
+| exterieure, ailleurs | `FloorGrass` — la friche |
+| interieure | une variante de `FloorIndoor` par **batiment**, choisie sur le nom de la zone |
+
+Les voies n'ont demande aucune donnee nouvelle : la passe 5 du generateur enregistre deja chaque rue
+et chaque ruelle comme une `MapZone`, et une carte relue depuis un export se repeint donc a
+l'identique.
+
+Trois `TileKind` s'ajoutent (`FloorRoad`, `FloorSidewalk`, `FloorGrass`) et ne changent rien au jeu :
+comme `FloorOutdoor`, ils donnent un `CellType.Floor` exterieur, et la navigation ne les distingue
+pas. Ils n'existent que pour que le peintre puisse **demander** une image au lieu de prendre la
+premiere venue.
+
+Le sol d'un interieur est choisi par zone et non par case : un carrelage tire case par case ferait un
+damier, pas une piece. Le nom de la zone est stable, donc deux lancements peignent le meme quartier de
+la meme facon — et la somme des caracteres remplace `string.GetHashCode`, randomise par processus
+depuis .NET Core.
 
 Depuis le livrable 6, decouvrir qu'une porte est verrouillee ne demande plus d'attendre de s'y
 cogner : le plan est confronte a la carte mentale deux fois par seconde, et une pharmacie devenue

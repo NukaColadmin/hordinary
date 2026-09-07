@@ -12,7 +12,6 @@ namespace Hordinary.AI.Utility;
 public static class UtilityInputs
 {
     private const string DistancePrefix = "distance_to(";
-    private const string AptitudePrefix = "aptitude(";
 
     private static readonly Dictionary<string, Func<UtilityContext, float>> Readers =
         new(StringComparer.OrdinalIgnoreCase)
@@ -43,18 +42,12 @@ public static class UtilityInputs
             // Etat du survivant.
             ["health_ratio"] = context => context.Self.HealthRatio,
             ["panic"] = context => context.Self.Panic,
-            ["has_medicine"] = context => context.Self.Carries(ItemKind.Medicine) ? 1f : 0f,
+            ["has_objective"] = context => context.Self.CarriesObjective ? 1f : 0f,
 
-            // Motivation. « sanity » est ce qu'il lui reste d'envie d'etre dehors ; « weariness »
-            // son complement, plus commode a ecrire dans un objectif de repli. A la difference de
-            // « panic », elles ne retombent pas quand la rue se vide : c'est ce qui permet a un
-            // objectif de peser de plus en plus lourd a mesure que la mission traine.
-            ["sanity"] = context => context.Self.SanityRatio,
-            ["weariness"] = context => 1f - context.Self.SanityRatio,
-
-            // « On m'a dit de rentrer » : l'agent qui a fini la mission est passe le dire. Un
-            // objectif de retour au camp peut s'en servir pour prendre le pas sur l'exploration.
-            ["recalled"] = context => context.Self.Recalled ? 1f : 0f,
+            // « J'ai de quoi soigner » : n'importe quel objet porte qui declare un effet de soin, pas
+            // l'objet de la mission. Les deux se confondaient tant que toute mission ramenait une
+            // trousse ; une mission qui va chercher un jerrican rend la distinction obligatoire.
+            ["has_remedy"] = context => context.Self.Inventory.HasHealingItem ? 1f : 0f,
 
             // Groupe. « ally_wounded » et « ally_panicking » ne se voient pas : ils n'arrivent que
             // par la parole (livrable 7). Un survivant qui n'a parle a personne les lit a zero, et
@@ -64,8 +57,28 @@ public static class UtilityInputs
             ["ally_panicking"] = context => context.AllyPanic,
 
             // Connaissances.
-            ["medicine_known"] = context => context.KnowsMedicine ? 1f : 0f,
+            ["objective_known"] = context => context.KnowsObjective ? 1f : 0f,
+
+            // « J'y suis alle, il n'y avait rien. » Sans cette entree, un survivant qui a fouille le
+            // lieu de la mission et n'y a rien trouve rescore la recherche a chaque decision et repart
+            // vers une caisse imaginaire. Une fouille infructueuse doit pouvoir fermer un objectif.
+            ["objective_zone_searched"] = context => context.SearchedObjectiveZoneInVain ? 1f : 0f,
+
+            // « Je suis deja sorti » : sans elle, un survivant plante sur la case d'extraction se
+            // redonne indefiniment un plan d'une action qui s'acheve aussitot.
+            ["at_extraction"] = context => context.Locate("extraction") is { } exit
+                && context.Self.Position.ChebyshevDistanceTo(exit) <= 1
+                    ? 1f
+                    : 0f,
             ["unexplored_ratio"] = context => 1f - context.Self.Knowledge.ExploredRatio,
+
+            // « Il reste quelque part ou aller voir. » Ce n'est pas la meme question que
+            // « reste-t-il de l'inexplore » : une carte aux trois quarts inconnue peut n'offrir
+            // aucune frontiere atteignable — tout ce qui restait est derriere une porte verrouillee,
+            // ou au-dela d'une cour fermee. Sans cette entree, l'objectif d'exploration se maintient
+            // en tete des scores et le planificateur ne peut rien en faire : le survivant reste
+            // plante, l'objectif affiche.
+            ["frontier_known"] = context => context.BestFrontier is not null ? 1f : 0f,
 
             // Consignes du joueur et etat du plan.
             ["player_priority"] = context => context.Self.Mission?.Priority ?? 0f,
@@ -78,23 +91,16 @@ public static class UtilityInputs
                 && context.Self.Position.ChebyshevDistanceTo(destination) <= 1
                     ? 1f
                     : 0f,
-
-            // Personnalite (section 10.2).
-            ["personality.courage"] = context => context.Self.Personality.Courage,
-            ["personality.loyalty"] = context => context.Self.Personality.Loyalty,
-            ["personality.caution"] = context => context.Self.Personality.Caution,
         };
 
     /// <summary>
-    /// Entrees scalaires connues, hors les deux entrees parametrables <c>distance_to(cible)</c> et
-    /// <c>aptitude(nom)</c>.
+    /// Entrees scalaires connues, hors l'entree parametrable <c>distance_to(cible)</c>.
     /// </summary>
     public static IReadOnlyCollection<string> Names => Readers.Keys;
 
     public static bool IsKnown(string input)
         => Readers.ContainsKey(input)
-        || (TryParseArgument(input, DistancePrefix, out var target) && IsKnownTarget(target))
-        || TryParseArgument(input, AptitudePrefix, out _);
+        || (TryParseArgument(input, DistancePrefix, out var target) && IsKnownTarget(target));
 
     /// <summary>Lit une consideration primitive. Le resultat est toujours dans <c>[0, 1]</c>.</summary>
     public static float Read(string input, UtilityContext context)
@@ -102,8 +108,6 @@ public static class UtilityInputs
         if (Readers.TryGetValue(input, out var read)) return Math.Clamp(read(context), 0f, 1f);
 
         if (TryParseArgument(input, DistancePrefix, out var target)) return context.NormalizedDistanceTo(target);
-        if (TryParseArgument(input, AptitudePrefix, out var aptitude))
-            return context.Self.Profile.AptitudeFor(aptitude);
 
         throw new InvalidOperationException($"Consideration inconnue « {input} ». {Vocabulary()}");
     }
@@ -111,14 +115,11 @@ public static class UtilityInputs
     /// <summary>Message d'aide liste dans les erreurs de configuration.</summary>
     public static string Vocabulary()
         => $"Entrees connues : {string.Join(", ", Names.Order())}, "
-         + $"distance_to(cible) avec cible parmi {string.Join(", ", UtilityContext.TargetNames.Order())}, "
-         + "aptitude(nom) avec un nom declare dans config/survivors.json.";
+         + $"distance_to(cible) avec cible parmi {string.Join(", ", UtilityContext.TargetNames.Order())}.";
 
     /// <summary>
     /// Decoupe une entree parametrable, <c>prefixe(argument)</c>. Le vocabulaire des cibles est
-    /// ferme et verifie ; celui des aptitudes est ouvert, parce qu'il appartient aux fichiers de
-    /// configuration et non au code — une aptitude jamais declaree vaut alors
-    /// <see cref="SurvivorProfile.NeutralAptitude"/>.
+    /// ferme et verifie : une cible inconnue est une erreur de configuration, pas un zero silencieux.
     /// </summary>
     private static bool TryParseArgument(string input, string prefix, out string argument)
     {

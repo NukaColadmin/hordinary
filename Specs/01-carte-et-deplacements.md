@@ -53,8 +53,6 @@ Cellule proche d'un zombie : 15
 Cellule bloquée : infini
 ```
 
-Les coefficients peuvent varier selon la personnalité (un survivant prudent applique une pénalité plus importante aux zones inconnues — affiné au livrable 7).
-
 > Note : à ce stade (avant le livrable 2 — Perception), A* peut naviguer sur la carte réelle. Le passage à la carte mentale de l'agent (`AgentKnowledge`) sera fait au livrable 2.
 
 ### Pathfinding interrompu

@@ -246,7 +246,7 @@ public class PerceptionTests
             ".....");
 
         var world = new WorldState(map);
-        world.SetItem("medicine-1", ItemKind.Medicine, new GridPosition(2, 2));
+        world.SetItem("objective-1", Survivor.DefaultObjectiveItem, new GridPosition(2, 2));
 
         var alice = Alice(map, new GridPosition(0, 0));
         var perception = new PerceptionSystem();
@@ -258,8 +258,8 @@ public class PerceptionTests
         alice.Position = new GridPosition(1, 2);
         perception.Observe(alice, world, 1d);
 
-        Assert.Equal(new GridPosition(2, 2), alice.Knowledge.GetItem("medicine-1")!.Value);
-        Assert.Equal(KnowledgeSource.DirectObservation, alice.Knowledge.GetItem("medicine-1")!.Source);
+        Assert.Equal(new GridPosition(2, 2), alice.Knowledge.GetItem("objective-1")!.Value);
+        Assert.Equal(KnowledgeSource.DirectObservation, alice.Knowledge.GetItem("objective-1")!.Source);
     }
 
     // --- Critere de validation du livrable 2 ----------------------------------------------

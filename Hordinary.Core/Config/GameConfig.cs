@@ -30,7 +30,7 @@ public sealed record GameConfig
     public ReplanningSettings Replanning { get; init; } = new();
     public KnowledgeSettings Knowledge { get; init; } = new();
     public ExplorationSettings Exploration { get; init; } = new();
-    public MissionSettings Mission { get; init; } = new();
+    public InventorySettings Inventory { get; init; } = new();
     public DebugSettings Debug { get; init; } = new();
 
     public static GameConfig Default { get; } = new();
@@ -46,46 +46,6 @@ public sealed record GameConfig
 
     public static GameConfig FromJson(string json)
         => JsonSerializer.Deserialize<GameConfig>(json, JsonOptions) ?? Default;
-}
-
-/// <summary>
-/// Deroulement d'une mission, section <c>mission</c> de <c>config/game_config.json</c> : ce qui se
-/// passe une fois l'objectif rempli, et ce qui fait rentrer un survivant avant l'heure.
-///
-/// Une mission commence et finit au camp. Elle n'est donc jamais « gagnee puis terminee » d'un seul
-/// coup : la caisse revient au camp, le groupe est rappele, et la partie ne s'arrete que lorsque
-/// tout le monde est rentre. Les valeurs ci-dessous reglent cette seconde moitie.
-/// </summary>
-public sealed class MissionSettings
-{
-    /// <summary>
-    /// Poids de l'ordre de retour dans les scores Utility AI. Volontairement plus eleve que
-    /// <see cref="UtilityAiSettings.PlayerOrderPriority"/> : la mission est finie, plus rien
-    /// au-dehors ne vaut la peine — mais ce reste un poids, pas une laisse. Un survivant poursuivi
-    /// fuit d'abord et rentre apres.
-    /// </summary>
-    public float RecallPriority { get; init; } = 0.9f;
-
-    /// <summary>
-    /// Ecart, en cellules, au-dela duquel le messager refait son trajet vers un allie qui a bouge.
-    /// A zero, il recalculerait a chaque passe et n'avancerait jamais.
-    /// </summary>
-    public int RecallReroute { get; init; } = 3;
-
-    /// <summary>
-    /// Rayon d'arrivee, en cellules, quand aucune zone de camp n'est declaree. Avec une zone — le
-    /// cas normal — c'est le rectangle du camp qui fait foi.
-    /// </summary>
-    public int CampRadius { get; init; } = 1;
-
-    /// <summary>
-    /// A <c>true</c>, un survivant dont la motivation tombe a zero abandonne la mission et rentre.
-    /// C'est ce qui donne une consequence a la jauge <c>SANITY</c> ; a <c>false</c>, elle redevient
-    /// un simple indicateur, ce qui est parfois ce qu'on veut pour observer autre chose.
-    /// </summary>
-    public bool AbandonAtZeroSanity { get; init; } = true;
-
-    public static MissionSettings Default { get; } = new();
 }
 
 /// <summary>
@@ -120,6 +80,17 @@ public sealed class DebugSettings
     /// le plus verbeux des trois, et le premier qu'on eteint quand on veut simplement jouer.
     /// </summary>
     public bool ConsoleOutput { get; init; } = true;
+
+    /// <summary>
+    /// Quels canaux du journal sortent, par le nom entre crochets qui ouvre chaque ligne —
+    /// <c>Plan</c>, <c>Carte</c>, <c>Partage</c>… Liste vide ou absente : tous, comme avant.
+    ///
+    /// Le tout-ou-rien ne suffisait plus. Une mission de trois minutes ecrivait quinze cents lignes,
+    /// et celle qu'on cherchait s'y perdait ; eteindre la console entiere revenait a ne plus rien
+    /// observer du tout. Nommer les canaux qu'on veut lire coute une ligne de configuration et rend
+    /// au journal sa raison d'etre — c'est le principal moyen d'observer l'IA, pas un bruit de fond.
+    /// </summary>
+    public List<string> ConsoleChannels { get; init; } = [];
 
     /// <summary>
     /// Touches de debug : bascules d'overlay (F1 a F7), danger pose a la main, distraction, effacement
@@ -288,6 +259,14 @@ public sealed class ExplorationSettings
     /// une carte a moitie decouverte en offre des centaines a chaque passe de decision.
     /// </summary>
     public int MaxCandidates { get; init; } = 24;
+
+    /// <summary>
+    /// Distance, en cellules, en deca de laquelle une frontiere est consideree comme deja visitee :
+    /// s'y rendre ne demande aucun pas, et sa voisine inobservee l'est restee alors qu'on etait
+    /// dessus. Un rayon nul rend le comportement d'avant, ou un survivant pouvait passer le reste de
+    /// la partie a « explorer » la case sous ses pieds.
+    /// </summary>
+    public int ExhaustedRadius { get; init; } = 1;
 
     public static ExplorationSettings Default { get; } = new();
 }

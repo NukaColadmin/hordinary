@@ -150,10 +150,10 @@ public class MissionCatalogueTests
 
         var byName = new MissionDefinition
         {
-            Id = "x", Name = "X", Objective = ZoneKind.Building, ObjectiveZone = "Hangar sud",
+            Id = "x", Name = "X", Target = ZoneKind.Building, ObjectiveZone = "Hangar sud",
         };
 
-        var byKind = new MissionDefinition { Id = "y", Name = "Y", Objective = ZoneKind.Building };
+        var byKind = new MissionDefinition { Id = "y", Name = "Y", Target = ZoneKind.Building };
         var mistyped = byName with { ObjectiveZone = "Hangar qui n'existe pas" };
 
         Assert.Equal("Hangar sud", byName.ObjectiveIn(map)!.Name);
@@ -177,7 +177,7 @@ public class MissionCatalogueTests
             {
                 Id = "entrepot",
                 Name = "Entrepot",
-                Objective = ZoneKind.Building,
+                Target = ZoneKind.Building,
                 ObjectiveZone = "Entrepot ouest",
                 Camp = ZoneKind.Start,
             });
@@ -185,16 +185,16 @@ public class MissionCatalogueTests
         Assert.Equal("entrepot", mission.Tracker.Mission.Id);
 
         // Rapporter la caisse a l'entrepot ne remplit rien : c'est au camp qu'on l'attend.
-        mission.Alice.AddToInventory(ItemKind.Medicine);
+        mission.Alice.AddToInventory(Survivor.DefaultObjectiveItem);
         mission.Alice.Position = mission.Map.FindWalkableIn(
             mission.Map.Zones.First(zone => zone.Name == "Entrepot ouest"))!.Value;
 
         Assert.False(mission.Tracker.Evaluate(mission.World.Time).IsOver);
-        Assert.False(mission.Tracker.Done);
+        Assert.Null(mission.Tracker.Courier);
 
         mission.Alice.Position = mission.Spawn(ZoneKind.Start);
         mission.Tracker.Evaluate(mission.World.Time);
 
-        Assert.True(mission.Tracker.Done);
+        Assert.Equal(MissionOutcome.Victory, mission.Tracker.Outcome);
     }
 }

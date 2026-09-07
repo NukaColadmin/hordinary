@@ -109,11 +109,11 @@ public partial class NavigationDebugOverlay : Node2D
             if (chosen)
             {
                 DrawRect(rect, FrontierColor with { A = 0.45f });
-                DrawRect(rect, FrontierColor, filled: false, width: 1.4f);
+                DrawRect(rect, FrontierColor, filled: false, width: 2.8f);
             }
             else
             {
-                DrawRect(rect, FrontierColor with { A = 0.18f }, filled: false, width: 1f);
+                DrawRect(rect, FrontierColor with { A = 0.18f }, filled: false, width: 2f);
             }
         }
     }
@@ -135,9 +135,9 @@ public partial class NavigationDebugOverlay : Node2D
                 zone.Height * _tileSize);
 
             DrawRect(rect, ForbiddenColor with { A = 0.22f });
-            DrawRect(rect, ForbiddenColor, filled: false, width: 1.5f);
+            DrawRect(rect, ForbiddenColor, filled: false, width: 3f);
 
-            DrawLine(rect.Position, rect.Position + rect.Size, ForbiddenColor, 1.2f);
+            DrawLine(rect.Position, rect.Position + rect.Size, ForbiddenColor, 2.4f);
             DrawLine(
                 rect.Position + new Vector2(rect.Size.X, 0f),
                 rect.Position + new Vector2(0f, rect.Size.Y),
@@ -175,7 +175,7 @@ public partial class NavigationDebugOverlay : Node2D
         {
             var color = level == DangerLevel.ZombieNearby ? ZombieColor : SuspectedColor;
             DrawRect(CellRect(cell), color);
-            DrawRect(CellRect(cell), color with { A = 0.9f }, filled: false, width: 1f);
+            DrawRect(CellRect(cell), color with { A = 0.9f }, filled: false, width: 2f);
         }
     }
 
@@ -199,9 +199,9 @@ public partial class NavigationDebugOverlay : Node2D
                 _ => ZoneColor with { A = 0.35f },
             };
 
-            DrawRect(rect, color, filled: false, width: 1f);
-            DrawString(font, rect.Position + new Vector2(2f, 9f), zone.Name,
-                HorizontalAlignment.Left, -1, 7, color);
+            DrawRect(rect, color, filled: false, width: 2f);
+            DrawString(font, rect.Position + new Vector2(4f, 18f), zone.Name,
+                HorizontalAlignment.Left, -1, 14, color);
         }
     }
 
@@ -212,10 +212,10 @@ public partial class NavigationDebugOverlay : Node2D
         var points = new Vector2[path.Cells.Count];
         for (int i = 0; i < path.Cells.Count; i++) points[i] = CellCenter(path.Cells[i]);
 
-        DrawPolyline(points, new Color(0f, 0f, 0f, 0.6f), 3.5f);
-        DrawPolyline(points, PathColor, 1.8f);
+        DrawPolyline(points, new Color(0f, 0f, 0f, 0.6f), 7f);
+        DrawPolyline(points, PathColor, 3.6f);
 
-        foreach (var point in points) DrawCircle(point, 1.6f, PathColor);
+        foreach (var point in points) DrawCircle(point, 3.2f, PathColor);
     }
 
     private void DrawGoal()
@@ -224,7 +224,7 @@ public partial class NavigationDebugOverlay : Node2D
 
         var rect = CellRect(goal);
         DrawRect(rect, GoalColor with { A = 0.22f });
-        DrawRect(rect, GoalColor, filled: false, width: 1.2f);
+        DrawRect(rect, GoalColor, filled: false, width: 2.4f);
     }
 
     private Rect2 CellRect(GridPosition cell)

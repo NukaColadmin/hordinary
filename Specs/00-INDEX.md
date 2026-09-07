@@ -69,8 +69,8 @@ part. Elles n'ont donc pas de fichier propre, et il ne faut pas en attendre un.
 
 | # | Extension | Ce qu'elle est devenue |
 |---|-----------|------------------------|
-| 9 | Retour à la base et debrief | Le stock et la résolution de fin de journée sont passés au [livrable 11](./11-objets-armes-et-economie-du-camp.md) ; l'écran de camp au [livrable 12](./12-interface-survivants-et-van.md) ; l'habillage narratif (répliques de debrief) au [livrable 14](./14-recrutement-et-dialogues.md) |
-| 10 | Groupes de survivants indépendants | Devenu la partie « rencontres » du [livrable 14](./14-recrutement-et-dialogues.md), avec la même règle : la résolution est déterministe et sans service externe |
+| 9 | Retour à la base et debrief | Le stock et la résolution de fin de journée sont passés au [livrable 11](./11-objets-armes-et-economie-du-camp.md) ; l'écran de camp au [livrable 12](./12-interface-survivants-et-van.md) ; l'habillage narratif (répliques de debrief) était prévu au livrable 14, retiré |
+| 10 | Groupes de survivants indépendants | Devenu la partie « rencontres » du livrable 14, retiré |
 
 Ce qui a été conservé de leur cahier des charges, et qui vaut toujours : la mécanique reste
 **entièrement déterministe et sans service externe** ; seul l'habillage textuel dépend d'un modèle, il
@@ -99,7 +99,7 @@ spécifiés et restent en fin de file.
 | 11 | **P1 — Haute** | Objets, armes et économie du camp | [11-objets-armes-et-economie-du-camp.md](./11-objets-armes-et-economie-du-camp.md) | Un survivant équipe un outil qui change le coût de ses actions, pousse une caisse, et rapporte de quoi nourrir le camp une journée de plus. |
 | 12 | **P2 — Haute** | Interface, survivants générés et van | [12-interface-survivants-et-van.md](./12-interface-survivants-et-van.md) | Une partie se joue de bout en bout sans jamais activer le mode debug. |
 | 13 | **P3 — Moyenne** | Génération de quartiers | [13-generation-de-cartes.md](./13-generation-de-cartes.md) | Trois missions d'affilée sur trois quartiers différents, reproductibles par leur graine, sans mur invisible ni limite non expliquée. |
-| 14 | **P4 — Basse (optionnel)** | Recrutement et dialogues | [14-recrutement-et-dialogues.md](./14-recrutement-et-dialogues.md) | Une rencontre se résout à l'identique, service de dialogue arrêté ou démarré. |
+| 14 | *retiré* | Recrutement et dialogues | — | Spécification retirée ; la personnalité des survivants n'est plus un concept du projet. |
 | 15 | **P2 — Haute** | Instructions tactiques en langage naturel | [15-instructions-tactiques.md](./15-instructions-tactiques.md) | « Avant d'entrer dans un bâtiment, regroupez-vous » change le domaine de planification ; et là où elle rend la mission impossible, elle est refusée avant application, avec sa raison. |
 
 ### Justification des priorités

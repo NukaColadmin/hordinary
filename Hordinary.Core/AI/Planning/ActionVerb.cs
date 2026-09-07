@@ -4,7 +4,7 @@ namespace Hordinary.AI.Planning;
 /// Le socle de verbes primitifs que connait le moteur (specification, livrable 5 : « Data-driven :
 /// verbes primitifs, pas une classe par action »).
 ///
-/// Il n'existe volontairement aucun <c>MoveToAction</c>, <c>OpenDoorAction</c>, <c>PickUpMedicineAction</c> :
+/// Il n'existe volontairement aucun <c>MoveToAction</c>, <c>OpenDoorAction</c>, <c>PickUpObjectiveAction</c> :
 /// les dix-sept actions executables de la specification sont des <b>instances</b> de ces six verbes,
 /// decrites dans <c>config/planner_domain.json</c> avec des parametres differents. Ajouter une action
 /// au jeu, ou en retirer une pour isoler un comportement en test, se fait dans ce fichier — jamais en
@@ -33,6 +33,20 @@ public enum ActionVerb
     /// eu a exister. Repousser un zombie, en revanche, ne l'entame pas — c'est un <see cref="SetFlag"/>.
     /// </summary>
     Damage,
+
+    /// <summary>
+    /// Deplacer un meuble d'une case (livrable 11). Ce n'est pas un <see cref="SetFlag"/> parce que
+    /// la case d'arrivee se calcule — elle depend de l'endroit d'ou l'on pousse — et parce que la
+    /// regle des deux survivants ne se dit pas avec un fait.
+    /// </summary>
+    Push,
+
+    /// <summary>
+    /// Faire du bruit ailleurs qu'a l'endroit ou l'on est (livrable 11). <c>CreateNoiseDistraction</c>
+    /// faisait deja du bruit, mais sous les pieds de celui qui le produit ; un petard lance separe
+    /// enfin le bruit de celui qui l'a cause, ce qui est tout l'interet d'une diversion.
+    /// </summary>
+    EmitNoise,
 }
 
 /// <summary>Vocabulaire des verbes : leur nom en configuration et les parametres qu'ils exigent.</summary>
@@ -48,6 +62,8 @@ public static class ActionVerbs
         ["setFlag"] = new(ActionVerb.SetFlag, ["condition"], "target"),
         ["wait"] = new(ActionVerb.Wait, [], null),
         ["damage"] = new(ActionVerb.Damage, ["target", "amount"], "target"),
+        ["push"] = new(ActionVerb.Push, ["target"], "target"),
+        ["emitNoise"] = new(ActionVerb.EmitNoise, ["target", "amount"], "target"),
     };
 
     public static IReadOnlyCollection<string> Names => Specs.Keys;

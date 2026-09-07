@@ -224,19 +224,30 @@ vert, et c'est exactement pour ça qu'il est là.
 
 **Ce point bloque tout le reste, et il n'est pas coûteux.**
 
-Aujourd'hui, `SymbolicStateBuilder.PlaceNameOf(ZoneKind)` ne nomme que trois zones :
+**Fait en partie.** Le domaine ne nomme plus aucun lieu de mission : `LocateObjective`, `SearchRoom`
+et `PickUpObjective` portent sur `objective_zone`, le lieu que `config/missions.json` désigne — une
+pharmacie, un entrepôt ou un hangar, indifféremment. `PlaceNameOf(MapZone, Survivor)` donne ce nom à
+la zone visée quelle que soit sa catégorie, et `objective_zone` est entré dans `NamedPlaces`. Un
+bâtiment est donc désormais un objet symbolique **quand il est l'objectif**, et une fouille
+infructueuse y laisse enfin `searched_in_vain(objective_zone)`.
+
+Ce qui reste à faire est le cas général : nommer **tous** les bâtiments, rues et ruelles, et pas
+seulement celui qu'on vise. Une contrainte du joueur portant sur un bâtiment quelconque n'a toujours
+rien sur quoi se poser.
+
+Aujourd'hui, `SymbolicStateBuilder.PlaceNameOf(ZoneKind)` ne nomme encore que trois catégories :
 
 ```csharp
 ZoneKind.Pharmacy   => "pharmacy",
 ZoneKind.Extraction => "extraction",
 ZoneKind.Start      => "start",
-_                   => null,       // Building, Street, Alley : invisibles au planificateur
+_                   => null,       // Building, Street, Alley : invisibles, sauf si c'est l'objectif
 ```
 
 « Entrepot ouest » et « Hangar sud » sont déclarés dans
-[`config/map_locations.json`](../config/map_locations.json) avec `"kind": "Building"`, mais ne
-deviennent jamais des objets symboliques. Une contrainte portant sur les bâtiments n'aurait rien sur
-quoi se poser.
+[`config/map_locations.json`](../config/map_locations.json) avec `"kind": "Building"`. Celui que la
+mission vise devient `objective_zone` ; l'autre reste invisible au planificateur, et une contrainte
+qui le nommerait n'aurait rien sur quoi se poser.
 
 À faire, une fois :
 

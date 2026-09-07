@@ -1,0 +1,191 @@
+// Les dix objets du jeu (specification, livrable 11).
+//
+// Comme les survivants, les missions et les actions, un objet est une donnee. Aucun endroit de
+// Hordinary.Core ne nomme « conserve » ni « lampe torche » : le coeur ne connait que des categories
+// (consumable, weapon, tool, heavy) et sept verbes d'effet primitifs. Ajouter une conserve, en
+// retirer une ou doubler ce qu'elle rend se fait ici, sans recompilation.
+//
+// Lecture d'un objet :
+//   id / name      identifiant technique et nom affiche. L'id est aussi celui de la tuile qui pose
+//                  l'objet au sol (config/tile_legend.json) : les deux doivent s'accorder, et un
+//                  test le verifie dans les deux sens.
+//   category       consumable | weapon | tool | heavy. C'est le seul vocabulaire d'objet du code.
+//   sprite         nom de la tuile au sol, pour le lecteur humain et pour le test de coherence.
+//   weight         poids, en regard de inventory.max_weight de config/game_config.json.
+//   stackable      un objet empilable occupe un seul emplacement jusqu'a max_stack.
+//   noise_level    bruit de l'utilisation, au bareme de la section 18.1 : marche 1, porte 2,
+//                  course 3, porte forcee 6, vitre brisee 8, distraction 10.
+//   effects        les verbes primitifs, et rien de plus :
+//                    heal / feed / drink / refuel  rendre quelque chose a quelqu'un ou au camp
+//                    modify                        multiplier ou decaler une caracteristique
+//                                                  existante, tant que l'objet est equipe
+//                    consume                       l'objet quitte l'inventaire
+//                    emit_noise                    faire du bruit a l'endroit vise
+//   effects[].target
+//                  self | ally | camp pour les verbes qui rendent quelque chose ; le nom d'une
+//                  caracteristique pour un "modify". Une cible qui contient un point designe une
+//                  action de config/planner_domain.json et le champ qu'elle touche
+//                  (ForceDoor.cost, ForceDoor.noise, ForceDoor.duration) : c'est le meme mecanisme
+//                  que les "skills" de config/survivors.json, appliquee par l'objet equipe au lieu
+//                  du profil. Aucun code ne teste ce qu'un survivant porte.
+//   effects[].mode multiply (defaut) ou offset.
+//
+// Les objets 1, 2 et 5 sont les trois consommables de base que les expeditions rapportent.
+{
+  "items": [
+    {
+      "id": "canned_food",
+      "name": "Conserve de nourriture",
+      "category": "consumable",
+      "sprite": "ItemCannedFood",
+      "weight": 1.0,
+      "stackable": true,
+      "max_stack": 6,
+      "noise_level": 0,
+      "effects": [
+        { "verb": "feed", "target": "camp", "amount": 1 },
+        { "verb": "consume", "target": "self", "amount": 1 }
+      ]
+    },
+
+    {
+      "id": "water_can",
+      "name": "Bidon d'eau",
+      "category": "consumable",
+      "sprite": "ItemWaterCan",
+      "weight": 2.0,
+      "stackable": true,
+      "max_stack": 4,
+      "noise_level": 0,
+      "effects": [
+        { "verb": "drink", "target": "camp", "amount": 1 },
+        { "verb": "modify", "target": "stamina", "amount": 20, "mode": "offset" },
+        { "verb": "consume", "target": "self", "amount": 1 }
+      ]
+    },
+
+    {
+      "id": "bandage",
+      "name": "Bandage",
+      "category": "consumable",
+      "sprite": "ItemBandage",
+      "weight": 0.2,
+      "stackable": true,
+      "max_stack": 8,
+      "noise_level": 0,
+      "effects": [
+        { "verb": "heal", "target": "self", "amount": 20, "duration": 1.5 },
+        { "verb": "consume", "target": "self", "amount": 1 }
+      ]
+    },
+
+    {
+      "id": "medikit",
+      "name": "Trousse de soin",
+      "category": "consumable",
+      "sprite": "ItemFirstAidKit",
+      "weight": 1.5,
+      "stackable": true,
+      "max_stack": 3,
+      "noise_level": 0,
+      // amount 0 : le montant vient de la fiche du soignant (survivor.heal_amount), pas de la boite.
+      // C'est ce qui fait de Claire une secouriste — la meme trousse rend davantage entre ses mains.
+      "effects": [
+        { "verb": "heal", "target": "self", "amount": 0, "duration": 3 },
+        { "verb": "consume", "target": "self", "amount": 1 }
+      ]
+    },
+
+    {
+      "id": "fuel_can",
+      "name": "Jerrican d'essence",
+      "category": "consumable",
+      "sprite": "ItemFuelCan",
+      "weight": 4.0,
+      "stackable": true,
+      "max_stack": 2,
+      "noise_level": 0,
+      "effects": [
+        { "verb": "refuel", "target": "camp", "amount": 20 },
+        { "verb": "consume", "target": "self", "amount": 1 }
+      ]
+    },
+
+    {
+      "id": "ammo_box",
+      "name": "Boite de munitions",
+      "category": "consumable",
+      "sprite": "ItemAmmoBox",
+      "weight": 1.5,
+      "stackable": true,
+      "max_stack": 4,
+      "noise_level": 0,
+      "effects": [
+        { "verb": "modify", "target": "camp_ammo", "amount": 12, "mode": "offset" },
+        { "verb": "consume", "target": "self", "amount": 1 }
+      ]
+    },
+
+    {
+      "id": "flashlight",
+      "name": "Lampe torche",
+      "category": "tool",
+      "sprite": "ItemFlashlight",
+      "weight": 0.8,
+      "stackable": false,
+      "max_stack": 1,
+      // Elle porte son propre bruit : ce qu'un zombie percoit en plus dans la ligne de vue.
+      "noise_level": 1,
+      "effects": [
+        { "verb": "modify", "target": "vision_range", "amount": 1.4 }
+      ]
+    },
+
+    {
+      "id": "radio",
+      "name": "Radio portable",
+      "category": "tool",
+      "sprite": "ItemRadio",
+      "weight": 1.2,
+      "stackable": false,
+      "max_stack": 1,
+      "noise_level": 0,
+      // Le partage de connaissances du livrable 7 devient un objet a trouver, pas un reglage.
+      "effects": [
+        { "verb": "modify", "target": "knowledge.communication_range", "amount": 3 }
+      ]
+    },
+
+    {
+      "id": "firecracker",
+      "name": "Petard",
+      "category": "consumable",
+      "sprite": "ItemFirecracker",
+      "weight": 0.3,
+      "stackable": true,
+      "max_stack": 6,
+      "noise_level": 10,
+      // Une distraction a distance : le survivant n'a pas besoin d'etre la ou le bruit se produit.
+      "effects": [
+        { "verb": "emit_noise", "target": "location", "amount": 10 },
+        { "verb": "consume", "target": "self", "amount": 1 }
+      ]
+    },
+
+    {
+      "id": "toolbox",
+      "name": "Caisse a outils",
+      "category": "tool",
+      "sprite": "ItemToolbox",
+      "weight": 5.0,
+      "stackable": false,
+      "max_stack": 1,
+      "noise_level": 0,
+      // BarricadeDoor n'est pas rendue disponible par un modificateur : le domaine la conditionne
+      // directement a « equipped(toolbox) », ce qui evite un second mecanisme de disponibilite.
+      "effects": [
+        { "verb": "modify", "target": "ForceDoor.cost", "amount": 0.5 }
+      ]
+    }
+  ]
+}

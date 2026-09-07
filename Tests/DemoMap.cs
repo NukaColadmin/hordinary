@@ -56,6 +56,16 @@ internal static class DemoMap
     public static string ReadConfig(string fileName)
         => File.ReadAllText(Path.Combine(RepositoryRoot, "config", fileName));
 
+    /// <summary>
+    /// Le catalogue livre : <c>config/items.json</c> et <c>config/weapons.json</c> reunis. Comme
+    /// pour le domaine de planification et les profils, les tests s'appuient sur les vrais fichiers
+    /// et non sur une copie de circonstance — un objet retire du catalogue doit faire echouer les
+    /// tests qui s'en servent, c'est tout l'interet.
+    /// </summary>
+    public static ItemCatalogue Items { get; } = ItemCatalogue.Merge(
+        ItemCatalogue.FromJson(ReadConfig("items.json")),
+        ItemCatalogue.FromJson(ReadConfig("weapons.json")));
+
     private readonly record struct TileRecord(int X, int Y, int SourceId, int AtlasX, int AtlasY);
 
     private static Dictionary<string, List<TileRecord>> ReadTileLayers(string scenePath)

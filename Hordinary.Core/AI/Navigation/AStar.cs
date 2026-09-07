@@ -4,7 +4,7 @@ namespace Hordinary.AI.Navigation;
 
 /// <summary>
 /// A* sur la grille. Le modele de cout appartient a <see cref="NavigationGrid"/> : cette classe
-/// ne connait ni les murs, ni le danger, ni la personnalite.
+/// ne connait ni les murs, ni le danger.
 ///
 /// Livrable 1 : la recherche s'effectue sur la carte reelle. Au livrable 2 il suffira de construire
 /// la <see cref="NavigationGrid"/> depuis la carte mentale de l'agent (<c>AgentKnowledge</c>) :

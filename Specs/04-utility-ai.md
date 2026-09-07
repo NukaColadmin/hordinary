@@ -19,8 +19,8 @@ FleeDanger
 HelpAlly
 HealSelf
 HealAlly
-SearchForMedicine
-PickUpMedicine
+SearchForObjective
+PickUpObjective
 ReachExtraction
 Hide
 Regroup
@@ -36,14 +36,12 @@ flee_score = (
     perceived_danger
     * low_health_factor
     * panic_factor
-    * personality.caution
 )
 ```
 
 ```python
 help_ally_score = (
     ally_danger
-    * personality.loyalty
     * distance_factor
     * personal_safety_factor
 )
@@ -56,8 +54,6 @@ mission_score = (
     * safety_factor
 )
 ```
-
-Les coefficients de personnalité (`courage`, `loyalty`, `caution`) sont détaillés dans [07-survivants-et-partage.md](./07-survivants-et-partage.md) — pour ce livrable, des valeurs par défaut suffisent (un seul survivant testable).
 
 ## Changement d'objectif
 
@@ -85,7 +81,7 @@ Comme les actions du planificateur ([05-planification-gbfs.md](./05-planificatio
 objectifs ci-dessus ne doivent **pas** devenir une méthode de score par objectif dans le code
 (`ComputeFleeScore()`, `ComputeHelpAllyScore()`, …). Le code ne connaît qu'un petit socle de
 **considérations primitives réutilisables** — `perceived_danger`, `health_ratio`, `panic`,
-`distance_to(cible)`, `personality.caution`, `personality.loyalty`, `ally_danger`, … — chacune une
+`distance_to(cible)`, `ally_danger`, … — chacune une
 fonction pure d'entrée (une valeur du monde ou de la mémoire) vers `[0, 1]` via une courbe de réponse
 (linéaire, quadratique, seuil, inversée).
 

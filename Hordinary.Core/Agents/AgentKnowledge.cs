@@ -240,7 +240,7 @@ public sealed class AgentKnowledge
 
     public bool RememberItem(
         string id,
-        ItemKind kind,
+        string itemId,
         GridPosition position,
         double time,
         KnowledgeSource source = KnowledgeSource.DirectObservation,
@@ -248,7 +248,7 @@ public sealed class AgentKnowledge
     {
         if (_items.TryGetValue(id, out var known) && known.LastObservedAt > time) return false;
 
-        _items[id] = new ItemBelief(id, kind, position, Clamp(confidence), time, source);
+        _items[id] = new ItemBelief(id, itemId, position, Clamp(confidence), time, source);
         return true;
     }
 
@@ -267,6 +267,50 @@ public sealed class AgentKnowledge
         if (known.LastObservedAt > time || known.Confidence <= 0f) return false;
 
         _items[id] = known with
+        {
+            Confidence = 0f,
+            LastObservedAt = time,
+            Source = KnowledgeSource.DirectObservation,
+        };
+
+        return true;
+    }
+
+    // --- Meubles poussables (livrable 11) ---------------------------------------------------
+
+    private readonly Dictionary<string, HeavyBelief> _heavy = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Les meubles que l'agent a vus. Un meuble qu'un allie a pousse pendant qu'on regardait
+    /// ailleurs reste ou on l'a laisse dans cette carte-la : c'est la perception partielle du
+    /// livrable 2, appliquee au decor.
+    /// </summary>
+    public IReadOnlyDictionary<string, HeavyBelief> KnownHeavy => _heavy;
+
+    public HeavyBelief? GetHeavy(string id) => _heavy.TryGetValue(id, out var belief) ? belief : null;
+
+    public bool RememberHeavy(
+        string id,
+        string kind,
+        GridPosition position,
+        float mass,
+        double time,
+        KnowledgeSource source = KnowledgeSource.DirectObservation,
+        float confidence = 1f)
+    {
+        if (_heavy.TryGetValue(id, out var known) && known.LastObservedAt > time) return false;
+
+        _heavy[id] = new HeavyBelief(id, kind, position, mass, Clamp(confidence), time, source);
+        return true;
+    }
+
+    /// <summary>L'agent repasse et ne trouve plus le meuble ou il croyait : quelqu'un l'a pousse.</summary>
+    public bool ForgetHeavyAt(string id, double time)
+    {
+        if (!_heavy.TryGetValue(id, out var known)) return false;
+        if (known.LastObservedAt > time || known.Confidence <= 0f) return false;
+
+        _heavy[id] = known with
         {
             Confidence = 0f,
             LastObservedAt = time,
@@ -478,7 +522,7 @@ public sealed class AgentKnowledge
             if (!BeliefMerge.Accepts(GetItem(belief.Id), incoming)) continue;
 
             if (RememberItem(
-                    incoming.Id, incoming.Kind, incoming.Value, incoming.LastObservedAt,
+                    incoming.Id, incoming.ItemId, incoming.Value, incoming.LastObservedAt,
                     incoming.Source, incoming.Confidence))
             {
                 learned++;

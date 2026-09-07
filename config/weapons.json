@@ -1,0 +1,129 @@
+// Les cinq armes du jeu (specification, livrable 11).
+//
+// Meme format que config/items.json : une arme est un objet de categorie "weapon" avec quelques
+// champs de plus. C'est le lecteur humain que les deux fichiers separent, pas le code — les
+// identifiants vivent dans un espace unique, et un inventaire ne sait jamais de quel fichier vient
+// ce qu'il porte.
+//
+// Champs propres a une arme :
+//   damage           degats par coup.
+//   range            portee en cellules. 1 = corps a corps.
+//   noise_level      bareme de la section 18.1 : marche 1, porte 2, course 3, porte forcee 6,
+//                    vitre brisee 8, distraction 10. Un fusil a pompe est au maximum du bareme,
+//                    comme la distraction : il nettoie un couloir et convoque la horde.
+//   attack_duration  secondes par coup.
+//   durability       coups avant que l'arme ne soit hors d'usage. A zero elle reste dans
+//                    l'inventaire, cassee : c'est une information a ramener au camp, pas un objet
+//                    qui disparait sans prevenir.
+//   ammo             munitions par chargeur. Absent = corps a corps.
+//   unloaded_damage  ce que vaut une arme a feu vide, utilisee comme une massue. Avec
+//   unloaded_noise   unloaded_noise, c'est ce qui rend ammo_box interessante sans la rendre
+//                    indispensable : un revolver vide reste une arme, simplement une mauvaise.
+//
+// Rien n'est code en dur cote IA : AttackZombie existe deja avec son cout et son bruit, et l'arme
+// equipee les pondere exactement comme les "skills" d'un survivant le font (config/survivors.json).
+// Un survivant arme d'une machette voit donc GBFS lui proposer le combat plus volontiers qu'un
+// survivant a mains nues, sans qu'aucun code ne teste ce qu'il porte.
+{
+  "items": [
+    {
+      "id": "revolver",
+      "name": "Revolver .38",
+      "category": "weapon",
+      "sprite": "WeaponRevolver",
+      "weight": 1.5,
+      "stackable": false,
+      "max_stack": 1,
+      "damage": 40,
+      "range": 6,
+      "noise_level": 9,
+      "attack_duration": 1.0,
+      "durability": 0,
+      "ammo": 6,
+      "unloaded_damage": 10,
+      "unloaded_noise": 3,
+      // Tuer en un coup sur deux, et s'entendre dans tout le quartier : l'arbitrage est entier.
+      "effects": [
+        { "verb": "modify", "target": "AttackWithWeapon.noise", "amount": 1.5 }
+      ]
+    },
+
+    {
+      "id": "shotgun",
+      "name": "Fusil a pompe",
+      "category": "weapon",
+      "sprite": "WeaponShotgun",
+      "weight": 4.0,
+      "stackable": false,
+      "max_stack": 1,
+      "damage": 90,
+      "range": 3,
+      "noise_level": 10,
+      "attack_duration": 1.4,
+      "durability": 0,
+      "ammo": 2,
+      "unloaded_damage": 10,
+      "unloaded_noise": 3,
+      "effects": [
+        { "verb": "modify", "target": "AttackWithWeapon.noise", "amount": 1.7 }
+      ]
+    },
+
+    {
+      "id": "baseball_bat",
+      "name": "Batte de baseball",
+      "category": "weapon",
+      "sprite": "WeaponBaseballBat",
+      "weight": 3.0,
+      "stackable": false,
+      "max_stack": 1,
+      "damage": 25,
+      "range": 1,
+      "noise_level": 3,
+      "attack_duration": 1.0,
+      "durability": 40,
+      // L'arme de depart, encombrante et honnete : elle ne pondere rien.
+      "effects": []
+    },
+
+    {
+      "id": "crowbar",
+      "name": "Pied-de-biche",
+      "category": "weapon",
+      "sprite": "WeaponCrowbar",
+      "weight": 2.5,
+      "stackable": false,
+      "max_stack": 1,
+      "damage": 20,
+      "range": 1,
+      "noise_level": 3,
+      "attack_duration": 1.1,
+      "durability": 80,
+      // Aussi un outil : c'est la seule arme qui change un plan autrement qu'en combat.
+      "effects": [
+        { "verb": "modify", "target": "ForceDoor.cost", "amount": 0.6 },
+        { "verb": "modify", "target": "ForceDoor.noise", "amount": 0.8 }
+      ]
+    },
+
+    {
+      "id": "machete",
+      "name": "Machette",
+      "category": "weapon",
+      "sprite": "WeaponMachete",
+      "weight": 1.8,
+      "stackable": false,
+      "max_stack": 1,
+      "damage": 35,
+      "range": 1,
+      "noise_level": 2,
+      "attack_duration": 0.8,
+      "durability": 25,
+      // La plus discrete et la plus tranchante, la premiere a se ruiner : le combat lui coute moins
+      // cher, et GBFS le proposera donc plus volontiers a qui la porte.
+      "effects": [
+        { "verb": "modify", "target": "AttackWithWeapon.cost", "amount": 0.7 }
+      ]
+    }
+  ]
+}

@@ -16,11 +16,26 @@
 //   camp           point de DEPART et de RETOUR. Les agents commencent et finissent la mission au
 //                  meme endroit : la mission est terminee quand la caisse revient au camp, et la
 //                  partie quand tout le monde y est rentre.
+//   item           ce qu'il faut rapporter, par identifiant de config/items.json. C'est cette ligne,
+//                  et elle seule, qui dit au groupe ce qu'il va chercher : ni le code ni le domaine de
+//                  planification ne nomment d'objet. Une mission qui rapporte un jerrican se joue donc
+//                  avec exactement les memes actions qu'une mission qui rapporte une trousse.
 //   supplies       nombre de caisses posees dans la zone d'objectif. Une seule suffit a gagner ;
-//                  au-dela, le groupe a droit a l'erreur (une caisse consommee pour soigner).
+//                  au-dela, le groupe a droit a l'erreur.
 //   zombie_count   taille de la horde. Absent, c'est zombies.count de config/game_config.json.
 //   recommended_team nombre d'agents conseille. Indicatif : l'ecran de preparation l'affiche mais
 //                  ne l'impose pas — partir seul sur la troisieme est un choix, pas une erreur.
+//   map_profile    ambiance du quartier a generer, par identifiant de config/mapgen.json
+//                  (livrable 13). Absent, la mission se joue sur la carte dessinee a la main, qui
+//                  reste livree et testee. Present, un quartier est genere a chaque depart : c'est
+//                  la meme mission, sur un terrain qu'on n'a jamais vu.
+//   map_seed       graine imposee du quartier. Absente, l'ecran de preparation en propose une et
+//                  laisse le joueur la saisir. Deux departs sur la meme graine donnent le meme
+//                  quartier au bit pres : batiments, portes verrouillees, zombies, objets.
+//
+// Chaque mission reste jouable sur la carte dessinee : objective_zone y designe un lieu qui existe,
+// et le generateur donne ce nom au batiment qu'il choisit pour porter l'objectif. C'est ce qui fait
+// qu'une mission ne sait pas sur quel genre de carte elle se joue.
 {
   "missions": [
     {
@@ -31,8 +46,10 @@
 
       "objective": "Pharmacy",
       "camp": "Start",
-      "item": "Medicine",
+      "item": "medikit",
       "supplies": 2,
+
+      "map_profile": "faubourg",
 
       "zombie_count": 5,
       "recommended_team": 2
@@ -42,13 +59,15 @@
       "id": "entrepot",
       "name": "Fouille de l'entrepot ouest",
       "difficulty": "Moyenne",
-      "description": "L'entrepot n'a pas ete ouvert depuis la premiere semaine. Il reste forcement quelque chose sur les etageres. Deux entrees, aucune facile, et assez de recoins pour ne pas voir venir ce qui vous voit.",
+      "description": "L'entrepot n'a pas ete ouvert depuis la premiere semaine. Il y reste une caisse a outils, et le camp en a besoin pour condamner ce qui s'ouvre encore. Deux entrees, aucune facile, et assez de recoins pour ne pas voir venir ce qui vous voit.",
 
       "objective": "Building",
       "objective_zone": "Entrepot ouest",
       "camp": "Start",
-      "item": "Medicine",
+      "item": "toolbox",
       "supplies": 1,
+
+      "map_profile": "banlieue",
 
       "zombie_count": 12,
       "recommended_team": 3
@@ -58,13 +77,15 @@
       "id": "hangar",
       "name": "Traversee du hangar sud",
       "difficulty": "Difficile",
-      "description": "Le hangar est a l'autre bout de la rue principale, et la rue principale est a decouvert sur toute sa longueur. Personne n'en est revenu sans courir. Prenez de quoi tenir : le retour est aussi long que l'aller.",
+      "description": "Le generateur du camp tourne encore, mais plus pour longtemps. Il reste un jerrican au hangar, a l'autre bout de la rue principale — et la rue principale est a decouvert sur toute sa longueur. Personne n'en est revenu sans courir. Prenez de quoi tenir : le retour est aussi long que l'aller.",
 
       "objective": "Building",
       "objective_zone": "Hangar sud",
       "camp": "Start",
-      "item": "Medicine",
+      "item": "fuel_can",
       "supplies": 1,
+
+      "map_profile": "centre_ville",
 
       "zombie_count": 20,
       "recommended_team": 3

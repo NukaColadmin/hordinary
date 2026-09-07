@@ -31,6 +31,13 @@ public sealed class UtilityContext
 
     private readonly FrontierExplorer _explorer;
 
+    /// <summary>
+    /// Test d'atteignabilite fourni par l'assemblage, ou <c>null</c> quand personne ne l'a branche.
+    /// La Utility AI ne connait pas la navigation : c'est <c>SurvivorAgent</c> qui lui prete la
+    /// grille du survivant, et un test qui ne le fait pas retombe sur l'optimisme d'avant.
+    /// </summary>
+    private readonly Func<GridPosition, bool>? _reachable;
+
     private GridPosition? _cover;
     private GridPosition? _refuge;
     private Frontier? _frontier;
@@ -42,7 +49,7 @@ public sealed class UtilityContext
     public static IReadOnlySet<string> TargetNames { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
         "self", "danger", "away_from_danger", "cover", "frontier", "mission",
-        "ally", "group", "medicine", "pharmacy", "extraction", "start",
+        "ally", "group", "objective", "objective_zone", "pharmacy", "extraction", "start",
     };
 
     public Survivor Self { get; }
@@ -54,6 +61,15 @@ public sealed class UtilityContext
 
     /// <summary>Allies dont le survivant croit connaitre la position.</summary>
     public IReadOnlyList<EntityBelief> Allies => _allies;
+
+    /// <summary>
+    /// Les meubles poussables que le survivant a vus et qu'il croit encore en place (livrable 11).
+    /// C'est sa memoire qui repond, pas le monde : un rayonnage qu'un allie a deplace hors de sa vue
+    /// est ici a l'endroit ou il l'a laisse.
+    /// </summary>
+    public IEnumerable<HeavyBelief> KnownHeavyObjects
+        => Self.Knowledge.KnownHeavy.Values
+            .Where(heavy => heavy.Confidence > Self.Knowledge.Settings.MinimumConfidence);
 
     /// <summary>Danger ressenti la ou se trouve le survivant, entre 0 et 1.</summary>
     public float PerceivedDanger { get; }
@@ -88,8 +104,25 @@ public sealed class UtilityContext
     /// <summary>Intensite, ramenee a <see cref="UtilityAiSettings.LoudNoiseIntensity"/>, du dernier bruit credible.</summary>
     public float LoudestNoise { get; }
 
-    /// <summary>Vrai si le survivant a repere des medicaments quelque part.</summary>
-    public bool KnowsMedicine { get; }
+    /// <summary>Vrai si le survivant a repere quelque part ce que la mission lui demande.</summary>
+    public bool KnowsObjective { get; }
+
+    /// <summary>
+    /// Nom symbolique du lieu que la mission designe comme objectif. Il vaut pour la Utility AI, pour
+    /// le planificateur et pour la memoire des fouilles : c'est parce que les trois emploient le meme
+    /// mot qu'une fouille infructueuse peut fermer un objectif au lieu de le laisser se reproposer.
+    /// </summary>
+    public const string ObjectiveZoneTarget = "objective_zone";
+
+    /// <summary>
+    /// Vrai quand le survivant a deja fouille le lieu de la mission et n'y a rien trouve.
+    ///
+    /// C'est ce qui empeche d'aller chercher indefiniment un objet qui n'existe plus — quelqu'un l'a
+    /// pris avant, ou il n'y en a jamais eu. Sans cette memoire, l'objectif de recherche se rescore
+    /// haut a chaque decision et le survivant repart vers une caisse imaginaire.
+    /// </summary>
+    public bool SearchedObjectiveZoneInVain =>
+        Self.Knowledge.GetSearch(ObjectiveZoneTarget) is { Found: false };
 
     /// <summary>
     /// Menace que la carte de chaleur retient pour la case ou se tient le survivant. C'est un
@@ -101,11 +134,13 @@ public sealed class UtilityContext
         Survivor self,
         double now,
         UtilityAiSettings? settings = null,
-        ExplorationSettings? exploration = null)
+        ExplorationSettings? exploration = null,
+        Func<GridPosition, bool>? reachable = null)
     {
         Self = self ?? throw new ArgumentNullException(nameof(self));
         Now = now;
         Settings = settings ?? UtilityAiSettings.Default;
+        _reachable = reachable;
         _explorer = new FrontierExplorer(exploration);
 
         var knowledge = self.Knowledge;
@@ -134,8 +169,8 @@ public sealed class UtilityContext
             _threats.Add(new Threat(noise.Value, confidence * loudness * Settings.NoiseDangerWeight));
         }
 
-        KnowsMedicine = knowledge.KnownItems.Values
-            .Any(item => item.Kind == ItemKind.Medicine && item.Confidence > minimumConfidence);
+        KnowsObjective = knowledge.KnownItems.Values
+            .Any(item => item.ItemId.Equals(self.ObjectiveItem, StringComparison.OrdinalIgnoreCase) && item.Confidence > minimumConfidence);
 
         PerceivedDanger = DangerAt(self.Position);
         AllyDanger = _allies.Count == 0 ? 0f : _allies.Max(ally => DangerAt(ally.Value));
@@ -241,7 +276,8 @@ public sealed class UtilityContext
         "frontier" => BestFrontier?.Cell,
         "ally" => NearestAlly()?.Value,
         "group" => GroupCentre(),
-        "medicine" => NearestMedicine(),
+        "objective" => NearestObjective(),
+        "objective_zone" => ObjectiveZoneCell(),
         "pharmacy" => LocationOf(ZoneKind.Pharmacy),
         "extraction" => LocationOf(ZoneKind.Extraction),
         "start" => LocationOf(ZoneKind.Start),
@@ -272,18 +308,29 @@ public sealed class UtilityContext
         return new GridPosition(x / _allies.Count, y / _allies.Count);
     }
 
-    private GridPosition? NearestMedicine()
+    private GridPosition? NearestObjective()
     {
         float minimumConfidence = Self.Knowledge.Settings.MinimumConfidence;
 
         return Self.Knowledge.KnownItems.Values
-            .Where(item => item.Kind == ItemKind.Medicine && item.Confidence > minimumConfidence)
+            .Where(item => item.ItemId.Equals(Self.ObjectiveItem, StringComparison.OrdinalIgnoreCase) && item.Confidence > minimumConfidence)
             .OrderBy(item => Distance(Self.Position, item.Value))
             .Select(item => (GridPosition?)item.Value)
             .FirstOrDefault();
     }
 
     private GridPosition? LocationOf(ZoneKind kind) => Self.Knowledge.GetLocation(kind)?.Value;
+
+    /// <summary>
+    /// Le lieu de la mission, cherche d'abord par son nom. La categorie ne sert que de repli : deux
+    /// batiments partagent la meme, et envoyer fouiller « un batiment » ne veut rien dire.
+    /// </summary>
+    private GridPosition? ObjectiveZoneCell()
+    {
+        if (Self.ObjectiveZone is not { } site) return null;
+
+        return (Self.Knowledge.GetLocation(site.Name) ?? Self.Knowledge.GetLocation(site.Kind))?.Value;
+    }
 
     // --- Cellules choisies dans la carte mentale ---------------------------------------------
 
@@ -315,6 +362,13 @@ public sealed class UtilityContext
 
     /// <summary>Les frontieres candidates et le detail de leur note, pour le mode debug.</summary>
     public IReadOnlyList<Frontier> RankFrontiers() => _explorer.Rank(this);
+
+    /// <summary>
+    /// Vrai si un itineraire mene la ou l'on veut aller. Sans test branche, tout est repute
+    /// atteignable — c'est le comportement d'avant, conserve pour les tests qui construisent un
+    /// contexte a la main.
+    /// </summary>
+    public bool CanReach(GridPosition cell) => _reachable is null || _reachable(cell);
 
     /// <summary>
     /// Ou fuir : parmi les cellules connues a portee, la plus sure, moins le prix du trajet. La

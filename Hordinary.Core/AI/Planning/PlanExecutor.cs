@@ -64,8 +64,18 @@ public interface IPlanRuntime
 
     MoveState PollMove(GridPosition destination);
 
-    /// <summary>Ramasse un objet la ou l'agent se trouve.</summary>
+    /// <summary>Ramasse un objet a portee de bras. <c>false</c> s'il n'y en a pas.</summary>
     bool Take(string item);
+
+    /// <summary>
+    /// Ou se trouve l'objet que l'action designe, parmi ceux que l'agent peut atteindre depuis la
+    /// piece ou il se tient. <c>null</c> quand il n'y en a aucun.
+    ///
+    /// C'est la question que <see cref="Take"/> se posait pour lui-meme, sortie au grand jour :
+    /// l'executeur en a besoin <b>avant</b> de ramasser, parce qu'un plan raisonne a l'echelle du
+    /// lieu — « etre a la pharmacie » — et qu'une pharmacie fait dix cases de long.
+    /// </summary>
+    GridPosition? WhereIs(string item);
 
     bool Put(string item, GridPosition where);
 
@@ -77,6 +87,18 @@ public interface IPlanRuntime
 
     /// <summary>Reserve au combat (livrable 8) : aucune action livree n'utilise ce verbe.</summary>
     bool Damage(string target, float amount);
+
+    /// <summary>
+    /// Pousse un meuble d'une case (livrable 11). La direction se deduit de l'endroit ou l'agent se
+    /// tient : on pousse toujours devant soi, jamais en tirant.
+    /// </summary>
+    bool Push(string target);
+
+    /// <summary>
+    /// Fait du bruit ailleurs qu'ou l'on est (livrable 11) : le petard lance. C'est ce qui separe la
+    /// diversion de celui qui la provoque, et donc ce qui la rend utile.
+    /// </summary>
+    bool ThrowNoise(string target, float amount);
 
     /// <summary>
     /// Interrompt le trajet en cours. C'est « l'annulation de l'action actuelle » du flux de
@@ -114,6 +136,13 @@ public sealed class PlanExecutor
     private float _elapsedInStep;
     private bool _stepStarted;
     private GridPosition? _destination;
+
+    /// <summary>
+    /// Les derniers pas d'un ramassage, quand l'objet vise n'est pas sous la main. Distinct de
+    /// <see cref="_destination"/>, qui est la destination d'un <c>toPos</c> : ici le trajet n'est pas
+    /// l'action, il la precede.
+    /// </summary>
+    private GridPosition? _approach;
 
     public PlanExecutor(IPlanRuntime runtime, PlannerSettings? settings = null)
     {
@@ -177,6 +206,10 @@ public sealed class PlanExecutor
             return;
         }
 
+        // Un ramassage hors de portee de bras commence par les quelques pas qui l'en separent
+        // (voir BeginStep) : l'action elle-meme n'a pas commence tant qu'on marche.
+        if (_approach is { } target && !Reached(plan, action, target)) return;
+
         // Les autres verbes sont instantanes une fois leur duree ecoulee : forcer une porte prend du
         // temps, mais rien ne se passe tant qu'elle n'est pas forcee.
         if (_elapsedInStep < action.Duration) return;
@@ -201,10 +234,13 @@ public sealed class PlanExecutor
         _stepStarted = true;
         _elapsedInStep = 0f;
         _destination = null;
+        _approach = null;
 
         if (action.NoiseLevel > 0f) _runtime.EmitNoise(action.NoiseLevel, _runtime.AgentCell, action.NoiseAction);
 
         ActionStarted?.Invoke(action);
+
+        if (action.Verb == ActionVerb.Take) return Approach(plan, action);
 
         if (action.Verb != ActionVerb.ToPos) return true;
 
@@ -224,6 +260,55 @@ public sealed class PlanExecutor
 
         Fail(plan, action, ActionFailureKind.NoRoute, $"aucun itineraire connu vers {destination}");
         return false;
+    }
+
+    /// <summary>
+    /// Les derniers pas d'un ramassage.
+    ///
+    /// Le plan raisonne a l'echelle du lieu : <c>PickUpObjective</c> demande d'etre « a la
+    /// pharmacie », pas sur la case de la caisse — et c'est la bonne granularite, GBFS n'a pas a
+    /// connaitre le plan de la piece. Mais un survivant qui pousse la porte n'a pas pour autant le
+    /// bras assez long : sans ce trajet, la caisse apparaissait dans son sac au moment ou il entrait,
+    /// et le joueur voyait un objectif se remplir tout seul.
+    ///
+    /// L'approche n'est pas une action de plus dans le plan. Elle appartient au ramassage, comme la
+    /// duree de l'action lui appartient : un plan qui devrait nommer chaque pas ne serait plus un
+    /// plan, il serait un itineraire.
+    /// </summary>
+    /// <returns><c>false</c> si l'action a echoue faute d'itineraire — le plan est deja rompu.</returns>
+    private bool Approach(Plan plan, PlanningAction action)
+    {
+        if (_runtime.WhereIs(Parameter(action, "item")) is not { } where) return true;
+        if (where.ChebyshevDistanceTo(_runtime.AgentCell) <= _settings.ArrivalRadius) return true;
+
+        if (!_runtime.BeginMove(where))
+        {
+            Fail(plan, action, ActionFailureKind.NoRoute, $"aucun itineraire connu vers {where}");
+            return false;
+        }
+
+        _approach = where;
+        return true;
+    }
+
+    /// <summary>
+    /// Fait avancer l'approche. Vrai quand elle est finie et que l'action peut enfin commencer — sa
+    /// duree se compte alors depuis l'arrivee, et non depuis le depart : fouiller un rayonnage prend
+    /// le meme temps qu'on soit venu de la porte ou de la case d'a cote.
+    /// </summary>
+    private bool Reached(Plan plan, PlanningAction action, GridPosition target)
+    {
+        if (target.ChebyshevDistanceTo(_runtime.AgentCell) > _settings.ArrivalRadius)
+        {
+            if (_runtime.PollMove(target) != MoveState.Blocked) return false;
+
+            Fail(plan, action, ActionFailureKind.RouteBlocked, $"itineraire vers {target} interrompu");
+            return false;
+        }
+
+        _approach = null;
+        _elapsedInStep = 0f;
+        return true;
     }
 
     private void AdvanceMove(Plan plan, PlanningAction action)
@@ -252,7 +337,7 @@ public sealed class PlanExecutor
         }
     }
 
-    /// <summary>Traduit un verbe primitif en appel au moteur. Six branches, pour dix-sept actions.</summary>
+    /// <summary>Traduit un verbe primitif en appel au moteur. Huit branches, pour trente actions.</summary>
     private bool Perform(PlanningAction action, GridPosition here) => action.Verb switch
     {
         ActionVerb.Take => _runtime.Take(Parameter(action, "item")),
@@ -262,6 +347,8 @@ public sealed class PlanExecutor
             Flag(action, "value"),
             ResolveTarget(action)),
         ActionVerb.Damage => _runtime.Damage(Parameter(action, "target"), Amount(action, "amount")),
+        ActionVerb.Push => _runtime.Push(Parameter(action, "target")),
+        ActionVerb.EmitNoise => _runtime.ThrowNoise(Parameter(action, "target"), Amount(action, "amount")),
         ActionVerb.Wait => true,
         _ => true,
     };
@@ -298,6 +385,7 @@ public sealed class PlanExecutor
         _stepStarted = false;
         _elapsedInStep = 0f;
         _destination = null;
+        _approach = null;
     }
 
     private GridPosition? ResolveTarget(PlanningAction action)

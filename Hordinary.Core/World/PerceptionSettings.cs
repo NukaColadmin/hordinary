@@ -3,7 +3,7 @@ namespace Hordinary.World;
 /// <summary>
 /// Parametres de vision (specification section 9.2), charges depuis <c>config/game_config.json</c>,
 /// section <c>perception</c>. Ce sont les valeurs par defaut d'un survivant ; le livrable 7 les
-/// fera varier par personnalite.
+/// fait varier par profil (<c>config/survivors.json</c>).
 /// </summary>
 public sealed class PerceptionSettings
 {

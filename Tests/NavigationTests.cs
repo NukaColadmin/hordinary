@@ -239,14 +239,16 @@ public class NavigationTests
     }
 
     [Fact]
-    public void Un_survivant_prudent_penalise_davantage_les_zones_inconnues()
+    public void Un_profil_de_navigation_penalise_les_zones_inconnues_selon_son_multiplicateur()
     {
         var map = TestMaps.Parse("?");
         var cell = new GridPosition(0, 0);
 
         var neutral = new NavigationGrid(map, NavigationSettings.Default, NavigationProfile.Neutral);
-        var cautious = new NavigationGrid(map, NavigationSettings.Default, NavigationProfile.FromCaution(1f));
-        var reckless = new NavigationGrid(map, NavigationSettings.Default, NavigationProfile.FromCaution(0f));
+        var cautious = new NavigationGrid(
+            map, NavigationSettings.Default, new NavigationProfile { UnknownCostMultiplier = 2f, DangerCostMultiplier = 2f });
+        var reckless = new NavigationGrid(
+            map, NavigationSettings.Default, new NavigationProfile { UnknownCostMultiplier = 0.5f, DangerCostMultiplier = 0.5f });
 
         Assert.True(cautious.GetEnterCost(cell) > neutral.GetEnterCost(cell));
         Assert.True(reckless.GetEnterCost(cell) < neutral.GetEnterCost(cell));

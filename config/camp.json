@@ -1,0 +1,35 @@
+// Ce que le camp possede et ce qu'il consomme entre deux missions (specification, livrable 11).
+//
+// C'est ce fichier qui transforme « une mission, une caisse de medicaments » en boucle de survie :
+// ce que le groupe rapporte se consomme, et ce qu'il consomme decide de la mission suivante.
+//
+// La faim est une ressource COLLECTIVE. Il n'y a pas de faim individuelle a suivre case par case,
+// ce qui garderait la simulation lisible pour rien : le camp mange, et c'est le groupe entier qui
+// en paie le prix quand il n'y a plus rien.
+//
+// Resolution d'une journee — une journee = une mission :
+//   1. le camp consomme food_per_survivor_per_day x survivants vivants, idem pour l'eau ;
+//   2. si le stock est insuffisant, chaque survivant non ravitaille voit sa sante maximale
+//      plafonnee de hunger_max_health_penalty.
+//
+// Les trois reserves ont chacune trois etats a l'ecran, lus directement d'ici : plein au-dela de
+// 60 % de la capacite, bas entre 10 et 60 %, vide en dessous de 10 %. C'est ce qui fait exister la
+// faim autrement que par un chiffre — le joueur voit l'etagere se vider avant de lire le compteur.
+{
+  "camp": {
+    "food": 12,
+    "water": 10,
+    "fuel": 40,
+    "ammo": 18,
+
+    "food_per_survivor_per_day": 1,
+    "water_per_survivor_per_day": 1.5,
+
+    "starvation_max_health_penalty": 15,
+
+    // Les trois etats d'une reserve, en part de la capacite de depart ci-dessus. Ils sont lus ici et
+    // nulle part ailleurs : l'ecran ne redecide pas ce que la configuration a deja decide.
+    "empty_threshold": 0.1,
+    "full_threshold": 0.6
+  }
+}

@@ -7,9 +7,9 @@ namespace Hordinary.AI.Planning;
 /// <summary>
 /// Traduction d'un objectif de la Utility AI en conditions symboliques a satisfaire.
 ///
-/// Le planificateur ne connait aucun objectif par son nom : <c>PickUpMedicine</c> n'est pas une
+/// Le planificateur ne connait aucun objectif par son nom : <c>PickUpObjective</c> n'est pas une
 /// methode, c'est une entree de <c>config/planner_domain.json</c> qui dit « cet objectif est atteint
-/// quand <c>has(agent, medicine)</c> est vrai ». Le nom fait le lien avec
+/// quand <c>has(agent, objective)</c> est vrai ». Le nom fait le lien avec
 /// <c>config/utility_goals.json</c> (livrable 4).
 /// </summary>
 public sealed class PlanningGoal
@@ -104,7 +104,7 @@ public sealed class PlanningDomain
     /// Le domaine d'origine n'est jamais modifie : chaque survivant recoit sa copie, et un profil
     /// sans competence recoit le domaine commun tel quel.
     /// </summary>
-    public PlanningDomain Specialize(IReadOnlyDictionary<string, SurvivorSkill>? skills)
+    public PlanningDomain Specialize(IReadOnlyDictionary<string, ActionModifier>? skills)
     {
         if (skills is null || skills.Count == 0) return this;
 
@@ -231,8 +231,11 @@ public static class PlanningObjectTypes
     public const string Ally = "ally";
     public const string Threat = "threat";
 
+    /// <summary>Meuble poussable (livrable 11) : rayonnage, benne.</summary>
+    public const string Heavy = "heavy";
+
     public static IReadOnlySet<string> Names { get; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        Location, Door, Window, Item, Ally, Threat,
+        Location, Door, Window, Item, Ally, Threat, Heavy,
     };
 }

@@ -132,12 +132,25 @@ public sealed class PerceptionSystem(PerceptionSettings? settings = null)
         {
             if (!visibleSet.Contains(item.Position)) continue;
 
-            knowledge.RememberItem(item.Id, item.Kind, item.Position, now);
+            knowledge.RememberItem(item.Id, item.ItemId, item.Position, now);
             seenItems.Add(item.Id);
+        }
+
+        // Les meubles poussables (livrable 11) : on les memorise comme les objets, et pour la meme
+        // raison — un allie peut en avoir deplace un pendant qu'on regardait ailleurs.
+        var seenHeavy = new List<string>();
+
+        foreach (var heavy in world.Heavy.All)
+        {
+            if (!visibleSet.Contains(heavy.Position)) continue;
+
+            knowledge.RememberHeavy(heavy.Id, heavy.Kind, heavy.Position, heavy.Mass, now);
+            seenHeavy.Add(heavy.Id);
         }
 
         InvalidateVanishedEntities(knowledge, visibleSet, seenEntities, now);
         InvalidateVanishedItems(knowledge, visibleSet, seenItems, now);
+        InvalidateVanishedHeavy(knowledge, visibleSet, seenHeavy, now);
 
         return new PerceptionResult(visible, discovered, seenEntities, seenItems);
     }
@@ -238,6 +251,27 @@ public sealed class PerceptionSystem(PerceptionSettings? settings = null)
             if (!visible.Contains(belief.Value)) continue;
 
             knowledge.ForgetItemAt(belief.Id, now);
+        }
+    }
+
+    /// <summary>
+    /// Meme regle pour les meubles : revenir sur la case ou l'on croyait laisser un rayonnage et ne
+    /// plus l'y trouver, c'est apprendre que quelqu'un l'a pousse. Tant qu'on n'y revient pas, on
+    /// continue de contourner un obstacle qui n'est plus la.
+    /// </summary>
+    private static void InvalidateVanishedHeavy(
+        AgentKnowledge knowledge,
+        HashSet<GridPosition> visible,
+        List<string> seen,
+        double now)
+    {
+        foreach (var belief in knowledge.KnownHeavy.Values.ToList())
+        {
+            if (belief.Confidence <= 0f) continue;
+            if (seen.Contains(belief.Id)) continue;
+            if (!visible.Contains(belief.Value)) continue;
+
+            knowledge.ForgetHeavyAt(belief.Id, now);
         }
     }
 }

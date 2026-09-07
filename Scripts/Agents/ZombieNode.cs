@@ -47,13 +47,13 @@ public partial class ZombieNode : Node2D
         float radius = _tileSize * 0.30f;
         var color = ColorFor(_drawnState);
 
-        DrawCircle(Vector2.Zero, radius + 1.2f, new Color(0f, 0f, 0f, 0.5f));
+        DrawCircle(Vector2.Zero, radius + 2.4f, new Color(0f, 0f, 0f, 0.5f));
         DrawCircle(Vector2.Zero, radius, color);
 
         // Un liseré clair signale les zombies qui ont une piste a suivre.
         if (_drawnState is ZombieState.Idle or ZombieState.Wander) return;
 
-        DrawArc(Vector2.Zero, radius + 2.5f, 0f, Mathf.Tau, 16, color with { A = 0.75f }, 1.2f);
+        DrawArc(Vector2.Zero, radius + 5f, 0f, Mathf.Tau, 16, color with { A = 0.75f }, 2.4f);
     }
 
     private static Color ColorFor(ZombieState state) => state switch

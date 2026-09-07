@@ -41,34 +41,6 @@ current_goal: Goal | None
 current_plan: Plan | None
 current_action: Action | None
 knowledge: AgentKnowledge
-personality: Personality
-```
-
-### Personnalité
-
-```python
-courage: float
-loyalty: float
-caution: float
-```
-
-Ces coefficients influencent les scores de Utility AI (voir [04-utility-ai.md](./04-utility-ai.md)) et les coûts A* (voir [01-carte-et-deplacements.md](./01-carte-et-deplacements.md)).
-
-```text
-Alice :
-courage = 0.5
-loyalty = 0.7
-caution = 0.8
-
-Bob :
-courage = 0.8
-loyalty = 0.5
-caution = 0.4
-
-Claire :
-courage = 0.4
-loyalty = 0.9
-caution = 0.7
 ```
 
 ## Exploration répartie
@@ -122,7 +94,7 @@ Fréquence recommandée : partage des connaissances 1 fois par seconde.
 
 ## Étapes à créer
 
-* [x] Ajouter les trois profils (Alice, Bob, Claire) avec leurs caractéristiques et personnalités.
+* [x] Ajouter les trois profils (Alice, Bob, Claire) avec leurs caractéristiques.
 * [x] Ajouter les actions/compétences spéciales de chaque survivant.
 * [x] Implémenter la frontier exploration et son score.
 * [x] Ajouter la pénalité de duplication d'exploration entre survivants.

@@ -4,7 +4,7 @@ namespace Hordinary.AI.Planning;
 /// Etat symbolique du monde tel qu'un agent se le represente (specification, livrable 5).
 ///
 /// C'est un simple ensemble de faits vrais — <c>at(agent, pharmacy)</c>, <c>door_locked(door_7_4)</c>,
-/// <c>medicine_found</c>. Tout ce qui n'y figure pas est repute faux : l'etat est ferme sur ce que
+/// <c>objective_found</c>. Tout ce qui n'y figure pas est repute faux : l'etat est ferme sur ce que
 /// l'agent sait. C'est volontaire et c'est la meme contrainte qu'au livrable 2 — il est construit par
 /// <see cref="SymbolicStateBuilder"/> a partir de la seule <c>AgentKnowledge</c>, jamais du
 /// <c>WorldState</c>, donc un survivant ne peut pas planifier avec une porte qu'il n'a jamais vue.

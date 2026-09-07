@@ -18,6 +18,9 @@
   <ItemGroup>
     <Compile Remove="Hordinary.Core/**" />
     <Compile Remove="Tests/**" />
+
+    <!-- Outillage jetable (sondes, scripts de planche) : rien de tout cela n'est le jeu. -->
+    <Compile Remove="_work/**" />
   </ItemGroup>
 
   <ItemGroup>

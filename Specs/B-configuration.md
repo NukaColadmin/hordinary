@@ -32,7 +32,7 @@ Placer les paramètres dans des ressources, fichiers JSON ou fichiers de configu
 Comme les actions ci-dessous, les objectifs (voir [04-utility-ai.md](./04-utility-ai.md)) ne sont pas
 une méthode de score par objectif dans le code, mais une composition de **considérations
 primitives** réutilisables (`perceived_danger`, `health_ratio`, `panic`, `distance_to`,
-`personality.caution`, …), chacune passée dans une courbe de réponse. Exemple :
+…), chacune passée dans une courbe de réponse. Exemple :
 
 ```json
 {
@@ -42,8 +42,7 @@ primitives** réutilisables (`perceived_danger`, `health_ratio`, `panic`, `dista
       "considerations": [
         { "input": "perceived_danger", "curve": "linear" },
         { "input": "health_ratio", "curve": "inverse" },
-        { "input": "panic", "curve": "linear" },
-        { "input": "personality.caution", "curve": "linear" }
+        { "input": "panic", "curve": "linear" }
       ],
       "combine": "multiply"
     },
@@ -51,7 +50,6 @@ primitives** réutilisables (`perceived_danger`, `health_ratio`, `panic`, `dista
       "name": "HelpAlly",
       "considerations": [
         { "input": "ally_danger", "curve": "linear" },
-        { "input": "personality.loyalty", "curve": "linear" },
         { "input": "distance_to(ally)", "curve": "inverse" },
         { "input": "personal_safety", "curve": "linear" }
       ],
@@ -85,11 +83,11 @@ construites à partir d'un petit socle de **verbes d'action primitifs et paramé
       "duration": 0.5
     },
     {
-      "name": "PickUpMedicine",
+      "name": "PickUpObjective",
       "verb": "take",
-      "params": { "item": "medicine" },
-      "preconditions": ["at(agent, pharmacy)", "medicine_found"],
-      "effects": ["has(agent, medicine)", "medicine_collected"],
+      "params": { "item": "objective" },
+      "preconditions": ["at(agent, objective_zone)", "objective_found"],
+      "effects": ["has(agent, objective)", "objective_collected"],
       "cost": 1,
       "noise_level": 0,
       "duration": 1
@@ -119,7 +117,6 @@ sache où chercher, et pour qu'aucun réglage ne soit ajouté deux fois à deux 
 | `items.json`, `weapons.json` | Catalogues d'objets et d'armes | Livrable 11 |
 | `camp.json` | Stock du camp et résolution de fin de journée | Livrable 11 |
 | `zones.json` | Profils de zone (`layout`, accès, densité, butin) | Livrable 11 |
-| `expeditions.json` | Destinations et table d'événements | Livrable 11 |
 | `survivor_generation.json` | Graine, noms, archétypes, traits, `appearance` | Livrable 12 |
 | `mapgen.json` | Profils de quartier et réglages de bordure | Livrable 13 |
 | `encounters.json` | Types de rencontres et seuils de recrutement | Livrable 14 |

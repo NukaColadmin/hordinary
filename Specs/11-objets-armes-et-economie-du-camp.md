@@ -12,8 +12,7 @@ nourrir) en dépendent directement.
 ## Objectif
 
 Donner une matière au monde : des objets et des armes que les survivants ramassent, portent et
-utilisent ; des obstacles lourds qu'ils déplacent ; un camp qui a faim et soif entre deux missions ; et
-des expéditions textuelles pour le ravitailler sans jouer une mission complète.
+utilisent ; des obstacles lourds qu'ils déplacent ; un camp qui a faim et soif entre deux missions.
 
 ## Prérequis (humain, bloquant)
 
@@ -25,10 +24,12 @@ qui sont à refaire.
 Le registre graphique, la charte technique, la palette et **un prompt de génération par tuile** sont
 dans [F-direction-artistique-et-prompts.md](./F-direction-artistique-et-prompts.md), section 4.
 
-S'y ajoutent, hors tuiles de carte, les **icônes d'inventaire en 48 × 48 px** : chacun des 10 objets et
-des 5 armes a besoin d'une seconde image, lisible dans un emplacement d'inventaire du panneau latéral
-(livrable 12). Une tuile posée au sol et une icône d'inventaire ne se dessinent pas pareil — la première
-est vue de dessus en 32 × 32, la seconde de trois quarts en 48 × 48.
+**Il n'y a rien à livrer au-delà de ces tuiles.** Les icônes d'inventaire du panneau latéral
+(livrable 12) sont **les tuiles elles-mêmes**, affichées dans un emplacement à un facteur d'échelle
+entier. Une seconde série de quinze dessins en trois quarts serait plus jolie ; elle ferait surtout
+exister deux vérités pour le même objet, et la première fois qu'on repeindrait l'une sans l'autre, une
+conserve n'aurait plus la même tête selon qu'on la regarde par terre ou dans un sac. Repeindre l'atlas
+repeint l'inventaire — c'est la même image, adressée par le même `id`.
 
 Tant que ces images manquent, le code peut être écrit et testé (les tests de ce livrable ne dépendent
 d'aucun visuel), mais le livrable n'est **pas** considéré comme terminé : la Definition of Done exige
@@ -42,8 +43,8 @@ tuile ajoutée doit être déclarée dans ce même fichier, sous la clé `source
 `CellType` ([CellType.cs](../Hordinary.Core/World/CellType.cs)), soit à un `id` du catalogue d'objets ou
 d'armes.
 
-**Toutes les tuiles de ce catalogue font 32 × 32 px**, y compris les calques de barricade. Les seules
-images du livrable qui n'en font pas sont les icônes d'inventaire, en 48 × 48 — voir
+**Toutes les tuiles de ce catalogue font 32 × 32 px**, y compris les calques de barricade — et c'est
+la seule dimension du livrable : les emplacements d'inventaire montrent ces mêmes tuiles. Voir
 [F-direction-artistique-et-prompts.md](./F-direction-artistique-et-prompts.md), sections 2 et 4.
 
 Deux règles héritées de la légende existante, à ne pas enfreindre :
@@ -117,24 +118,25 @@ Une tuile par entrée des catalogues d'objets et d'armes, avec le même `id`. `m
 
 | Tuile | Dimensions | `id` | Catalogue | Icône d'inventaire |
 |-------|-----------|------|-----------|--------------------|
-| `ItemCannedFood` | **32 × 32** | `canned_food` | Objet 1 | 48 × 48 |
-| `ItemWaterCan` | **32 × 32** | `water_can` | Objet 2 | 48 × 48 |
-| `ItemBandage` | **32 × 32** | `bandage` | Objet 3 | 48 × 48 |
-| *(à refaire)* | **32 × 32** | `medikit` | Objet 4 | 48 × 48 |
-| `ItemFuelCan` | **32 × 32** | `fuel_can` | Objet 5 | 48 × 48 |
-| `ItemAmmoBox` | **32 × 32** | `ammo_box` | Objet 6 | 48 × 48 |
-| `ItemFlashlight` | **32 × 32** | `flashlight` | Objet 7 | 48 × 48 |
-| `ItemRadio` | **32 × 32** | `radio` | Objet 8 | 48 × 48 |
-| `ItemFirecracker` | **32 × 32** | `firecracker` | Objet 9 | 48 × 48 |
-| `ItemToolbox` | **32 × 32** | `toolbox` | Objet 10 | 48 × 48 |
-| `WeaponRevolver` | **32 × 32** | `revolver` | Arme à feu 1 | 48 × 48 |
-| `WeaponShotgun` | **32 × 32** | `shotgun` | Arme à feu 2 | 48 × 48 |
-| `WeaponBaseballBat` | **32 × 32** | `baseball_bat` | Corps à corps 1 | 48 × 48 |
-| `WeaponCrowbar` | **32 × 32** | `crowbar` | Corps à corps 2 | 48 × 48 |
-| `WeaponMachete` | **32 × 32** | `machete` | Corps à corps 3 | 48 × 48 |
+| `ItemCannedFood` | **32 × 32** | `canned_food` | Objet 1 | la même tuile |
+| `ItemWaterCan` | **32 × 32** | `water_can` | Objet 2 | la même tuile |
+| `ItemBandage` | **32 × 32** | `bandage` | Objet 3 | la même tuile |
+| *(à refaire)* | **32 × 32** | `medikit` | Objet 4 | la même tuile |
+| `ItemFuelCan` | **32 × 32** | `fuel_can` | Objet 5 | la même tuile |
+| `ItemAmmoBox` | **32 × 32** | `ammo_box` | Objet 6 | la même tuile |
+| `ItemFlashlight` | **32 × 32** | `flashlight` | Objet 7 | la même tuile |
+| `ItemRadio` | **32 × 32** | `radio` | Objet 8 | la même tuile |
+| `ItemFirecracker` | **32 × 32** | `firecracker` | Objet 9 | la même tuile |
+| `ItemToolbox` | **32 × 32** | `toolbox` | Objet 10 | la même tuile |
+| `WeaponRevolver` | **32 × 32** | `revolver` | Arme à feu 1 | la même tuile |
+| `WeaponShotgun` | **32 × 32** | `shotgun` | Arme à feu 2 | la même tuile |
+| `WeaponBaseballBat` | **32 × 32** | `baseball_bat` | Corps à corps 1 | la même tuile |
+| `WeaponCrowbar` | **32 × 32** | `crowbar` | Corps à corps 2 | la même tuile |
+| `WeaponMachete` | **32 × 32** | `machete` | Corps à corps 3 | la même tuile |
 
-Les cinq armes ont une **troisième** image, le sprite tenu en 32 × 16 vu de profil, qui appartient au
-livrable 12 (section 5.1 de la spec F). Trois cadrages, trois tailles, le même objet.
+Les cinq armes ont une **seconde** image, le sprite tenu en 32 × 16 vu de profil, qui appartient au
+livrable 12 (section 5.1 de la spec F). Deux cadrages, deux tailles, le même objet — la tuile sert à la
+fois au sol et à l'inventaire.
 
 Contrainte de lisibilité : un objet posé au sol doit rester identifiable sur `FloorIndoor` comme sur
 `FloorAsphalt`. Un liseré sombre d'un pixel autour de chaque objet suffit, et c'est la seule convention
@@ -198,8 +200,8 @@ et il est déclaré ici plutôt que déduit du dessin.
 | Déjà livré, à refaire | 32 × 32 | 8 | 8 |
 | **Total** | | **51** | **57** |
 
-Plus les 15 icônes d'inventaire mentionnées dans les prérequis, en **48 × 48**, qui ne sont pas des
-tuiles.
+Et rien d'autre : les emplacements d'inventaire réutilisent les tuiles d'objets ci-dessus, il n'y a pas
+de seconde série d'icônes à produire.
 
 Cinquante-sept images de 32 × 32 tiennent dans un atlas **256 × 256** en grille 8 × 8, avec sept
 emplacements de marge. Voir la section 4.10 de
@@ -271,8 +273,8 @@ mort coûteuse autrement que par le nombre.
 
 | # | id | Nom | Catégorie | Effet |
 |---|----|-----|-----------|-------|
-| 1 | `canned_food` | Conserve de nourriture | Consumable | `feed +1 ration` au camp, ou `+15 sanity` consommée en mission |
-| 2 | `water_can` | Bidon d'eau | Consumable | `drink +1 ration` au camp, ou `+10 sanity` et `+20 stamina` en mission |
+| 1 | `canned_food` | Conserve de nourriture | Consumable | `feed +1 ration` au camp |
+| 2 | `water_can` | Bidon d'eau | Consumable | `drink +1 ration` au camp, ou `+20 stamina` en mission |
 | 3 | `bandage` | Bandage | Consumable | `heal +20`, silencieux, `duration 1.5 s` |
 | 4 | `medikit` | Trousse de soin | Consumable | `heal +survivor.heal_amount`, `duration 3 s` — c'est l'objet « médicaments » du MVP, désormais catalogué |
 | 5 | `fuel_can` | Jerrican d'essence | Consumable | `refuel +20` au stock d'essence du camp (voir livrable 12 : le van) |
@@ -282,7 +284,7 @@ mort coûteuse autrement que par le nombre.
 | 9 | `firecracker` | Pétard | Consumable | `emit_noise 10` à une case visée, sans que le survivant s'y trouve — `CreateNoiseDistraction` à distance |
 | 10 | `toolbox` | Caisse à outils | Tool | équipée : `modify ForceDoor.cost ×0.5`, `BarricadeDoor` devient disponible |
 
-Les objets 1, 2 et 5 sont les trois consommables de base que les expéditions rapportent.
+Les objets 1, 2 et 5 sont les trois consommables de base que le camp consomme.
 
 ## Catalogue d'armes (5)
 
@@ -390,27 +392,19 @@ individuelle à suivre case par case, ce qui garderait la simulation lisible pou
     "food_per_survivor_per_day": 1,
     "water_per_survivor_per_day": 1.5,
 
-    "hunger_sanity_penalty": 25,
-    "thirst_sanity_penalty": 40,
-    "hunger_max_health_penalty": 15,
-    "starvation_days_before_departure": 3
+    "starvation_max_health_penalty": 15
   }
 }
 ```
 
-Résolution en fin de journée (une journée = une mission ou une expédition) :
+Résolution en fin de journée (une journée = une mission) :
 
 1. le camp consomme `food_per_survivor_per_day × survivants vivants`, idem pour l'eau ;
-2. si le stock est insuffisant, chaque survivant non ravitaillé perd `hunger_sanity_penalty` de
-   motivation (`max_sanity`, déjà spécifié dans [survivors.json](../config/survivors.json)) et voit sa
-   santé maximale plafonnée de `hunger_max_health_penalty` ;
-3. la soif frappe plus fort et plus vite que la faim : `thirst_sanity_penalty` est le double ;
-4. après `starvation_days_before_departure` journées consécutives sans ravitaillement, un survivant à
-   motivation nulle quitte le camp — le mécanisme existe déjà (`mission.abandon_at_zero_sanity`), il
-   n'est pas réinventé, seulement déclenché depuis une autre cause.
+2. si le stock est insuffisant, chaque survivant non ravitaillé (faim ou soif) voit sa santé maximale
+   plafonnée de `starvation_max_health_penalty`.
 
 Le stock du camp est visible dans l'écran de préparation de mission
-([MissionSetupScreen.cs](../Scripts/UI/MissionSetupScreen.cs)) et détaillé par le livrable 12.
+([CampScreen.cs](../Scripts/UI/CampScreen.cs)) et détaillé par le livrable 12.
 
 ## Catalogue de zones (5)
 
@@ -489,8 +483,7 @@ délibérément de faire du bruit, et où il le sait à l'avance.
 
 **Zombies.** Densité forte, concentrée dans le hall — c'est-à-dire juste derrière la porte qu'on force.
 
-**Ce qu'elle rend vrai.** L'aptitude `breaching` de Bob, qui n'a jamais eu d'enjeu jusque-là, et
-l'arbitrage GBFS entre le coût et le bruit d'une même intention.
+**Ce qu'elle rend vrai.** L'arbitrage GBFS entre le coût et le bruit d'une même intention.
 
 **Tuiles nouvelles : 1** — `WindowBarred`, dont la seule propriété est de rendre `BreakWindow`
 indisponible.
@@ -592,100 +585,15 @@ là que se trouve le rendement, et pas dans les tables de butin.
   `profile`. La carte de démonstration reste valide sans en déclarer aucun.
 * **Livrable 13** : la passe 4 pose les profils sur des bâtiments réels et la passe 5 applique leur
   table de butin.
-* **Expéditions** ci-dessous : les destinations réutilisent les mêmes `id` et les mêmes tables de butin.
-  Une expédition au supermarché rapporte ce qu'un supermarché contient, sans seconde table à tenir à
-  jour.
-
-## Expéditions de ravitaillement
-
-Une expédition est le pendant textuel d'une mission : on envoie des survivants, on ne les joue pas, et
-on lit ce qui leur est arrivé. Format inspiré de Fallout Shelter — une suite d'événements RNG résolus
-contre les caractéristiques du survivant.
-
-### Règles
-
-* un à trois survivants, indisponibles pendant toute la durée ;
-* durée en journées (`duration_days`), donc l'expédition **coûte** de la nourriture et de l'eau
-  pendant qu'elle en cherche ;
-* la résolution est **entièrement déterministe à graine donnée** : `seed` + `id de la destination` +
-  `numéro d'événement`. Une expédition rejouée avec la même graine produit exactement le même récit.
-  C'est la condition pour qu'elle soit testable, comme le reste du projet ;
-* aucune expédition n'accède au `WorldState` ni à une carte : c'est une résolution hors simulation.
-
-### Table d'événements
-
-`config/expeditions.json`. Un événement est une donnée, pas du code.
-
-```json
-{
-  "destinations": [
-    {
-      "id": "supermarche",
-      "name": "Supermarche de la zone commerciale",
-      "description": "Les rayons ont ete vides trois fois, mais les reserves sont au sous-sol.",
-      "duration_days": 1,
-      "danger": 0.3,
-      "loot_table": { "food": [2, 6], "water": [1, 4], "fuel": [0, 1] }
-    }
-  ],
-
-  "events": [
-    {
-      "id": "rayon_intact",
-      "weight": 30,
-      "text": "{survivor} trouve un rayon que personne n'a fouille. Il remplit son sac.",
-      "check": null,
-      "reward": { "food": [2, 4] }
-    },
-    {
-      "id": "porte_coincee",
-      "weight": 20,
-      "text": "Une porte de reserve est coincee. {survivor} pese dessus.",
-      "check": { "aptitude": "breaching", "difficulty": 0.5 },
-      "success": { "text": "Elle cede.", "reward": { "food": [1, 3], "fuel": [0, 2] } },
-      "failure": { "text": "Elle ne cede pas. {survivor} repart les mains vides et l'epaule douloureuse.", "damage": [5, 12] }
-    },
-    {
-      "id": "rodeur",
-      "weight": 15,
-      "text": "Quelque chose bouge au fond du rayon.",
-      "check": { "aptitude": "stealth", "difficulty": 0.6, "modifier": "personality.caution" },
-      "success": { "text": "{survivor} recule sans un bruit.", "sanity": -5 },
-      "failure": { "text": "Il faut courir. {survivor} laisse la moitie du sac derriere lui.", "damage": [10, 25], "sanity": -20, "loot_multiplier": 0.5 }
-    }
-  ]
-}
-```
-
-Le jet d'un `check` : `score = aptitude + modifier×0.3 + rng(-0.2, +0.2)`, réussi si
-`score >= difficulty`. Les aptitudes et la personnalité sont celles déjà définies au livrable 7 — une
-expédition n'introduit aucun nouveau vocabulaire de caractéristiques.
-
-### Restitution
-
-Un journal textuel, une ligne par événement, réutilisant le `DecisionJournal`
-([DecisionJournal.cs](../Hordinary.Core/AI/Replanning/DecisionJournal.cs)) plutôt qu'un second système
-de logs :
-
-```text
-Jour 4 — Supermarche de la zone commerciale (Alice, Bob)
-
-Alice trouve un rayon que personne n'a fouille. Elle remplit son sac.        +3 nourriture
-Une porte de reserve est coincee. Bob pese dessus. Elle cede.                +2 nourriture, +1 essence
-Quelque chose bouge au fond du rayon. Alice recule sans un bruit.            -5 motivation
-
-Rapporte : 5 nourriture, 2 eau, 1 essence
-Consomme : 2 nourriture, 3 eau
-```
 
 ## Architecture concernée
 
 `Agents/Inventory`, `World/ItemCatalogue`, `World/WeaponCatalogue`, `World/HeavyObject`,
-`Game/CampStock`, `Game/Expedition`, `Game/ExpeditionResolver`, `AI/Planning/ActionVerbs` (verbes
-`push` et `emit_noise`) — voir [A-architecture-et-donnees.md](./A-architecture-et-donnees.md).
+`Game/CampStock`, `AI/Planning/ActionVerbs` (verbes `push` et `emit_noise`) — voir
+[A-architecture-et-donnees.md](./A-architecture-et-donnees.md).
 
-Nouveaux fichiers de configuration : `config/items.json`, `config/weapons.json`, `config/camp.json`,
-`config/expeditions.json`. Section `inventory` ajoutée à `config/game_config.json`.
+Nouveaux fichiers de configuration : `config/items.json`, `config/weapons.json`, `config/camp.json`.
+Section `inventory` ajoutée à `config/game_config.json`.
 
 ## Étapes à créer
 
@@ -699,7 +607,7 @@ Nouveaux fichiers de configuration : `config/items.json`, `config/weapons.json`,
       largeurs de trait des trois overlays de `Scripts/UI/`. Les rayons proportionnels
       (`_tileSize * 0.34f`, `* 0.30f`, `* 0.18f`) suivent seuls.
 * [ ] **(humain)** Livrer les 57 images du catalogue de tuiles — dont les 8 déjà livrées, refaites en
-      32 × 32 — et les 15 icônes d'inventaire en 48 × 48.
+      32 × 32. Rien de plus : les emplacements d'inventaire montrent ces mêmes tuiles.
 * [ ] Déclarer chaque tuile produite dans `config/tile_legend.json`.
 * [ ] Ajouter le modèle `Item`, les catégories et les verbes d'effet primitifs.
 * [ ] Ajouter `config/items.json` et son chargeur, avec les 10 objets.
@@ -716,14 +624,12 @@ Nouveaux fichiers de configuration : `config/items.json`, `config/weapons.json`,
 * [ ] Décrire les cinq zones du catalogue et leurs tables de butin.
 * [ ] Rendre `BreakWindow` indisponible sur `WindowBarred` et `ForceDoor` indisponible sur `ShutterHalf`.
 * [ ] Accepter un `id` de profil de zone comme `objective` dans `config/missions.json`.
-* [ ] Ajouter `config/expeditions.json`, le résolveur déterministe et le journal textuel.
 * [ ] Afficher le stock du camp dans l'écran de préparation de mission.
 
 ## Critère de validation
 
 Un survivant ramasse un pied-de-biche, force une porte pour un coût moindre qu'à mains nues, pousse une
-caisse pour se dégager un passage, et rapporte au camp de quoi tenir une journée de plus — pendant
-qu'une expédition partie la veille revient avec un récit reproductible à graine identique.
+caisse pour se dégager un passage, et rapporte au camp de quoi tenir une journée de plus.
 
 ## Tests associés
 
@@ -745,5 +651,3 @@ qu'une expédition partie la veille revient avec un récit reproductible à grai
 * un objet lourd de `mass > 3` n'est pas déplaçable par un survivant seul ;
 * un objet lourd déplacé n'est connu que des survivants qui ont vu la scène ;
 * le stock du camp décroît du bon montant, et la pénalité de soif est le double de celle de la faim ;
-* deux résolutions d'expédition avec la même graine produisent le même journal, au caractère près ;
-* le résolveur d'expédition n'accède jamais au `WorldState`.

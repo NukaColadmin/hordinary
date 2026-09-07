@@ -28,8 +28,8 @@ internal sealed class MissionRun
     public const float Step = 0.1f;
     public const int DefaultMaxTicks = 6000;
 
-    /// <summary>Position des medicaments sur la carte de demonstration (interieur de la pharmacie).</summary>
-    public static readonly GridPosition MedicineCell = new(11, 4);
+    /// <summary>Position de l'objet de la mission sur la carte de demonstration (interieur de la pharmacie).</summary>
+    public static readonly GridPosition ObjectiveCell = new(11, 4);
 
     /// <summary>Porte de la pharmacie sur la carte livree. Fermee, jamais verrouillee (voir README).</summary>
     public static readonly GridPosition PharmacyDoor = new(6, -2);
@@ -44,6 +44,22 @@ internal sealed class MissionRun
 
     public static MissionCatalogue Catalogue { get; } = MissionCatalogue.FromJson(DemoMap.ReadConfig("missions.json"));
 
+    /// <summary>
+    /// Un survivant seul, hors carte et hors mission, arme des vrais profils et du vrai catalogue
+    /// d'objets. C'est ce dont ont besoin les tests qui portent sur le survivant lui-meme — son sac,
+    /// ce qu'une expedition lui fait — et pas sur le monde ou il se trouve.
+    /// </summary>
+    public static Survivor Lone(string id, GridPosition at, int size = 20)
+    {
+        var profile = Roster.Find(id)
+            ?? throw new InvalidOperationException($"Profil « {id} » absent de config/survivors.json.");
+
+        var knowledge = new AgentKnowledge(id, size, size, default, Config.Knowledge);
+        var survivor = Survivor.FromProfile(profile, knowledge, Config.Perception, Config.Survivor, DemoMap.Items, Config.Inventory);
+        survivor.Position = at;
+        return survivor;
+    }
+
     public GridMap Map { get; }
     public WorldState World { get; }
     public SurvivorBand Band { get; }
@@ -53,9 +69,6 @@ internal sealed class MissionRun
 
     /// <summary>Ou en est la mission. Comme dans <c>GameRoot</c>, c'est la boucle qui l'interroge.</summary>
     public MissionTracker Tracker { get; }
-
-    /// <summary>Le rappel au camp, arme des que la caisse rentre.</summary>
-    public MissionRecall Recall { get; }
 
     /// <summary>L'agent principal. Les tests des livrables 5 et 6 ne connaissent que lui.</summary>
     public SurvivorAgent Agent { get; }
@@ -83,16 +96,16 @@ internal sealed class MissionRun
     /// <param name="map">Terrain a jouer ; par defaut la carte de demonstration livree.</param>
     /// <param name="lockedDoors">Portes a verrouiller dans le monde reel avant le depart.</param>
     /// <param name="replanning">Reglages de replanification, pour resserrer les cadences en test.</param>
-    /// <param name="medicine">Ou poser les medicaments ; par defaut <see cref="MedicineCell"/>.</param>
-    /// <param name="withMedicine">A <c>false</c>, la pharmacie est vide : fouiller n'y donnera rien.</param>
+    /// <param name="objective">Ou poser l'objet de la mission ; par defaut <see cref="ObjectiveCell"/>.</param>
+    /// <param name="withObjective">A <c>false</c>, la pharmacie est vide : fouiller n'y donnera rien.</param>
     /// <param name="team">A <c>true</c>, les trois survivants du livrable 7 partent ensemble.</param>
     /// <param name="definition">La mission jouee ; par defaut la premiere de <c>config/missions.json</c>.</param>
     public MissionRun(
         GridMap? map = null,
         IEnumerable<GridPosition>? lockedDoors = null,
         ReplanningSettings? replanning = null,
-        GridPosition? medicine = null,
-        bool withMedicine = true,
+        GridPosition? objective = null,
+        bool withObjective = true,
         bool team = false,
         MissionDefinition? definition = null)
     {
@@ -102,12 +115,12 @@ internal sealed class MissionRun
 
         World = new WorldState(Map, Config.Noise);
 
-        if (withMedicine) World.SetItem("medicine-1", ItemKind.Medicine, medicine ?? MedicineCell);
+        if (withObjective) World.SetItem("objective-1", Survivor.DefaultObjectiveItem, objective ?? ObjectiveCell);
 
         // Les tests du livrable 6 resserrent les cadences de replanification pour ne pas simuler des
         // minutes de jeu ; le reste de la configuration livree ne bouge pas.
         var config = replanning is null ? Config : Config with { Replanning = replanning };
-        Band = new SurvivorBand(World, config);
+        Band = new SurvivorBand(World, config, catalogue: DemoMap.Items);
 
         var profiles = team
             ? Roster.Survivors
@@ -122,20 +135,25 @@ internal sealed class MissionRun
 
         foreach (var profile in profiles) Watch(Band.Enlist(profile, start, Goals, Domain));
 
+        // Ce qu'on les envoie chercher, et ou — comme dans GameRoot. Le domaine ne parle que d'un
+        // « objective » et d'une « objective_zone » : ces deux lignes sont ce qui leur donne un sens,
+        // et sans elles un survivant de test ne sait pas ou aller fouiller.
+        foreach (var agent in Band.Agents)
+        {
+            agent.Survivor.ObjectiveItem = Definition.Item;
+
+            if (Definition.ObjectiveIn(Map) is { } where)
+                agent.Survivor.ObjectiveZone = new ObjectiveSite(where.Name, where.Kind);
+        }
+
         // Briefing du joueur : les lieux de la mission, pas leur contenu (comme dans GameRoot).
         Band.Brief([.. Definition.BriefedZones()]);
 
+        if (Definition.ObjectiveIn(Map) is { } objectiveZone) Band.Brief(objectiveZone);
+
         Tracker = new MissionTracker(World, Band, Definition);
-        Recall = new MissionRecall(Band, Map, Definition, config.Mission);
 
-        // Le rappel du livrable : celui qui rentre la caisse repart chercher les autres.
-        Tracker.Accomplished += courier =>
-        {
-            Journal.Add($"mission remplie par {courier.Name}");
-            if (Band.Find(courier.Id) is { } messenger) Recall.Begin(messenger);
-        };
-
-        Recall.Said += Journal.Add;
+        Tracker.Finished += verdict => Journal.Add(verdict.ToString());
 
         Band.Sharing.Exchanged += exchange =>
         {
@@ -173,7 +191,7 @@ internal sealed class MissionRun
 
     /// <summary>
     /// Une passe de la boucle, dans l'ordre de <c>GameRoot</c> : le monde avance, le groupe percoit,
-    /// se parle, decide — puis on demande ou en est la mission, et le rappel fait sa tournee.
+    /// se parle, decide — puis on demande ou en est la mission.
     /// </summary>
     public void Tick()
     {
@@ -181,7 +199,6 @@ internal sealed class MissionRun
         Band.Advance(Step);
 
         Tracker.Evaluate(World.Time);
-        Recall.Advance(World.Time);
     }
 
     /// <summary>Deroule la mission jusqu'a ce que la condition soit remplie, ou jusqu'a l'abandon.</summary>

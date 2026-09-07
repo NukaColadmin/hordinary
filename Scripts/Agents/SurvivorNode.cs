@@ -66,27 +66,27 @@ public partial class SurvivorNode : Node2D
     {
         float radius = _tileSize * 0.34f;
 
-        DrawCircle(Vector2.Zero, radius + 1.5f, new Color(0f, 0f, 0f, 0.55f));
+        DrawCircle(Vector2.Zero, radius + 3f, new Color(0f, 0f, 0f, 0.55f));
         DrawCircle(Vector2.Zero, radius, BodyBase);
 
         // L'anneau, pas le corps : quand le sprite remplacera ce rond, il gardera sa propre couleur et
         // seul l'anneau restera identifiant.
-        DrawArc(Vector2.Zero, radius + 1f, 0f, Mathf.Tau, 24, RingColor, 2f);
+        DrawArc(Vector2.Zero, radius + 2f, 0f, Mathf.Tau, 24, RingColor, 4f);
 
-        if (Selected) DrawArc(Vector2.Zero, radius + 4.5f, 0f, Mathf.Tau, 24, Colors.White, 1.5f);
+        if (Selected) DrawArc(Vector2.Zero, radius + 9f, 0f, Mathf.Tau, 24, Colors.White, 3f);
 
         // Le nom porte la meme couleur que l'anneau : c'est ce qui relie les deux d'un coup d'oeil. Le
         // contour sombre le rend lisible sur un sol clair comme sur un sol sombre.
         var font = ThemeDB.FallbackFont;
-        var namePosition = new Vector2(-_tileSize, -radius - 4f);
+        var namePosition = new Vector2(-_tileSize, -radius - 8f);
         DrawStringOutline(
             font,
             namePosition,
             SurvivorName,
             HorizontalAlignment.Center,
             _tileSize * 2f,
-            8,
-            2,
+            16,
+            4,
             new Color(0.06f, 0.05f, 0.04f));
         DrawString(
             font,
@@ -94,7 +94,7 @@ public partial class SurvivorNode : Node2D
             SurvivorName,
             HorizontalAlignment.Center,
             _tileSize * 2f,
-            8,
+            16,
             RingColor);
     }
 

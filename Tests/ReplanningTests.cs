@@ -103,7 +103,7 @@ public class ReplanningTests
         var mission = new MissionRun(
             map,
             replanning: new ReplanningSettings { CheckInterval = 0.2f },
-            withMedicine: false);
+            withObjective: false);
 
         mission.Alice.Mission = new MissionOrder(
             "surveiller la pharmacie", Watchpost, MissionRun.Config.UtilityAi.PlayerOrderPriority);
@@ -136,7 +136,7 @@ public class ReplanningTests
 
         // Elle finit par entrer, et pas par magie : c'est l'action adaptee qui a ouvert la porte.
         bool collected = mission.RunUntil(
-            () => mission.Alice.Carries(ItemKind.Medicine), maxTicks: MissionRun.DefaultMaxTicks);
+            () => mission.Alice.Carries(Survivor.DefaultObjectiveItem), maxTicks: MissionRun.DefaultMaxTicks);
 
         Assert.True(collected, $"Alice n'a jamais recupere les medicaments. {mission.Trace()}");
         Assert.Contains("ForceDoor", mission.Executed);
@@ -215,7 +215,7 @@ public class ReplanningTests
         At: 1d,
         Agent: "Alice",
         Trigger: new ReplanTrigger(cause, "detail", 1d),
-        PreviousGoal: "PickUpMedicine",
+        PreviousGoal: "PickUpObjective",
         NewGoal: "ExploreUnknownArea",
         Plan: null,
         PlanReason: "sans solution");
@@ -269,9 +269,9 @@ public class ReplanningTests
     {
         // Le plan n'a plus d'action a executer et le but n'est pas atteint : rien ne le rattrapera.
         var problem = new PlanningProblem(
-            "PickUpMedicine",
+            "PickUpObjective",
             new SymbolicState(["at(agent, pharmacy)"]),
-            [Condition.Parse("has(agent, medicine)")],
+            [Condition.Parse("has(agent, objective)")],
             [new PlanningObject("pharmacy", PlanningObjectTypes.Location, new GridPosition(0, 0))],
             [],
             new GridPosition(0, 0));
@@ -301,18 +301,18 @@ public class ReplanningTests
         {
             new("pharmacy", PlanningObjectTypes.Location, new GridPosition(5, 0)),
             new("door_1", PlanningObjectTypes.Door, new GridPosition(4, 0)),
-            new("medicine", PlanningObjectTypes.Item, new GridPosition(5, 0)),
+            new("objective", PlanningObjectTypes.Item, new GridPosition(5, 0)),
         };
 
         var problem = new PlanningProblem(
-            "PickUpMedicine",
+            "PickUpObjective",
             initial,
-            [Condition.Parse("has(agent, medicine)")],
+            [Condition.Parse("has(agent, objective)")],
             objects,
             [],
             new GridPosition(0, 0));
 
-        var actions = new[] { "MoveToLocation", "SearchRoom", "LocateMedicine", "PickUpMedicine" }
+        var actions = new[] { "MoveToLocation", "SearchRoom", "LocateObjective", "PickUpObjective" }
             .Select(name => Domain.Actions.First(schema => schema.Name == name))
             .Select(schema => schema.Ground(objects).First())
             .ToList();

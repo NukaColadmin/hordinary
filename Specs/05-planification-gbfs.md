@@ -31,8 +31,8 @@ accessible(location)
 door_open(door)
 door_locked(door)
 has(agent, item)
-medicine_found
-medicine_collected
+objective_found
+objective_collected
 zombie_near(location)
 ally_in_danger(ally)
 extraction_known
@@ -46,7 +46,7 @@ OpenDoor
 ForceDoor
 BreakWindow
 SearchRoom
-PickUpMedicine
+PickUpObjective
 EscapeLocation
 HelpAlly
 ReachExtraction
@@ -93,7 +93,7 @@ OpenDoor
 ForceDoor
 BreakWindow
 SearchRoom
-PickUpMedicine
+PickUpObjective
 DropItem
 Flee
 Hide
@@ -114,7 +114,7 @@ construite à partir d'un petit socle de **verbes d'action primitifs et paramét
 le moteur de planification — par exemple `toPos(location)`, `take(item)`, `put(item, location)`,
 `setFlag(condition, value)`, `wait(duration)`.
 
-`OpenDoor`, `PickUpMedicine`, `ReachExtraction`, etc. deviennent alors des **instances** de ces verbes
+`OpenDoor`, `PickUpObjective`, `ReachExtraction`, etc. deviennent alors des **instances** de ces verbes
 avec des paramètres différents, pas de nouveaux types de code. Ajouter une action au jeu (ou en
 retirer une pour un test) doit être possible en éditant la configuration, sans recompiler.
 

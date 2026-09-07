@@ -150,26 +150,47 @@ public sealed record EntityBelief(
     }
 }
 
-public enum ItemKind
-{
-    Other = 0,
-    Medicine,
-}
-
 /// <summary>
 /// Objet repere sur la carte. Statique tant que personne ne le ramasse — et l'agent n'a aucun moyen
 /// de savoir que quelqu'un l'a fait tant qu'il n'est pas revenu voir. Sa confiance ne decroit donc
 /// pas avec le temps : elle tombe d'un coup, le jour ou la case se revele vide.
 /// </summary>
+/// <param name="Id">Identifiant de l'exemplaire pose sur la carte.</param>
+/// <param name="ItemId">
+/// Identifiant du catalogue (<c>config/items.json</c>, <c>config/weapons.json</c>). L'agent ne
+/// connait rien d'autre de l'objet : ni son poids, ni ses effets, seulement ce qu'il en a vu.
+/// </param>
 public sealed record ItemBelief(
     string Id,
-    ItemKind Kind,
+    string ItemId,
     GridPosition Value,
     float Confidence,
     double LastObservedAt,
     KnowledgeSource Source) : IBelief
 {
     /// <summary>Vrai si l'agent est retourne sur place et a constate que l'objet n'y etait plus.</summary>
+    public bool IsGone => Confidence <= 0f;
+}
+
+/// <summary>
+/// Meuble poussable apercu (livrable 11). Comme un objet, il ne bouge pas tout seul : sa confiance
+/// ne s'erode pas avec le temps, elle tombe le jour ou l'on constate qu'il n'est plus la.
+///
+/// Il en existe une croyance separee du terrain parce que le terrain ne dit pas tout : la carte
+/// mentale sait qu'une case est un obstacle, elle ne sait pas que cet obstacle est une benne de
+/// cinq cents kilos qu'il faudra etre deux a bouger.
+/// </summary>
+/// <param name="Mass">Ce que le survivant estime en le voyant. C'est ce qui decide s'il tente seul.</param>
+public sealed record HeavyBelief(
+    string Id,
+    string Kind,
+    GridPosition Value,
+    float Mass,
+    float Confidence,
+    double LastObservedAt,
+    KnowledgeSource Source) : IBelief
+{
+    /// <summary>Vrai si l'agent est repasse et a constate que le meuble n'y etait plus.</summary>
     public bool IsGone => Confidence <= 0f;
 }
 

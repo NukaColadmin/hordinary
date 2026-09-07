@@ -43,96 +43,64 @@ public class BandTests
         Assert.Equal(
             ["alice", "bob", "claire"],
             Roster.Survivors.Select(profile => profile.Id).ToArray());
-
-        // Les coefficients de personnalite sont exactement ceux de la specification, livrable 7.
-        var alice = Profile("alice").Personality;
-        Assert.Equal(0.5f, alice.Courage, 3);
-        Assert.Equal(0.7f, alice.Loyalty, 3);
-        Assert.Equal(0.8f, alice.Caution, 3);
-
-        var bob = Profile("bob").Personality;
-        Assert.Equal(0.8f, bob.Courage, 3);
-        Assert.Equal(0.5f, bob.Loyalty, 3);
-        Assert.Equal(0.4f, bob.Caution, 3);
-
-        var claire = Profile("claire").Personality;
-        Assert.Equal(0.4f, claire.Courage, 3);
-        Assert.Equal(0.9f, claire.Loyalty, 3);
-        Assert.Equal(0.7f, claire.Caution, 3);
     }
 
+    /// <summary>
+    /// Les trois survivants sont interchangeables sur le papier : meme sante, meme vue, meme vitesse.
+    /// Un profil ne declare qu'un identifiant, un nom et une image.
+    ///
+    /// C'est un test de ce qui a ete <b>retire</b>, et il a sa raison d'etre : tant qu'un profil
+    /// portait une fiche de personnage, deux explications se disputaient chaque comportement observe
+    /// — « Bob est passe par la porte parce qu'il est bricoleur » et « parce que le joueur a interdit
+    /// le bruit ». Une seule des deux est le sujet du jeu, et c'est la seconde.
+    /// </summary>
     [Fact]
-    public void Chaque_profil_porte_les_caracteristiques_annoncees_par_la_specification()
+    public void Les_trois_survivants_partent_avec_les_memes_caracteristiques()
     {
-        var alice = Survivor.FromProfile(
-            Profile("alice"), new AgentKnowledge("alice", 5, 5), Config.Perception, Config.Survivor);
-        var bob = Survivor.FromProfile(
-            Profile("bob"), new AgentKnowledge("bob", 5, 5), Config.Perception, Config.Survivor);
-        var claire = Survivor.FromProfile(
-            Profile("claire"), new AgentKnowledge("claire", 5, 5), Config.Perception, Config.Survivor);
+        var survivors = new[] { "alice", "bob", "claire" }
+            .Select(id => Survivor.FromProfile(
+                Profile(id), new AgentKnowledge(id, 5, 5), Config.Perception, Config.Survivor))
+            .ToList();
 
-        // Alice : rapide, bonne vision, peu bruyante, faible resistance.
-        Assert.True(alice.Settings.WalkSpeed > bob.Settings.WalkSpeed);
-        Assert.True(alice.VisionRange > bob.VisionRange);
-        Assert.True(alice.Profile.NoiseMultiplier < 1f);
-        Assert.True(alice.Settings.MaxHealth < bob.Settings.MaxHealth);
+        foreach (var survivor in survivors.Skip(1))
+        {
+            Assert.Equal(survivors[0].Settings.MaxHealth, survivor.Settings.MaxHealth, 3);
+            Assert.Equal(survivors[0].Settings.WalkSpeed, survivor.Settings.WalkSpeed, 3);
+            Assert.Equal(survivors[0].Settings.RunSpeed, survivor.Settings.RunSpeed, 3);
+            Assert.Equal(survivors[0].Settings.HealAmount, survivor.Settings.HealAmount, 3);
+            Assert.Equal(survivors[0].VisionRange, survivor.VisionRange);
+        }
 
-        // Bob : resistant, et le bruit de tout le monde.
-        Assert.Equal(1f, bob.Profile.NoiseMultiplier, 3);
-        Assert.True(bob.Settings.MaxHealth > claire.Settings.MaxHealth);
-
-        // Claire : le soutien. La meme boite de medicaments rend bien davantage entre ses mains.
-        Assert.True(claire.Settings.HealAmount > alice.Settings.HealAmount);
-        Assert.True(claire.Settings.HealAmount > bob.Settings.HealAmount);
+        // Et ce sont bien celles du fichier commun, pas les valeurs par defaut du code.
+        Assert.Equal(Config.Survivor.MaxHealth, survivors[0].Settings.MaxHealth, 3);
     }
 
+    /// <summary>
+    /// Ce qui change le prix d'une action, c'est ce qu'on a en main — et rien d'autre.
+    ///
+    /// GBFS minimise le cout : un survivant equipe d'une caisse a outils trouve donc spontanement le
+    /// plan qui passe par la porte, la ou le meme survivant les mains vides preferera le detour. La
+    /// difference de comportement sort de la recherche, elle n'est ecrite nulle part — et elle tient
+    /// a une situation, pas a une identite.
+    /// </summary>
     [Fact]
-    public void Les_competences_changent_le_prix_des_actions_sans_changer_leur_sens()
+    public void L_equipement_change_le_prix_d_une_action_sans_changer_son_sens()
     {
-        var alice = MissionRun.Domain.Specialize(Profile("alice").Skills);
-        var bob = MissionRun.Domain.Specialize(Profile("bob").Skills);
+        var commun = MissionRun.Domain;
+        var outille = commun.Specialize(DemoMap.Items.Find("toolbox")!.ActionModifiers);
 
-        var forcedByAlice = alice.FindAction("ForceDoor")!;
-        var forcedByBob = bob.FindAction("ForceDoor")!;
+        var forceeAMains = commun.FindAction("ForceDoor")!;
+        var forceeOutillee = outille.FindAction("ForceDoor")!;
 
-        // Bob force les portes : c'est ce prix, et lui seul, qui fera que GBFS lui propose la porte
-        // la ou Alice preferera le detour. Aucun code ne teste son identite.
-        Assert.True(forcedByBob.Cost < forcedByAlice.Cost);
-        Assert.True(forcedByBob.Duration < forcedByAlice.Duration);
+        Assert.True(forceeOutillee.Cost < forceeAMains.Cost);
 
-        // Les preconditions et les effets, eux, sont les memes pour tout le monde : une porte forcee
-        // est une porte forcee.
-        Assert.Equal(
-            MissionRun.Domain.FindAction("ForceDoor")!.Preconditions,
-            forcedByBob.Preconditions);
+        // Les preconditions et les effets, eux, ne bougent pas : une porte forcee est une porte
+        // forcee, avec ou sans outils.
+        Assert.Equal(forceeAMains.Preconditions, forceeOutillee.Preconditions);
+        Assert.Equal(forceeAMains.Effects, forceeOutillee.Effects);
 
-        Assert.Equal(
-            MissionRun.Domain.FindAction("ForceDoor")!.Effects,
-            forcedByBob.Effects);
-
-        // Le domaine commun n'a pas bouge : chaque survivant recoit sa copie.
-        Assert.Equal(3f, MissionRun.Domain.FindAction("ForceDoor")!.Cost, 3);
-    }
-
-    [Fact]
-    public void Une_competence_desactivee_retire_l_action_du_repertoire_du_survivant()
-    {
-        var claire = MissionRun.Domain.Specialize(Profile("claire").Skills);
-
-        // Claire ne brise pas les vitres. L'action existe toujours dans le fichier — elle sort
-        // seulement de ce que Claire peut planifier.
-        Assert.False(claire.FindAction("BreakWindow")!.Enabled);
-        Assert.DoesNotContain(claire.Active, action => action.Name == "BreakWindow");
-        Assert.Contains(MissionRun.Domain.Active, action => action.Name == "BreakWindow");
-    }
-
-    [Fact]
-    public void Une_aptitude_non_declaree_ne_favorise_ni_ne_penalise()
-    {
-        var claire = Profile("claire");
-
-        Assert.Equal(0.95f, claire.AptitudeFor("support"), 3);
-        Assert.Equal(SurvivorProfile.NeutralAptitude, claire.AptitudeFor("pilotage"), 3);
+        // Le domaine commun n'a pas bouge : la specialisation rend une copie.
+        Assert.Equal(3f, commun.FindAction("ForceDoor")!.Cost, 3);
     }
 
     // --- merge_belief -----------------------------------------------------------------------
@@ -293,22 +261,22 @@ public class BandTests
         var bob = mission.AgentOf("bob");
 
         // Alice part seule reperer les medicaments dans la pharmacie ; Bob reste au depart.
-        alice.Follower.Teleport(MissionRun.MedicineCell);
+        alice.Follower.Teleport(MissionRun.ObjectiveCell);
         alice.Perceive();
 
         Assert.Contains(
             alice.Survivor.Knowledge.KnownItems.Values,
-            item => item.Kind == ItemKind.Medicine);
+            item => item.ItemId == Survivor.DefaultObjectiveItem);
 
         // Bob n'y est jamais alle : il ignore tout de la piece et de ce qu'elle contient.
         Assert.Empty(bob.Survivor.Knowledge.KnownItems);
-        Assert.False(bob.Survivor.Knowledge.HasObserved(MissionRun.MedicineCell));
+        Assert.False(bob.Survivor.Knowledge.HasObserved(MissionRun.ObjectiveCell));
 
         var beforeSharing = new UtilityContext(
             bob.Survivor, mission.World.Time, MissionRun.Config.UtilityAi, MissionRun.Config.Exploration);
 
-        Assert.False(beforeSharing.KnowsMedicine);
-        Assert.Null(beforeSharing.Locate("medicine"));
+        Assert.False(beforeSharing.KnowsObjective);
+        Assert.Null(beforeSharing.Locate("objective"));
 
         // Elles se retrouvent, et Alice raconte.
         alice.Follower.Teleport(bob.Survivor.Position);
@@ -320,15 +288,15 @@ public class BandTests
         var afterSharing = new UtilityContext(
             bob.Survivor, mission.World.Time, MissionRun.Config.UtilityAi, MissionRun.Config.Exploration);
 
-        Assert.True(afterSharing.KnowsMedicine);
-        Assert.Equal(MissionRun.MedicineCell, afterSharing.Locate("medicine"));
+        Assert.True(afterSharing.KnowsObjective);
+        Assert.Equal(MissionRun.ObjectiveCell, afterSharing.Locate("objective"));
 
-        var learned = bob.Survivor.Knowledge.KnownItems.Values.Single(item => item.Kind == ItemKind.Medicine);
+        var learned = bob.Survivor.Knowledge.KnownItems.Values.Single(item => item.ItemId == Survivor.DefaultObjectiveItem);
         Assert.Equal(KnowledgeSource.AllyCommunication, learned.Source);
         Assert.True(learned.Confidence < 1f);
 
         // Et il peut s'en servir : le planificateur lui construit un plan pour aller les chercher.
-        var plan = bob.Planner.PlanFor("PickUpMedicine", afterSharing, mission.World.Time);
+        var plan = bob.Planner.PlanFor("PickUpObjective", afterSharing, mission.World.Time);
         Assert.True(plan.Found, $"Bob n'a pas su planifier avec ce qu'Alice lui a appris : {plan.Reason}");
     }
 
@@ -340,7 +308,7 @@ public class BandTests
         var alice = mission.AgentOf("alice");
         var claire = mission.AgentOf("claire");
 
-        alice.Follower.Teleport(MissionRun.MedicineCell);
+        alice.Follower.Teleport(MissionRun.ObjectiveCell);
         alice.Perceive();
 
         // Claire est restee au depart, bien au-dela des cinq cellules : la conversation n'a pas lieu.
@@ -429,6 +397,49 @@ public class BandTests
         Assert.True(chosen.Value.Cell.X > 10, $"Alice repart vers {chosen.Value.Cell} malgre l'annonce de Bob.");
     }
 
+    /// <summary>
+    /// La case sous les pieds borde elle aussi l'inconnu — le nord et le sud du couloir n'ont jamais
+    /// ete observes — et elle bat toutes les autres au score : gain d'information intact, trajet
+    /// gratuit. La choisir produirait un plan « aller la ou l'on est » qui reussit sans un pas, et
+    /// que la decision suivante rebatirait a l'identique. C'est le survivant immobile affichant
+    /// <c>ExploreUnknownArea</c>.
+    /// </summary>
+    [Fact]
+    public void La_frontiere_sous_les_pieds_n_est_plus_une_destination()
+    {
+        var alice = AtCrossroads("alice", out _, out _);
+        var here = alice.Position;
+
+        Assert.True(FrontierExplorer.IsFrontier(alice.Knowledge, alice.Knowledge.GetCell(here)!));
+
+        var context = new UtilityContext(alice, 0d, Config.UtilityAi, Config.Exploration);
+        var explorer = new FrontierExplorer(Config.Exploration);
+
+        Assert.DoesNotContain(explorer.Rank(context), frontier => frontier.Cell == here);
+        Assert.NotEqual(here, explorer.Choose(context)?.Cell);
+    }
+
+    /// <summary>
+    /// Le bord du connu ne promet aucun itineraire : une cour apercue par-dessus un mur en fait
+    /// partie. Sans le test d'atteignabilite, elle est choisie, A* n'y mene pas, l'action echoue
+    /// faute de route — et la replanification refait le meme choix, indefiniment.
+    /// </summary>
+    [Fact]
+    public void Une_frontiere_qu_aucun_itineraire_ne_dessert_est_ecartee()
+    {
+        var alice = AtCrossroads("alice", out var west, out var east);
+
+        // L'ouest est atteignable, l'est ne l'est pas. Le test ne dit pas pourquoi — c'est la
+        // navigation qui le sait, et la Utility AI ne fait que la croire.
+        var context = new UtilityContext(
+            alice, 0d, Config.UtilityAi, Config.Exploration, reachable: cell => cell.X <= 10);
+
+        var ranked = new FrontierExplorer(Config.Exploration).Rank(context);
+
+        Assert.Contains(ranked, frontier => frontier.Cell == west);
+        Assert.DoesNotContain(ranked, frontier => frontier.Cell == east);
+    }
+
     [Fact]
     public void Une_annonce_perimee_cesse_de_peser_sur_la_repartition()
     {
@@ -494,7 +505,7 @@ public class BandTests
             () =>
             {
                 dispersed |= Dispersed(mission);
-                return mission.Tracker.Done;
+                return mission.Tracker.IsOver;
             },
             maxTicks: 600);
 
@@ -553,7 +564,7 @@ public class BandTests
 
         var bob = Lone("bob", new GridPosition(2, 2));
         var claire = Lone("claire", new GridPosition(4, 2));
-        claire.AddToInventory(ItemKind.Medicine);
+        claire.AddToInventory(Survivor.DefaultObjectiveItem);
 
         bob.TakeDamage(bob.Settings.MaxHealth * 0.8f);
 
@@ -580,7 +591,7 @@ public class BandTests
         var claire = mission.AgentOf("claire").Survivor;
 
         bob.TakeDamage(bob.Settings.MaxHealth * 0.7f);
-        claire.AddToInventory(ItemKind.Medicine);
+        claire.AddToInventory(Survivor.DefaultObjectiveItem);
 
         float before = bob.Health;
 
@@ -588,7 +599,7 @@ public class BandTests
         Assert.True(mission.AgentOf("claire").Runtime.SetFlag("healed(bob)", true, bob.Position));
 
         Assert.True(bob.Health > before);
-        Assert.False(claire.Carries(ItemKind.Medicine));
+        Assert.False(claire.Carries(Survivor.DefaultObjectiveItem));
 
         // Et c'est bien la fiche de la soignante qui decide de l'efficacite du soin.
         Assert.Equal(
@@ -617,9 +628,9 @@ public class BandTests
         var mission = new MissionRun(team: true);
         var claire = mission.AgentOf("claire");
 
-        claire.Survivor.AddToInventory(ItemKind.Medicine);
+        claire.Survivor.AddToInventory(Survivor.DefaultObjectiveItem);
 
         Assert.False(claire.Runtime.SetFlag("healed(inconnu)", true, new GridPosition(0, 0)));
-        Assert.True(claire.Survivor.Carries(ItemKind.Medicine));
+        Assert.True(claire.Survivor.Carries(Survivor.DefaultObjectiveItem));
     }
 }

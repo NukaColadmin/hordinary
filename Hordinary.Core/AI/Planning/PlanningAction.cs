@@ -75,7 +75,7 @@ public sealed class ActionSchema
     /// forcee sont les memes pour Bob que pour Claire — c'est le prix qu'il paie qui differe, et
     /// c'est ce prix que GBFS minimise.
     /// </summary>
-    public ActionSchema Specialize(SurvivorSkill skill)
+    public ActionSchema Specialize(ActionModifier skill)
     {
         ArgumentNullException.ThrowIfNull(skill);
 

@@ -54,6 +54,43 @@ public class CommandTests
         Assert.Same(before, commands.Selected);
     }
 
+    /// <summary>
+    /// Cliquer a cote de tout le monde ne selectionne personne — c'est un etat, et l'interface le
+    /// lit : <c>Selected</c> nul ferme le panneau lateral et eteint l'anneau au sol.
+    /// </summary>
+    [Fact]
+    public void Cliquer_a_cote_ne_laisse_plus_personne_selectionne()
+    {
+        var (mission, commands) = Setup();
+
+        var bob = mission.Band.Agents[1].Survivor;
+        commands.Execute(PlayerCommand.Select(bob.Id));
+
+        bool announced = false;
+        commands.SelectionCleared += () => announced = true;
+
+        Assert.True(commands.Deselect());
+        Assert.True(announced);
+
+        Assert.Null(commands.Selected);
+        Assert.False(commands.HasSelection);
+
+        // Plus de destinataire : un ordre donne dans le vide est refuse, et le dit.
+        var order = commands.Execute(PlayerCommand.ReachExtraction(toAll: false));
+        Assert.False(order.Delivered);
+
+        // Deselectionner deux fois ne s'annonce qu'une : rien n'a change la seconde fois.
+        announced = false;
+        Assert.False(commands.Deselect());
+        Assert.False(announced);
+
+        // Et Tab reprend ou l'on en etait — apres Bob, celui d'apres — plutot que de repartir du
+        // premier du groupe : le rang survit a la deselection, seul le fait de regarder disparait.
+        Assert.Equal(1, commands.SelectedIndex);
+        Assert.Same(mission.Band.Agents[2], commands.SelectNext());
+        Assert.True(commands.HasSelection);
+    }
+
     // --- Ordres -----------------------------------------------------------------------------
 
     [Fact]
@@ -61,7 +98,7 @@ public class CommandTests
     {
         var (mission, commands) = Setup(team: false);
 
-        var result = commands.Execute(PlayerCommand.FetchMedicine());
+        var result = commands.Execute(PlayerCommand.FetchObjective());
 
         Assert.True(result.Delivered, result.ToString());
         Assert.NotNull(mission.Alice.Mission);
@@ -172,7 +209,7 @@ public class CommandTests
 
         var context = mission.Agent.Context!;
         var domain = mission.Agent.Domain;
-        var goal = domain.FindGoal("PickUpMedicine")!;
+        var goal = domain.FindGoal("PickUpObjective")!;
 
         var before = Hordinary.AI.Planning.SymbolicStateBuilder
             .Build(context, domain, goal, MissionRun.Config.Planner)

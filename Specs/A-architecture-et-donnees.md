@@ -70,8 +70,8 @@ Hordinary.Core
 ├── Agents/Inventory                                    livrable 11
 ├── World/ItemCatalogue, WeaponCatalogue, HeavyObject    livrable 11
 ├── World/MapGeneration/  (6 passes + validation)        livrable 13
-├── Game/CampStock, Expedition, ExpeditionResolver       livrable 11
-├── Game/SurvivorGenerator, Van                          livrable 12
+├── Game/CampStock                                      livrable 11
+├── Game/SurvivorGenerator                               livrable 12
 ├── Game/Encounter, EncounterResolver, CampReputation    livrable 14
 ├── AI/Planning/ActionVerbs   (push, emit_noise)         livrable 11
 ├── AI/Planning/Pddl/  (PddlDomain, PddlAction,

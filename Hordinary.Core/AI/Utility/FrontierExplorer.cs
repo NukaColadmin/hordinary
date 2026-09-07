@@ -100,6 +100,11 @@ public sealed class FrontierExplorer(ExplorationSettings? settings = null)
     /// toutes a chaque decision couterait bien plus que le choix ne rapporte. Prendre les plus
     /// proches n'est pas neutre — c'est un biais assume vers ce qui est atteignable — mais le terme
     /// de distance allait de toute facon dans ce sens.
+    ///
+    /// Deux candidates sont ecartees avant d'etre notees, et le tri seul ne pouvait pas s'en charger :
+    /// aucune note, si mauvaise soit-elle, ne dit « celle-ci ne marchera pas ». Voir
+    /// <see cref="IsWorthGoing"/> — c'est la que se joue le survivant plante indefiniment sur
+    /// <c>ExploreUnknownArea</c>.
     /// </summary>
     public IReadOnlyList<Frontier> Rank(UtilityContext context)
     {
@@ -114,11 +119,35 @@ public sealed class FrontierExplorer(ExplorationSettings? settings = null)
             .ThenBy(belief => belief.Position.Y)
             .ThenBy(belief => belief.Position.X)
             .Take(Math.Max(1, Settings.MaxCandidates))
+            .Where(belief => IsWorthGoing(context, belief.Position))
             .Select(belief => Score(context, belief.Position))
             .ToList();
 
         candidates.Sort((left, right) => right.Score.CompareTo(left.Score));
         return candidates;
+    }
+
+    /// <summary>
+    /// Y aller changerait-il quelque chose ? Deux facons de repondre non, et chacune produisait un
+    /// survivant immobile affichant <c>ExploreUnknownArea</c> — le meme symptome pour deux causes.
+    ///
+    /// <list type="number">
+    /// <item><b>On y est deja.</b> Une frontiere sous les pieds a rendu tout ce qu'elle avait a
+    /// rendre : si sa voisine reste inobservee apres qu'on s'y est tenu, c'est qu'elle est hors du
+    /// cone de vision ou derriere un angle, et le rester quoi qu'on fasse. Elle garde pourtant le
+    /// meilleur score — cout de trajet nul, gain d'information intact — donc elle serait choisie
+    /// encore, et le plan « aller la ou l'on est » reussirait sans un pas.</item>
+    /// <item><b>On ne peut pas y aller.</b> Une cellule vue a travers une vitre, un arriere-cour
+    /// close : le bord du connu n'a jamais promis d'itineraire. A* le decouvre trop tard, l'action
+    /// echoue faute de route, la replanification recalcule le meme choix, et la boucle est
+    /// bouclee.</item>
+    /// </list>
+    /// </summary>
+    private bool IsWorthGoing(UtilityContext context, GridPosition cell)
+    {
+        if (cell.ChebyshevDistanceTo(context.Self.Position) <= Math.Max(0, Settings.ExhaustedRadius)) return false;
+
+        return context.CanReach(cell);
     }
 
     /// <summary>Les quatre termes de la specification, pour une cellule donnee.</summary>

@@ -3,7 +3,7 @@ namespace Hordinary.AI.Planning;
 /// <summary>
 /// Grammaire des faits symboliques (specification, livrable 5 : « Representation d'un etat »).
 ///
-/// Un fait est une chaine : soit un predicat nu (<c>medicine_found</c>), soit un predicat applique
+/// Un fait est une chaine : soit un predicat nu (<c>objective_found</c>), soit un predicat applique
 /// a des arguments (<c>at(agent, pharmacy)</c>). Le vocabulaire n'est pas fige dans le code :
 /// c'est <c>config/planner_domain.json</c> qui decide quels predicats existent, exactement comme
 /// <c>config/utility_goals.json</c> decide quels objectifs existent.

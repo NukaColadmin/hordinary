@@ -232,7 +232,7 @@ public class DebugModeTests
 
         // Demander directement le repli lui-meme : il ne peut pas se replier sur lui-meme, donc
         // l'echec, s'il survient, remonte tel quel.
-        var goal = planner.Domain.FindGoal("PickUpMedicine")!;
+        var goal = planner.Domain.FindGoal("PickUpObjective")!;
         var problem = Hordinary.AI.Planning.SymbolicStateBuilder.Build(
             mission.Agent.Context!, planner.Domain, goal, MissionRun.Config.Planner);
 

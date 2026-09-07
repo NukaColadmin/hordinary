@@ -35,6 +35,22 @@ public sealed class SurvivorSettings
     public float SearchRadius { get; init; } = 3f;
 
     /// <summary>
+    /// Portee, en cellules, d'un ramassage — la longueur d'un bras, pas celle d'une piece.
+    ///
+    /// Fouiller et prendre ne se paient pas au meme prix, et c'est ce qui separe les deux verbes.
+    /// <c>SearchRoom</c> se fait a l'echelle du local : on entre, on fait le tour des etageres, on
+    /// <b>repere</b> ce qu'il y a. Prendre demande d'y aller. Sans cette distinction, un survivant
+    /// pousse la porte de la pharmacie et la caisse apparait dans son sac sans qu'il ait fait un pas
+    /// de plus — le joueur voit un objectif se remplir tout seul, et le trajet que le plan avait
+    /// prevu ne sert plus a rien.
+    ///
+    /// Une case suffit, et pas moins : c'est <see cref="Config.PlannerSettings.ArrivalRadius"/>, le
+    /// rayon auquel l'executeur declare un deplacement arrive. Exiger la case exacte ferait echouer
+    /// tout ramassage qui suit un deplacement.
+    /// </summary>
+    public float PickUpRadius { get; init; } = 1f;
+
+    /// <summary>
     /// Sante rendue par une boite de medicaments, sur l'echelle de <see cref="MaxHealth"/>. Un soin
     /// ne remet pas d'aplomb : c'est ce qui rend l'efficacite de Claire (competence <c>HealAlly</c>)
     /// reellement utile plutot que decorative.
@@ -43,34 +59,6 @@ public sealed class SurvivorSettings
 
     /// <summary>Panique retiree par un survivant qui en rassure un autre (action <c>CalmAlly</c>).</summary>
     public float CalmAmount { get; init; } = 0.4f;
-
-    // --- Motivation ---------------------------------------------------------------------------
-
-    /// <summary>
-    /// Motivation maximale, la jauge <c>SANITY</c> affichee sur la fiche de personnage. Elle est
-    /// volontairement sur une autre echelle que la sante : la sante dit ce que le corps encaisse
-    /// pendant une mission, la motivation ce que la tete encaisse sur toute une campagne.
-    /// </summary>
-    public float MaxSanity { get; init; } = 200f;
-
-    /// <summary>
-    /// Motivation perdue par seconde a panique maximale. La peur est ce qui use la motivation :
-    /// un survivant qui traverse la carte sans jamais croiser personne rentre entier.
-    /// </summary>
-    public float SanityDrainPerSecond { get; init; } = 6f;
-
-    /// <summary>
-    /// Motivation regagnee par seconde au calme complet. Plus lente que la perte : souffler ne
-    /// rattrape pas une poursuite, ce qui donne a la jauge une pente descendante sur la duree.
-    /// </summary>
-    public float SanityRecoveryPerSecond { get; init; } = 3f;
-
-    /// <summary>
-    /// Motivation perdue par une blessure, en fraction de <see cref="MaxSanity"/> et par fraction de
-    /// sante perdue : perdre la moitie de sa sante avec un coefficient de 0,5 coute un quart de la
-    /// jauge. Le pendant moral de <see cref="PanicPerWound"/>.
-    /// </summary>
-    public float SanityPerWound { get; init; } = 0.5f;
 
     // --- Combat (livrable 8) -----------------------------------------------------------------
 
@@ -99,9 +87,6 @@ public sealed class SurvivorSettings
 
     /// <summary>Duree d'un coup d'oeil. Courte : on regarde derriere soi, on ne s'arrete pas.</summary>
     public float RearGlanceDuration { get; init; } = 0.3f;
-
-    /// <summary>Coefficients de personnalite du survivant (section 10.2).</summary>
-    public Personality Personality { get; init; } = new();
 
     public static SurvivorSettings Default { get; } = new();
 }

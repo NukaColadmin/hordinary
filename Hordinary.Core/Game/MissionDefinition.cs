@@ -30,8 +30,22 @@ public sealed record MissionDefinition
     /// <summary>Etiquette de difficulte, purement lisible : elle ne regle rien par elle-meme.</summary>
     public string? Difficulty { get; init; }
 
-    /// <summary>Ou se trouve ce qu'il faut rapporter.</summary>
-    public ZoneKind Objective { get; init; } = ZoneKind.Pharmacy;
+    /// <summary>
+    /// Ou se trouve ce qu'il faut rapporter. Le champ accepte deux vocabulaires dans la meme chaine :
+    /// un <see cref="ZoneKind"/> (<c>"Pharmacy"</c>) ou un identifiant de profil de
+    /// <c>config/zones.json</c> (<c>"station_service"</c>). « Rapporter de l'essence » devient une
+    /// mission en une ligne, sans que le code cesse de ne nommer aucun lieu.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonPropertyName("objective")]
+    public ZoneTarget Target { get; init; } = new(ZoneKind.Pharmacy);
+
+    /// <summary>La categorie structurelle visee, celle que le briefing et le planificateur emploient.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public ZoneKind Objective => Target.Kind;
+
+    /// <summary>Le profil vise, quand la mission en nomme un plutot qu'une categorie.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string? ObjectiveProfile => Target.Profile;
 
     /// <summary>
     /// Nom exact du lieu vise, quand plusieurs zones partagent le meme type — la carte livree compte
@@ -39,8 +53,11 @@ public sealed record MissionDefinition
     /// </summary>
     public string? ObjectiveZone { get; init; }
 
-    /// <summary>Ce qu'il faut rapporter.</summary>
-    public ItemKind Item { get; init; } = ItemKind.Medicine;
+    /// <summary>
+    /// Ce qu'il faut rapporter, par identifiant de <c>config/items.json</c>. C'est cette ligne, et
+    /// elle seule, qui dit au groupe ce qu'il va chercher : le code ne nomme aucun objet.
+    /// </summary>
+    public string Item { get; init; } = Survivor.DefaultObjectiveItem;
 
     /// <summary>
     /// Le camp : point de depart <b>et</b> point de retour. Une mission est terminee quand l'objet
@@ -60,10 +77,43 @@ public sealed record MissionDefinition
     /// <summary>Nombre d'agents conseille. Indicatif : l'ecran de preparation n'en fait pas une regle.</summary>
     public int RecommendedTeam { get; init; } = 3;
 
-    /// <summary>Le lieu vise sur une carte donnee : par son nom s'il est precise, par son type sinon.</summary>
+    /// <summary>
+    /// L'ambiance du quartier a generer, par identifiant de <c>config/mapgen.json</c> (livrable 13).
+    ///
+    /// Absent, la mission se joue sur la carte dessinee a la main, et c'est ce qui garde la carte de
+    /// demonstration du livrable 8 jouable et testable. Present, un quartier est genere a chaque
+    /// depart : c'est la meme mission, sur un terrain qu'on n'a jamais vu.
+    /// </summary>
+    public string? MapProfile { get; init; }
+
+    /// <summary>
+    /// La graine du quartier, quand le joueur en impose une. Absente, c'est celle de la partie qui
+    /// sert — l'ecran de preparation l'affiche et laisse la saisir, pour qu'un quartier interessant
+    /// se retrouve et qu'un bug de carte se reproduise.
+    /// </summary>
+    public int? MapSeed { get; init; }
+
+    /// <summary>Vrai si cette mission veut un quartier genere plutot que la carte dessinee.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsGenerated => !string.IsNullOrWhiteSpace(MapProfile);
+
+    /// <summary>
+    /// Le lieu vise sur une carte donnee. Trois lectures, de la plus precise a la plus generale : le
+    /// profil quand la mission en nomme un, puis le nom exact quand il est ecrit, puis le type. Une
+    /// mission dont l'objectif est un profil se resout donc exactement comme celle dont l'objectif est
+    /// un <see cref="ZoneKind"/> — elle ne trouve simplement pas sa zone par le meme chemin.
+    /// </summary>
     public MapZone? ObjectiveIn(GridMap map)
     {
         ArgumentNullException.ThrowIfNull(map);
+
+        if (ObjectiveProfile is { Length: > 0 } profile)
+        {
+            var found = map.Zones.FirstOrDefault(
+                zone => profile.Equals(zone.Profile, StringComparison.OrdinalIgnoreCase));
+
+            if (found is not null) return found;
+        }
 
         if (ObjectiveZone is not { Length: > 0 } name) return map.GetZone(Objective);
 
@@ -82,7 +132,10 @@ public sealed record MissionDefinition
     public IEnumerable<ZoneKind> BriefedZones()
     {
         yield return Camp;
-        yield return Objective;
+
+        // Un objectif designe par profil dont le catalogue de zones n'a pas ete charge n'a pas de
+        // categorie a annoncer. Mieux vaut un briefing court qu'un briefing qui nomme « Other ».
+        if (Objective != ZoneKind.Other) yield return Objective;
 
         // Le camp sert aussi de point d'extraction : le domaine de planification le connait sous ce
         // nom, et le briefing doit donc le nommer deux fois pour que « rejoindre l'extraction » et
@@ -115,11 +168,38 @@ public sealed class MissionCatalogue
     /// <summary>La premiere mission du fichier, celle que l'ecran de preparation propose d'emblee.</summary>
     public MissionDefinition? Default => Missions.Count == 0 ? null : Missions[0];
 
-    public static MissionCatalogue FromJson(string json)
+    /// <summary>
+    /// Charge le catalogue. Le catalogue de zones est facultatif : sans lui, une mission qui vise un
+    /// profil se charge quand meme et trouve sa zone par le profil, mais sa categorie structurelle
+    /// reste inconnue. Avec lui, elle est renseignee et la mission redevient une mission comme les
+    /// autres — c'est tout ce que « accepter un profil comme objectif » veut dire.
+    /// </summary>
+    public static MissionCatalogue FromJson(string json, ZoneCatalogue? zones = null)
     {
         var catalogue = JsonSerializer.Deserialize<MissionCatalogue>(json, GameConfig.JsonOptions) ?? Empty;
+        if (zones is not null) catalogue.Resolve(zones);
         catalogue.Validate();
         return catalogue;
+    }
+
+    /// <summary>Donne sa categorie structurelle a chaque objectif designe par profil.</summary>
+    public void Resolve(ZoneCatalogue zones)
+    {
+        ArgumentNullException.ThrowIfNull(zones);
+
+        for (int i = 0; i < Missions.Count; i++)
+        {
+            if (Missions[i].Target is not { ByProfile: true } target) continue;
+
+            if (zones.Find(target.Profile) is not { } profile)
+            {
+                throw new InvalidOperationException(
+                    $"La mission « {Missions[i].Id} » vise le profil « {target.Profile} », "
+                  + "qui n'existe pas dans config/zones.json.");
+            }
+
+            Missions[i] = Missions[i] with { Target = target with { Kind = profile.Kind } };
+        }
     }
 
     public void Validate()

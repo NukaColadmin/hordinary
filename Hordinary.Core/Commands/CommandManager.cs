@@ -59,12 +59,21 @@ public sealed class CommandManager
         _settings = settings ?? UtilityAiSettings.Default;
     }
 
-    /// <summary>Index du survivant sous les yeux du joueur.</summary>
+    /// <summary>Index du survivant sous les yeux du joueur. N'a de sens que si <see cref="HasSelection"/>.</summary>
     public int SelectedIndex => _selected;
 
-    /// <summary>Le survivant selectionne, ou <c>null</c> si le groupe est vide.</summary>
+    /// <summary>
+    /// Vrai tant que le joueur regarde quelqu'un. Faux apres un <see cref="Deselect"/> : le panneau
+    /// lateral se ferme, l'anneau de selection s'eteint, et plus aucun ordre n'a de destinataire.
+    ///
+    /// Ne pas regarder personne est un etat, et non l'absence d'un etat : la partie commence sur le
+    /// premier survivant du groupe, et le joueur peut choisir de le lacher.
+    /// </summary>
+    public bool HasSelection { get; private set; } = true;
+
+    /// <summary>Le survivant selectionne, <c>null</c> si le groupe est vide ou si rien n'est selectionne.</summary>
     public SurvivorAgent? Selected
-        => _band.Agents.Count == 0 ? null : _band.Agents[Wrap(_selected)];
+        => !HasSelection || _band.Agents.Count == 0 ? null : _band.Agents[Wrap(_selected)];
 
     /// <summary>Vrai quand le joueur s'adresse au groupe par defaut, sans avoir a le repeter.</summary>
     public bool GroupSelected { get; private set; }
@@ -78,6 +87,9 @@ public sealed class CommandManager
     /// <summary>Emis quand le point de vue change : la couche moteur rebranche ses overlays.</summary>
     public event Action<SurvivorAgent>? SelectionChanged;
 
+    /// <summary>Emis quand le joueur lache celui qu'il regardait. Le panneau lateral s'y ferme.</summary>
+    public event Action? SelectionCleared;
+
     // --- Selection --------------------------------------------------------------------------
 
     /// <summary>Change de point de vue par position dans le groupe (c'est la touche Tab).</summary>
@@ -87,6 +99,7 @@ public sealed class CommandManager
 
         _selected = Wrap(index);
         GroupSelected = false;
+        HasSelection = true;
 
         var agent = _band.Agents[_selected];
         SelectionChanged?.Invoke(agent);
@@ -94,6 +107,25 @@ public sealed class CommandManager
     }
 
     public SurvivorAgent? SelectNext() => SelectAt(_selected + 1);
+
+    /// <summary>
+    /// Le joueur ne regarde plus personne — il a clique a cote.
+    ///
+    /// Le rang reste memorise : Tab reprend la ou l'on en etait plutot que de repartir du premier.
+    /// La selection du groupe, elle, tombe : lacher quelqu'un et continuer a commander tout le monde
+    /// serait le contraire de ce que le geste veut dire.
+    /// </summary>
+    /// <returns>Faux si personne n'etait selectionne — rien a annoncer.</returns>
+    public bool Deselect()
+    {
+        if (!HasSelection && !GroupSelected) return false;
+
+        HasSelection = false;
+        GroupSelected = false;
+
+        SelectionCleared?.Invoke();
+        return true;
+    }
 
     // --- Execution --------------------------------------------------------------------------
 
@@ -171,7 +203,7 @@ public sealed class CommandManager
         PlayerCommandKind.AllowZone => Fence(agent, command.Zone, forbid: false),
 
         PlayerCommandKind.ExploreArea => ExploreArea(agent, command.Zone),
-        PlayerCommandKind.FetchMedicine => SendToZone(agent, ZoneKind.Pharmacy, "recuperer les medicaments"),
+        PlayerCommandKind.FetchObjective => SendToObjective(agent),
         PlayerCommandKind.ReachExtraction => SendToZone(agent, ZoneKind.Extraction, "rejoindre l'extraction"),
         PlayerCommandKind.Regroup => Regroup(agent),
 
@@ -190,6 +222,23 @@ public sealed class CommandManager
         agent.Survivor.Mission = new MissionOrder(label, destination, _settings.PlayerOrderPriority);
         agent.Utility.Request($"nouvel ordre — {label}");
         return null;
+    }
+
+    /// <summary>
+    /// « Allez chercher ce qu'on est venu chercher. » L'ordre ne nomme aucun lieu : il lit celui que la
+    /// mission a donne au survivant. C'est ce qui fait que la meme touche envoie a la pharmacie, a
+    /// l'entrepot ou au hangar selon la mission en cours, sans une ligne de code par lieu.
+    /// </summary>
+    private string? SendToObjective(SurvivorAgent agent)
+    {
+        if (agent.Survivor.ObjectiveZone is not { } site) return "n'a recu aucun lieu d'objectif";
+
+        const string Label = "recuperer l'objet de la mission";
+
+        if (agent.Survivor.Knowledge.GetLocation(site.Name) is { } known)
+            return Give(agent, $"{Label} ({known.Name})", known.Value);
+
+        return SendToZone(agent, site.Kind, Label);
     }
 
     /// <summary>
