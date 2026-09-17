@@ -35,13 +35,13 @@ public sealed class WorldPlanRuntime : IPlanRuntime
     private bool _blocked;
 
     /// <param name="band">
-    /// Les autres survivants, pour les actions qui portent sur quelqu'un — soigner, rassurer,
-    /// partager. C'est la seule facon d'agir sur un allie : sans lui, <c>HealAlly</c> echoue au lieu
-    /// de soigner dans le vide.
+    /// Les autres survivants, pour les actions qui portent sur quelqu'un — leur parler, depuis que
+    /// l'entraide autonome a ete retiree (livrable 15). C'est la seule facon d'agir sur un allie :
+    /// sans lui, <c>ShareKnowledge</c> echoue au lieu de parler dans le vide.
     /// </param>
     /// <param name="horde">
     /// La horde, pour les actions de combat (livrable 8). Sans elle, frapper echoue au lieu de
-    /// frapper dans le vide — c'est le meme parti que <paramref name="band"/> pour le soin.
+    /// frapper dans le vide — c'est le meme parti que <paramref name="band"/> pour la parole.
     /// </param>
     /// <param name="catalogue">
     /// Les objets livres (livrable 11). C'est lui qui dit ce qu'un objet fait : sans catalogue, une
@@ -82,6 +82,14 @@ public sealed class WorldPlanRuntime : IPlanRuntime
 
     /// <summary>Journal des decisions de l'IA, cote execution.</summary>
     public event Action<string>? Logged;
+
+    /// <summary>
+    /// Un coup porte a un zombie, et son resultat. Separe de <see cref="Logged"/> parce que ce n'est
+    /// pas un detail d'execution : c'est un fait du monde, de la meme famille que la morsure que le
+    /// zombie rend. Les deux meritent le meme canal de journal, sinon le joueur voit ce qui le mord
+    /// sans jamais voir ce qu'il abat.
+    /// </summary>
+    public event Action<string>? Fought;
 
     /// <summary>
     /// Signale que le suiveur de chemin a bute sur une cellule devenue infranchissable — c'est
@@ -231,7 +239,6 @@ public sealed class WorldPlanRuntime : IPlanRuntime
         "used" => UseItem(Subject(fact)),
         "objective_found" => SearchForObjective(),
         "healed" => Heal(Subject(fact)),
-        "calmed" => Calm(Subject(fact)),
         "shared_with" => ShareWith(Subject(fact)),
         "pushed_back" => PushBack(Subject(fact)),
         // Fouiller, observer : rien a changer dans le monde, la perception fait le reste.
@@ -284,16 +291,31 @@ public sealed class WorldPlanRuntime : IPlanRuntime
         return Strike(zombie, amount);
     }
 
-    /// <summary>Le coup lui-meme, une fois su qui l'on frappe et avec quelle force.</summary>
+    /// <summary>
+    /// Le coup lui-meme, une fois su qui l'on frappe et avec quelle force.
+    ///
+    /// Il ne rend vrai que s'il met le zombie a terre, et c'est ce qui permet de tuer. L'action
+    /// declare <c>threat_down(?threat)</c> comme effet : tant que le zombie tient debout, cet effet
+    /// n'a pas eu lieu, l'action a donc echoue au sens de l'executeur, et l'echec devient une
+    /// replanification — qui reconduit au meme coup, jusqu'a ce qu'il porte.
+    ///
+    /// L'alternative etait de faire boucler l'executeur sur l'action tant que la cible tient. Elle a
+    /// ete ecartee : elle aurait donne au combat une boucle a lui, hors du cycle decision-plan-echec
+    /// que tout le reste du jeu emprunte, et un survivant acharne sur un zombie aurait cesse de
+    /// reconsiderer la fuite entre deux coups.
+    ///
+    /// Le bruit, la munition et la durabilite sont deja consommes quand on arrive ici : le coup a
+    /// bien ete porte, c'est son resultat qui n'est pas celui annonce.
+    /// </summary>
     private bool Strike(Zombie zombie, float amount)
     {
         bool downed = zombie.TakeDamage(amount);
 
-        Log(downed
+        Fought?.Invoke(downed
             ? $"{_survivor.Name} met {zombie.Id} a terre"
             : $"{_survivor.Name} frappe {zombie.Id} : {zombie.Health:0}/{zombie.MaxHealth:0} points de vie");
 
-        if (!downed) return true;
+        if (!downed) return false;
 
         _horde?.Remove(zombie.Id);
 
@@ -335,7 +357,7 @@ public sealed class WorldPlanRuntime : IPlanRuntime
 
         if (landing == zombie.Position)
         {
-            Log($"{_survivor.Name} pousse {zombie.Id} : il est acule, rien ne bouge");
+            Fought?.Invoke($"{_survivor.Name} pousse {zombie.Id} : il est acule, rien ne bouge");
             return false;
         }
 
@@ -343,7 +365,7 @@ public sealed class WorldPlanRuntime : IPlanRuntime
         zombie.LoseTrack();
         _world.SetEntity(zombie.Id, EntityKind.Zombie, landing);
 
-        Log($"{_survivor.Name} repousse {zombie.Id} vers {landing}");
+        Fought?.Invoke($"{_survivor.Name} repousse {zombie.Id} vers {landing}");
         return true;
     }
 
@@ -459,8 +481,12 @@ public sealed class WorldPlanRuntime : IPlanRuntime
 
     /// <summary>
     /// Lance quelque chose de bruyant a une case visee, sans s'y trouver. C'est ce qui separe la
-    /// diversion de celui qui la provoque : <c>CreateNoiseDistraction</c> faisait deja du bruit, mais
-    /// sous ses propres pieds, ce qui attirait la horde sur soi.
+    /// diversion de celui qui la provoque : la diversion sur place faisait du bruit sous ses propres
+    /// pieds, et attirait donc la horde sur soi.
+    ///
+    /// Aucun plan ne demande plus cela : <c>ThrowFirecracker</c> a ete retiree du domaine au livrable
+    /// 15, en meme temps que l'objectif <c>CreateDistraction</c>. Se sacrifier pour degager un allie
+    /// n'est pas un reflexe, c'est une strategie — elle revient au joueur, et le moteur reste pret.
     /// </summary>
     public bool ThrowNoise(string target, float amount)
     {
@@ -681,11 +707,13 @@ public sealed class WorldPlanRuntime : IPlanRuntime
     }
 
     /// <summary>
-    /// Soigner, soi-meme ou quelqu'un d'autre. Une seule methode pour <c>HealSelf</c> et
-    /// <c>HealAlly</c> : c'est le sujet du fait qui les distingue, pas deux branches de code.
+    /// Soigner. Le sujet du fait dit qui : <c>HealSelf</c> pose <c>healed(agent)</c>, et c'est le seul
+    /// soin que le domaine sache produire depuis le livrable 15. La methode reste ecrite sur un sujet
+    /// quelconque, parce que c'est le fait qui designe le patient et non une branche de code : une
+    /// action de soin rendue au joueur par une instruction tactique n'aurait rien a recompiler.
     ///
-    /// Le montant vient de la fiche du soignant, pas de celle du blesse — c'est ce qui fait de Claire
-    /// une secouriste : la meme boite de medicaments rend davantage entre ses mains.
+    /// Le montant vient de la fiche du soignant — c'est ce qui fait de Claire une secouriste : la meme
+    /// boite de medicaments rend davantage entre ses mains.
     /// </summary>
     private bool Heal(string subject)
     {
@@ -731,22 +759,6 @@ public sealed class WorldPlanRuntime : IPlanRuntime
         return carried.FirstOrDefault(item =>
                    !item!.Id.Equals(_survivor.ObjectiveItem, StringComparison.OrdinalIgnoreCase))
             ?? carried.FirstOrDefault();
-    }
-
-    /// <summary>
-    /// Rassurer un allie : l'action speciale de Claire. Elle ne coute aucun objet et ne change rien
-    /// au monde — seulement l'etat d'esprit de quelqu'un, ce qui suffit a lui faire lacher la fuite
-    /// pour reprendre la mission.
-    /// </summary>
-    private bool Calm(string subject)
-    {
-        if (ResolveSurvivor(subject) is not { } listener) return false;
-        if (!listener.Alive || ReferenceEquals(listener, _survivor)) return false;
-        if (!_sharing.CanTalk(_survivor, listener)) return false;
-
-        listener.Calm(_survivor.Settings.CalmAmount);
-        Log($"{_survivor.Name} rassure {listener.Name} : panique {listener.Panic:P0}");
-        return true;
     }
 
     /// <summary>

@@ -148,6 +148,8 @@ public sealed class PerceptionSystem(PerceptionSettings? settings = null)
             seenHeavy.Add(heavy.Id);
         }
 
+        RememberZones(knowledge, world.Grid, visible, now);
+
         InvalidateVanishedEntities(knowledge, visibleSet, seenEntities, now);
         InvalidateVanishedItems(knowledge, visibleSet, seenItems, now);
         InvalidateVanishedHeavy(knowledge, visibleSet, seenHeavy, now);
@@ -200,6 +202,52 @@ public sealed class PerceptionSystem(PerceptionSettings? settings = null)
         }
 
         return heard;
+    }
+
+    /// <summary>
+    /// Les lieux que le regard designe : apercevoir un bout d'entrepot, c'est savoir qu'il y a un
+    /// entrepot la (livrable 15, prerequis des batiments).
+    ///
+    /// <para>
+    /// Seules les categories dont la carte compte plusieurs exemplaires passent par ici
+    /// (<see cref="ZoneKinds.IsCommon"/>). La pharmacie, le camp et l'extraction sont annonces au
+    /// briefing et se reconnaissent au sol : leur souvenir appartient au depart de la mission, et le
+    /// remplacer par « la premiere case que j'en ai vue » deplacerait un lieu que tout le reste du
+    /// jeu tient pour fixe.
+    /// </para>
+    ///
+    /// <para>
+    /// Le premier regard fait foi : la croyance ne se reecrit pas tant qu'elle designe une case ou
+    /// l'on peut se tenir. Un lieu qui se deplacerait a chaque coup d'oeil ferait replanifier sans
+    /// fin celui qui s'y rend. En revanche, une facade vue de loin — un mur, donc une case ou
+    /// personne ne va — cede la place des qu'une case praticable du meme lieu est apercue : c'est le
+    /// moment ou l'on apprend par ou entrer.
+    /// </para>
+    /// </summary>
+    private static void RememberZones(
+        AgentKnowledge knowledge, GridMap grid, IReadOnlyList<GridPosition> visible, double now)
+    {
+        if (grid.Zones.Count == 0 || visible.Count == 0) return;
+
+        foreach (var zone in grid.Zones)
+        {
+            if (!zone.Kind.IsCommon()) continue;
+
+            var known = knowledge.GetLocation(zone.Name);
+            if (known is not null && knowledge.MentalMap.IsWalkable(known.Value)) continue;
+
+            GridPosition? seen = null;
+
+            foreach (var cell in visible)
+            {
+                if (!zone.Contains(cell)) continue;
+
+                seen = cell;
+                if (knowledge.MentalMap.IsWalkable(cell)) break;
+            }
+
+            if (seen is { } spot) knowledge.RememberLocation(zone.Name, zone.Kind, spot, now);
+        }
     }
 
     /// <summary>

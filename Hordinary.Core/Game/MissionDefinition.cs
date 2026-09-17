@@ -60,8 +60,9 @@ public sealed record MissionDefinition
     public string Item { get; init; } = Survivor.DefaultObjectiveItem;
 
     /// <summary>
-    /// Le camp : point de depart <b>et</b> point de retour. Une mission est terminee quand l'objet
-    /// y revient, et la partie quand tout le monde y est rentre.
+    /// Le camp : point de depart <b>et</b> point de retour. La partie est terminee quand tout le
+    /// monde y est rentre — avec l'objet c'est une victoire, sans lui et le temps ecoule c'est une
+    /// defaite. Le retour d'un seul ne conclut rien.
     /// </summary>
     public ZoneKind Camp { get; init; } = ZoneKind.Start;
 
@@ -76,6 +77,16 @@ public sealed record MissionDefinition
 
     /// <summary>Nombre d'agents conseille. Indicatif : l'ecran de preparation n'en fait pas une regle.</summary>
     public int RecommendedTeam { get; init; } = 3;
+
+    /// <summary>
+    /// Temps imparti a cette mission-la, en secondes. Absent, c'est <c>mission.time_limit</c> de
+    /// <c>config/game_config.json</c> qui s'applique : une mission ne redit que ce qui la distingue.
+    ///
+    /// Zero desamorce le chronometre pour cette mission : le van attend indefiniment. Ce n'est pas
+    /// un reglage de confort mais une vraie variante de regle — une mission d'installation, ou une
+    /// mission de demonstration qu'on veut laisser tourner, n'a pas de van qui part.
+    /// </summary>
+    public double? TimeLimit { get; init; }
 
     /// <summary>
     /// L'ambiance du quartier a generer, par identifiant de <c>config/mapgen.json</c> (livrable 13).
@@ -96,6 +107,77 @@ public sealed record MissionDefinition
     /// <summary>Vrai si cette mission veut un quartier genere plutot que la carte dessinee.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public bool IsGenerated => !string.IsNullOrWhiteSpace(MapProfile);
+
+    // --- Missions generees (livrable 16) ---------------------------------------------------------
+    // Ces champs sont absents des missions ecrites a la main, et c'est leur absence qui distingue
+    // les deux. Une mission manuelle garde donc exactement le comportement des livrables 8 a 13 :
+    // rapporter Item au camp. Une mission generee remplace cette condition par ses Requirements,
+    // sans qu'aucune des deux n'ait besoin d'une seconde classe — le suivi de partie, le
+    // planificateur et l'ecran de camp ne voient qu'une MissionDefinition.
+
+    /// <summary>
+    /// Le type d'objectif, pour une mission generee. <c>null</c> : mission ecrite a la main, dont
+    /// l'objectif reste « rapporter <see cref="Item"/> au camp ».
+    /// </summary>
+    public MissionObjectiveKind? Type { get; init; }
+
+    /// <summary>Ce qu'il faut atteindre. Lu seulement quand <see cref="Type"/> est renseigne.</summary>
+    public MissionRequirements? Requirements { get; init; }
+
+    /// <summary>
+    /// Ce que la victoire rapporte, connu avant le depart. Une mission manuelle n'en promet aucune :
+    /// le livrable 16 reste retirable sans que le MVP change de comportement.
+    /// </summary>
+    public List<MissionReward> Rewards { get; init; } = [];
+
+    /// <summary>
+    /// La graine dont cette offre est sortie. Elle n'est pas la graine du quartier
+    /// (<see cref="MapSeed"/>) mais celle du <b>contenu</b> de la mission : deux offres tirees a la
+    /// meme graine et a la meme version du generateur sont identiques.
+    /// </summary>
+    public int? Seed { get; init; }
+
+    /// <summary>Essence debitee au camp au lancement, une seule fois. Affichee avant l'acceptation.</summary>
+    public int EntryFuelCost { get; init; }
+
+    /// <summary>Vrai si la mission vient du generateur du livrable 16.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsOffer => Type is not null;
+
+    /// <summary>
+    /// L'etiquette de difficulte lue comme une valeur. Une mission generee la porte par
+    /// construction ; une mission manuelle l'ecrit en clair et on la relit, ce qui suffit a l'ecran
+    /// de camp pour la trier ou la colorer.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public MissionDifficulty? Level => MissionDifficultyNames.Parse(Difficulty);
+
+    /// <summary>
+    /// Ce qu'il faut poser au sol pour que la mission soit realisable. Une mission manuelle pose ses
+    /// <see cref="Supplies"/> caisses d'<see cref="Item"/> ; une mission generee pose ce que ses
+    /// exigences reclament, et une mission d'elimination ne pose rien.
+    ///
+    /// C'est la seule reponse a la question « qu'est-ce qu'on met dans la zone ? », et elle est ici
+    /// pour que <c>GameRoot</c> et le harnais de test posent la meme chose — deux ecritures
+    /// divergeraient, et le test cesserait de dire quoi que ce soit du jeu.
+    /// </summary>
+    public IReadOnlyList<ItemRequirement> SuppliesFor(ItemCatalogue catalogue)
+    {
+        ArgumentNullException.ThrowIfNull(catalogue);
+
+        if (Type is not { } kind) return [new ItemRequirement(Item, Math.Max(1, Supplies))];
+
+        // Une mission d'elimination ne demande rien a rapporter — et pourtant on pose un objet dans
+        // sa zone. C'est ce qui donne au groupe une raison d'y aller : « tuer huit zombies au
+        // supermarche » n'a aucun demandeur dans le domaine de planification, alors que « il y a
+        // quelque chose a chercher la-bas » en a un depuis le livrable 5. Le combat, lui, reste un
+        // reflexe (FightZombie) et se declenche tout seul une fois sur place. Faire de
+        // l'elimination un but symbolique est une instruction tactique, donc du ressort du
+        // livrable 15 — c'est au joueur de dire « nettoyez cet endroit », pas a l'IA de le decider.
+        if (kind == MissionObjectiveKind.KillZombies) return [new ItemRequirement(Item, 1)];
+
+        return Requirements?.Payload(kind, catalogue) ?? [];
+    }
 
     /// <summary>
     /// Le lieu vise sur une carte donnee. Trois lectures, de la plus precise a la plus generale : le
@@ -229,6 +311,9 @@ public sealed class MissionCatalogue
 
             if (mission.ZombieCount is < 0)
                 throw new InvalidOperationException($"La mission « {mission.Id} » a une horde negative.");
+
+            if (mission.TimeLimit is < 0d)
+                throw new InvalidOperationException($"La mission « {mission.Id} » a un temps imparti negatif.");
         }
     }
 }

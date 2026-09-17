@@ -172,9 +172,29 @@ public partial class CameraController : Camera2D
 
         var half = GetViewportRect().Size / (2f * Zoom.X);
 
-        // Le plancher de zoom garantit half <= demi-decor : les deux bornes ne se croisent jamais.
         GlobalPosition = new Vector2(
-            Mathf.Clamp(GlobalPosition.X, _bounds.Position.X + half.X, _bounds.End.X - half.X),
-            Mathf.Clamp(GlobalPosition.Y, _bounds.Position.Y + half.Y, _bounds.End.Y - half.Y));
+            Axis(GlobalPosition.X, _bounds.Position.X, _bounds.End.X, half.X),
+            Axis(GlobalPosition.Y, _bounds.Position.Y, _bounds.End.Y, half.Y));
+    }
+
+    /// <summary>
+    /// Borne un axe entre les deux positions extremes qui ne montrent pas de vide.
+    ///
+    /// Au plancher de zoom, la demi-fenetre vaut <b>exactement</b> le demi-decor — en arithmetique
+    /// exacte. En virgule flottante elle le depasse d'un millieme de pixel et les deux bornes se
+    /// croisent ; <c>Mathf.Clamp</c> leve alors plutot que de choisir. Le cas etait theorique tant
+    /// qu'un quartier debordait largement de l'ecran, il est devenu courant depuis que les quartiers
+    /// generes tiennent presque dedans.
+    ///
+    /// Quand les bornes se croisent, il n'existe qu'une position acceptable, le centre du decor :
+    /// c'est elle qu'on rend, plutot que d'elargir la tolerance d'un epsilon arbitraire qui laisserait
+    /// passer une fraction de pixel de vide.
+    /// </summary>
+    private static float Axis(float value, float low, float high, float half)
+    {
+        float min = low + half;
+        float max = high - half;
+
+        return min > max ? (low + high) * 0.5f : Mathf.Clamp(value, min, max);
     }
 }

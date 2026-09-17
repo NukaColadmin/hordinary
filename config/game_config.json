@@ -23,6 +23,7 @@
     "force_door": 6,
     "break_window": 8,
     "distraction": 10,
+    "barricade_door": 6,
 
     "obstacle_attenuation": 2,
     "lifetime": 6,
@@ -42,7 +43,6 @@
     "panic_per_wound": 2.5,
     "search_radius": 3,
     "heal_amount": 45,
-    "calm_amount": 0.4,
 
     "melee_range": 1,
     "push_back_distance": 3,
@@ -97,6 +97,10 @@
   },
 
   "planner": {
+    // « gbfs » (livrable 5, ce que le jeu joue) ou « astar » : la meme recherche, ordonnee sur
+    // h seul ou sur g + h. Voir PlannerSearch.
+    "search": "gbfs",
+
     "max_nodes": 1000,
     "max_depth": 20,
     "max_time_ms": 50,
@@ -109,8 +113,6 @@
     "noise_scale": 10,
 
     "danger_threshold": 0.25,
-    "ally_wounded_threshold": 0.6,
-    "ally_panic_threshold": 0.5,
     "door_link_radius": 4,
     "arrival_radius": 1,
     "exploration_fallback_goal": "ExploreUnknownArea"
@@ -147,6 +149,78 @@
     "drop_on_death": true
   },
 
+  "//mission": "Le temps imparti. Une mission n'est pas une partie ouverte : le van ne peut pas attendre indefiniment, et une expedition qui s'eternise n'en est plus une. time_limit est ce delai, en secondes ; a zero, la mission n'est pas chronometree et le van attend. Ecoule, le groupe entier est rappele au van : chacun recoit un ordre de retour, avec le poids recall_priority — plus fort qu'un ordre du joueur (utility_ai.player_order_priority), parce que le depart ne se negocie plus avec la mission, mais un ordre quand meme : celui qui a une horde aux trousses commence par lui echapper. La partie se conclut quand tout le monde est rentre, avec la caisse (victoire) ou sans elle une fois le temps ecoule (defaite). home_radius dit de combien on peut s'ecarter du van sans cesser d'etre rentre : de quoi tourner autour du vehicule en attendant les autres, pas de quoi repartir en mission — au-dela, on est reparti, meme si l'on etait rentre. Une mission de config/missions.json peut redire time_limit pour elle seule. debrief_seconds dit combien de temps la carte reste a l'ecran une fois le verdict rendu, avant que le camp ne reprenne la main et ne propose les missions du lendemain : une mission finie ramene au camp, elle ne fige pas la partie.",
+  "mission": {
+    "time_limit": 300,
+    "recall_priority": 1.0,
+    "home_radius": 2,
+
+    // Le temps que la carte reste a l'ecran apres le verdict, avant que le camp ne reprenne la main
+    // et ne propose les missions du lendemain. Assez pour voir arriver le dernier survivant, pas
+    // assez pour attendre devant une carte ou plus rien ne bouge. A zero, le camp revient aussitot.
+    "debrief_seconds": 5
+  },
+
+  "//mission_generation": "Les missions generees (livrable 16). A l'ouverture de l'ecran de camp, offer_count offres sont tirees ; chacune a une zone cible, un objectif mesurable, une recompense annoncee et un cout d'entree en essence, tous figes des l'affichage. enabled a false rend l'ecran de camp aux seules missions ecrites a la main dans config/missions.json : le livrable reste retirable sans casser le MVP. LA GRAINE d'une offre est derivee de quatre valeurs — graine de partie, jour de campagne, rang de l'offre, generator_version — et c'est cette derniere qui rend le systeme honnete : le jour ou l'on change une borne ou un poids ci-dessous, une ancienne graine ne reproduit plus rien, et l'incrementer dit exactement cela. types donne les poids relatifs des trois objectifs ; un poids nul retire le type sans qu'il faille retirer la ligne. LA DIFFICULTE n'est pas tiree au sort : elle se calcule a partir de ce que la mission demande (la charge) et de la densite de zombies de la zone, ponderees par difficulty.zone_weight, puis comparee aux deux seuils. Tout ce qui suit se lit par elle — le temps imparti, l'equipe conseillee, l'ambiance de quartier, la table de recompenses et le cout d'entree. C'est ce qui empeche l'etiquette et le contenu de diverger. LES RECOMPENSES : guaranteed est une liste d'alternatives dont une est tiree, bonus une liste de supplements tires chacun a bonus_chance. reward_pools nomme ce que chaque categorie peut donner ; une arme doit etre de categorie weapon (config/weapons.json), un medikit et un objet rare ne doivent pas l'etre — le chargement refuse le contraire. LE COUT D'ENTREE est debite une seule fois au lancement, apres validation de l'offre et avant le depart ; consulter ou remplacer une offre ne coute rien, et une defaite ne rembourse pas. LE SECOURS : apres max_attempts_per_offer echecs, l'offre de secours ecrite dans fallback est employee telle quelle et la raison part au journal. Elle est ecrite et non calculee parce qu'une offre de secours calculee echouerait comme les autres.",
+  "mission_generation": {
+    "enabled": true,
+    "offer_count": 3,
+    "generator_version": 1,
+    "max_attempts_per_offer": 40,
+
+    "types": {
+      "KillZombies": 0.35,
+      "CollectObjects": 0.35,
+      "CollectPriorityResources": 0.30
+    },
+
+    "zombies": [3, 12],
+    "objects": { "min_distinct_items": 1, "max_distinct_items": 3, "min_quantity": 1, "max_quantity": 2 },
+    "resources": { "min_distinct_resources": 1, "max_distinct_resources": 2, "min_quantity": 1, "max_quantity": 3 },
+
+    "difficulty": { "medium": 0.34, "hard": 0.67, "zone_weight": 0.5 },
+
+    "entry_fuel_cost_by_difficulty": { "Easy": 1, "Medium": 2, "Hard": 3 },
+    "time_limit_by_difficulty": { "Easy": 180, "Medium": 240, "Hard": 300 },
+    "recommended_team_by_difficulty": { "Easy": 1, "Medium": 2, "Hard": 3 },
+    "map_profile_by_difficulty": { "Easy": "faubourg", "Medium": "banlieue", "Hard": "centre_ville" },
+
+    "rewards_by_difficulty": {
+      "Easy": { "guaranteed": ["Medikit", "Rare"], "bonus": [], "bonus_chance": 0.0 },
+      "Medium": { "guaranteed": ["Medikit", "Weapon"], "bonus": ["Rare"], "bonus_chance": 0.5 },
+      "Hard": { "guaranteed": ["Weapon"], "bonus": ["Medikit", "Rare"], "bonus_chance": 0.5 }
+    },
+
+    "reward_pools": {
+      "Weapon": ["shotgun", "revolver", "machete", "crowbar", "baseball_bat"],
+      "Medikit": ["medikit"],
+      "Rare": ["radio", "flashlight", "toolbox", "ammo_box"]
+    },
+
+    "reward_quantities": {
+      "Weapon": [1, 1],
+      "Medikit": [1, 2],
+      "Rare": [1, 1]
+    },
+
+    "fallback": {
+      "type": "CollectPriorityResources",
+      "target_zone": "station_service",
+      "difficulty": "Easy",
+      "resources": [{ "resource": "fuel", "quantity": 1 }]
+    }
+  },
+
+  "//instructions": "Instructions tactiques en langage naturel (livrable 15). enabled ne commande QUE la traduction d'une phrase libre par un modele de langage : les contraintes, les quatre portillons et le compilateur de domaine tournent sans lui, sur les instructions pre-ecrites de config/instruction_presets.json. Livre a false, comme le reste de ce qui demande le reseau. max_active_constraints borne le nombre de contraintes simultanees — chacune reecrit le domaine, et au-dela d'une poignee plus personne ne sait ce qu'il autorise encore. min_penalty et max_penalty bornent le multiplicateur de penalize ; hors bornes, le portillon 1 refuse. Rappel : penalize n'agit que si planner.search ordonne sur g, donc sous astar et non sous gbfs — sous gbfs la contrainte est acceptee avec un avertissement 'sans effet sur ce moteur de recherche'.",
+  "instructions": {
+    "enabled": false,
+    "max_chars": 200,
+    "max_active_constraints": 5,
+    "min_penalty": 0.1,
+    "max_penalty": 10,
+    "presets_when_disabled": true
+  },
+
   "//debug": "Reglages d'observation, pas de jeu : ils retirent une variable pour rendre les autres lisibles. Ils se reglent ici et nulle part ailleurs, pour qu'une partie se deroule entierement dans le meme regime. enabled est l'interrupteur general : a false, plus de console, plus de touches de debug, plus de texte d'inspection ni d'overlay, quelles que soient les lignes suivantes — on livre le jeu ainsi et on le developpe a true. console_output : le journal (plans, replanifications, bruits, ordres, partages). commands : les touches d'observation F1 a F7, le danger pose a la main, la distraction — pas les commandes du joueur. hud_text : les trois panneaux de texte ; sans eux il reste la carte et la barre d'agents, qui est l'interface du joueur. panic_enabled a false neutralise la panique et le stress (livrable 8) : la panique reste a zero et cesse d'influencer les scores Utility AI, ce qui laisse observer la planification et la navigation seules. Les trois overlays fixent l'etat de depart de F1, F2 et F3.",
   "debug": {
     "enabled": true,
@@ -154,8 +228,8 @@
 
     // Canaux ouverts, par le nom entre crochets qui ouvre chaque ligne du journal. Liste vide : tous.
     // Canaux disponibles : Config, Carte, Zone, Monde, Objet, Camp, Expedition, Utility, Mission,
-    // Agent, Plan, Action, Replan, IA, Partage, Bruit, Zombie, Combat, Ordre, Camera, Navigation,
-    // Rappel, Partie, Debug.
+    // Agent, Plan, Action, Replan, IA, Partage, Bruit, Zombie, Combat, Ordre, Instruction, Camera,
+    // Navigation, Rappel, Partie, Debug.
     //
     // Trois sont fermes par defaut, et pour la meme raison : ils repetent ce qu'un autre dit deja.
     // « IA » redit mot pour mot le bloc de replanification que « Replan » imprime tel que la
@@ -165,15 +239,14 @@
     "console_channels": [
       "Config", "Carte", "Zone", "Monde", "Objet", "Camp", "Expedition", "Utility",
       "Mission", "Agent", "Plan", "Replan", "Bruit", "Zombie", "Combat",
-      "Ordre", "Camera", "Navigation", "Rappel", "Partie", "Debug"
+      "Ordre", "Instruction", "Camera", "Navigation", "Rappel", "Partie", "Debug"
     ],
     "commands": false,
     "hud_text": false,
-    "skip_setup": false,
 
     "panic_enabled": false,
     "show_navigation": false,
-    "show_mental_map": false,
+    "show_mental_map": true,
     "show_noise": false
   },
 
@@ -201,4 +274,3 @@
     "danger_confirmed_threshold": 0.6
   }
 }
-

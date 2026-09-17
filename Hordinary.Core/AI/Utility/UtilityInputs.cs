@@ -6,7 +6,7 @@ namespace Hordinary.AI.Utility;
 /// Le socle de considerations primitives que connait le code (specification, livrable 4).
 ///
 /// Chacune est une fonction pure du contexte vers <c>[0, 1]</c>. Il n'y a volontairement pas de
-/// <c>ComputeFleeScore()</c> ni de <c>ComputeHelpAllyScore()</c> : les objectifs de la specification
+/// <c>ComputeFleeScore()</c> ni de <c>ComputeHideScore()</c> : les objectifs de la specification
 /// sont des compositions de ces entrees, decrites dans <c>config/utility_goals.json</c>.
 /// </summary>
 public static class UtilityInputs
@@ -26,6 +26,11 @@ public static class UtilityInputs
             ["threat_pressure"] = context => context.ThreatPressure,
             ["personal_safety"] = context => 1f - context.ThreatPressure,
 
+            // « Un allie est en mauvaise posture. » Plus aucun objectif livre ne la lit depuis le
+            // retrait de CreateDistraction (livrable 15) : c'etait la seule entree qui faisait agir un
+            // survivant sur le danger d'un autre. Elle reste lue par le moniteur de replanification —
+            // regarder ce qui arrive a un allie n'est pas s'en meler — et par les strategies que le
+            // joueur composera.
             ["ally_danger"] = context => context.AllyDanger,
             ["heard_noise"] = context => context.LoudestNoise,
 
@@ -49,15 +54,28 @@ public static class UtilityInputs
             // trousse ; une mission qui va chercher un jerrican rend la distinction obligatoire.
             ["has_remedy"] = context => context.Self.Inventory.HasHealingItem ? 1f : 0f,
 
+            // « J'ai de quoi me battre » : une arme en main, et en etat de frapper. Une machette ruinee
+            // ne compte pas — elle reste dans le sac pour etre rapportee, pas pour donner du courage.
+            // C'est la seule entree qui parle de ce que le survivant tient, et elle existe pour que se
+            // retourner ou s'en aller cesse d'etre la meme decision les mains vides et le fusil charge.
+            ["armed"] = context => context.Self.Inventory.CanAttackWith(context.Self.Inventory.EquippedWeapon) ? 1f : 0f,
+
             // Groupe. « ally_wounded » et « ally_panicking » ne se voient pas : ils n'arrivent que
-            // par la parole (livrable 7). Un survivant qui n'a parle a personne les lit a zero, et
-            // ne part donc pas soigner un blesse qu'il aurait devine.
+            // par la parole (livrable 7), et c'est ce qui donne sa valeur au partage de connaissances.
+            // Aucun objectif livre ne s'en sert depuis le livrable 15 — porter secours de soi-meme n'est
+            // plus une decision du survivant — mais elles restent le vocabulaire ou puisent les strategies
+            // que le joueur, lui, a le droit de composer.
             ["has_ally"] = context => context.Allies.Count > 0 ? 1f : 0f,
             ["ally_wounded"] = context => 1f - context.AllyHealth,
             ["ally_panicking"] = context => context.AllyPanic,
 
             // Connaissances.
             ["objective_known"] = context => context.KnowsObjective ? 1f : 0f,
+
+            // Un objet apercu peut se trouver sur un ilot coupe de la carte mentale. Le connaitre
+            // ne promet donc pas qu'A* puisse l'atteindre ; cette entree ferme le ramassage jusqu'a
+            // ce qu'un passage existe.
+            ["objective_reachable"] = context => context.CanReachObjective ? 1f : 0f,
 
             // « J'y suis alle, il n'y avait rien. » Sans cette entree, un survivant qui a fouille le
             // lieu de la mission et n'y a rien trouve rescore la recherche a chaque decision et repart

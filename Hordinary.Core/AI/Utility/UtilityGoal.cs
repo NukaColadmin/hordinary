@@ -39,7 +39,7 @@ public sealed class GoalPrecondition
 /// preconditions et des considerations ponderees.
 ///
 /// Il n'existe volontairement aucune classe ni methode par objectif : <c>FleeDanger</c> et
-/// <c>HelpAlly</c> sont deux instances de ce meme type, decrites dans
+/// <c>Hide</c> sont deux instances de ce meme type, decrites dans
 /// <c>config/utility_goals.json</c>. Ajouter, retirer ou repondérer un objectif ne demande pas de
 /// recompilation.
 /// </summary>

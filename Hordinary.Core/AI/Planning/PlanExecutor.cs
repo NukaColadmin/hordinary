@@ -51,7 +51,7 @@ public readonly record struct ActionFailure(ActionFailureKind Kind, string Reaso
 /// Ce que le moteur de jeu doit savoir faire pour executer les verbes primitifs.
 ///
 /// L'interface est volontairement minuscule, et surtout : elle ne comporte pas une methode par
-/// action. <c>OpenDoor</c>, <c>SearchRoom</c>, <c>HealAlly</c> et <c>ShareKnowledge</c> passent tous
+/// action. <c>OpenDoor</c>, <c>SearchRoom</c>, <c>HealSelf</c> et <c>ShareKnowledge</c> passent tous
 /// par <see cref="SetFlag"/>, avec un fait different. C'est ce qui permet d'ajouter une action au jeu
 /// en editant <c>config/planner_domain.json</c>, sans toucher ni au coeur ni a la couche Godot.
 /// </summary>
@@ -97,6 +97,9 @@ public interface IPlanRuntime
     /// <summary>
     /// Fait du bruit ailleurs qu'ou l'on est (livrable 11) : le petard lance. C'est ce qui separe la
     /// diversion de celui qui la provoque, et donc ce qui la rend utile.
+    ///
+    /// Plus aucune action du domaine ne l'appelle depuis le livrable 15 : la diversion est revenue au
+    /// joueur. Le geste reste executable, c'est le demandeur qui a change.
     /// </summary>
     bool ThrowNoise(string target, float amount);
 

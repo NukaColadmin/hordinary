@@ -1,6 +1,7 @@
 using System.Numerics;
 using System.Reflection;
 using Hordinary.AI.Navigation;
+using Hordinary.AI.Planning;
 using Hordinary.AI.Utility;
 using Hordinary.Agents;
 using Hordinary.Config;
@@ -185,6 +186,96 @@ public class UtilityTests
         Assert.False(selector.ShouldEvaluate(1.1d));
         selector.Request("survivant blesse");
         Assert.True(selector.ShouldEvaluate(1.1d));
+    }
+
+    /// <summary>
+    /// L'hysteresis protege le titulaire, et c'est son role — mais elle ne doit pas pouvoir figer un
+    /// survivant pour de bon. Un objectif installe qui reste sous le pretendant d'un ecart inferieur
+    /// au seuil ne lache jamais : c'est ce qui clouait Bob et Claire dans la pharmacie, <c>Hide</c> a
+    /// 0,25 contre le rappel du van a 0,37, du debut de la partie a la fin.
+    ///
+    /// <c>Request</c> ne suffit pas a les en sortir : il rend la main tout de suite, mais laisse au
+    /// titulaire le benefice du doute. <c>Reconsider</c> est ce qu'il faut a un ordre qui ne se
+    /// discute plus — et il refait la decision, il ne l'impose pas.
+    /// </summary>
+    [Fact]
+    public void Un_ordre_qui_ne_se_discute_plus_deloge_un_objectif_installe()
+    {
+        var goals = UtilityGoalSet.FromJson("""
+            {
+              "goals": [
+                { "name": "SeTerrer", "considerations": [ { "input": "constant", "curve": "linear", "max": 0.25 } ] },
+                { "name": "RentrerAuVan", "considerations": [ { "input": "player_priority", "curve": "linear" } ] }
+              ]
+            }
+            """);
+
+        var alice = Alice(new GridPosition(10, 10));
+        var selector = new UtilitySelector(goals, Tuning);
+
+        // Personne ne la rappelle encore : elle se terre.
+        Assert.Equal("SeTerrer", selector.Evaluate(Context(alice), 0d).Goal);
+
+        // Le van annonce le depart. Le rappel est le meilleur score — mais de 0,12 seulement,
+        // quand l'hysteresis en demande 0,15.
+        alice.Mission = new MissionOrder("rentrer au van", new GridPosition(0, 0), 0.37f);
+
+        selector.Request("rappel du van");
+        var ignore = selector.Evaluate(Context(alice, 1d), 1d);
+
+        Assert.Equal("SeTerrer", ignore.Goal);
+        Assert.False(ignore.Changed, "Une simple demande ne doit pas franchir l'hysteresis.");
+
+        // Reconsiderer, en revanche, remet la decision a plat.
+        selector.Reconsider("rappel du van");
+        var recalled = selector.Evaluate(Context(alice, 2d), 2d);
+
+        Assert.True(recalled.Changed);
+        Assert.Equal("RentrerAuVan", recalled.Goal);
+    }
+
+    /// <summary>
+    /// Celui qui rapporte la caisse ne repart pas en reconnaissance.
+    ///
+    /// Sans cette precondition, arriver au van fermait <c>ReachExtraction</c> sur
+    /// <c>at_extraction</c> et rendait la main a <c>ExploreUnknownArea</c> : le porteur ressortait,
+    /// cessait d'etre a l'extraction, y revenait — et faisait l'aller-retour jusqu'a la fin de la
+    /// partie. Le probleme n'est pas la sortie du van, c'est qu'explorer reste ouvert a quelqu'un
+    /// qui a fini ce qu'il etait venu faire.
+    /// </summary>
+    [Fact]
+    public void Le_porteur_de_la_caisse_n_a_plus_a_explorer()
+    {
+        // Terrain a peine entrevu : il reste partout ou aller voir, et « frontier_known » est vrai.
+        const int size = 21;
+        var map = TestMaps.Parse(Enumerable.Repeat(new string('.', size), size).ToArray());
+        var knowledge = new AgentKnowledge("alice", map.Width, map.Height, map.Origin);
+        var start = new GridPosition(10, 10);
+
+        foreach (var cell in map.AllPositions().Where(cell => cell.ChebyshevDistanceTo(start) <= 2))
+        {
+            knowledge.ObserveCell(cell, map.GetCell(cell), map.IsIndoor(cell), 0d);
+        }
+
+        var alice = new Survivor("alice", "Alice", knowledge, settings: DeliveredConfig.Survivor, catalogue: DemoMap.Items)
+        {
+            Position = start,
+        };
+
+        var scorer = new UtilityScorer(DeliveredGoals);
+
+        // Les mains vides, il reste du terrain a decouvrir : l'exploration est ouverte.
+        Assert.True(
+            ScoreOf(scorer.ScoreAll(Context(alice)), "ExploreUnknownArea") > 0f,
+            "Sans la caisse, un survivant devant une carte inconnue doit vouloir explorer.");
+
+        // La caisse en main, elle ne l'est plus — quelle que soit l'etendue de ce qu'il reste a voir.
+        alice.AddToInventory(Survivor.DefaultObjectiveItem);
+
+        var carrying = scorer.ScoreAll(Context(alice)).First(score => score.Goal == "ExploreUnknownArea");
+
+        Assert.True(carrying.IsBlocked, "Le porteur de la caisse ne doit plus pouvoir partir explorer.");
+        Assert.Contains("has_objective", carrying.BlockedBy);
     }
 
     [Fact]
@@ -460,16 +551,59 @@ public class UtilityTests
     // --- Objectifs pilotes par la configuration ---------------------------------------------
 
     [Fact]
-    public void La_configuration_livree_declare_les_douze_objectifs_de_la_specification()
+    public void Un_objet_repere_sur_un_ilot_inaccessible_n_est_pas_choisi()
     {
-        // Les douze objectifs de la section 11.2, dans l'ordre. Le catalogue etant une donnee, il
-        // peut en porter d'autres — le livrable 7 y ajoute CalmAlly, l'action speciale de Claire —
-        // mais aucun des douze ne doit disparaitre.
+        var map = TestMaps.Parse(
+            "..#..",
+            "..#..",
+            "..#..");
+        var knowledge = new AgentKnowledge("alice", map.Width, map.Height, map.Origin);
+
+        foreach (var cell in map.AllPositions())
+            knowledge.ObserveCell(cell, map.GetCell(cell), map.IsIndoor(cell), 0d);
+
+        var alice = new Survivor(
+            "alice", "Alice", knowledge,
+            settings: DeliveredConfig.Survivor,
+            catalogue: DemoMap.Items)
+        {
+            Position = new GridPosition(0, 1),
+        };
+
+        knowledge.RememberItem(
+            "objective-1", Survivor.DefaultObjectiveItem, new GridPosition(4, 1), 0d);
+
+        var navigation = new NavigationGrid(knowledge.MentalMap, DeliveredConfig.Navigation);
+        var context = new UtilityContext(
+            alice,
+            0d,
+            Tuning,
+            DeliveredConfig.Exploration,
+            Reachability.LazyFrom(navigation, alice.Position));
+
+        var pickup = new UtilityScorer(DeliveredGoals)
+            .ScoreAll(context)
+            .First(score => score.Goal == "PickUpObjective");
+
+        Assert.True(context.KnowsObjective);
+        Assert.False(context.CanReachObjective);
+        Assert.Null(context.Locate("objective"));
+        Assert.True(pickup.IsBlocked);
+        Assert.Contains("objective_reachable", pickup.BlockedBy);
+    }
+
+    [Fact]
+    public void La_configuration_livree_declare_les_objectifs_restants_de_la_specification()
+    {
+        // Les objectifs de la section 11.2, dans l'ordre, moins ceux que le livrable 15 a retires :
+        // HelpAlly, HealAlly, CalmAlly, Regroup et CreateDistraction. Porter secours n'est plus une
+        // decision que le survivant prend seul, et attirer la horde sur soi pour degager un allie
+        // encore moins : ce sont des strategies, et les strategies viennent du joueur. Le catalogue
+        // etant une donnee il peut en porter d'autres, mais aucun de ceux-ci ne doit disparaitre.
         string[] required =
         [
-            "CompletePlayerMission", "ExploreUnknownArea", "FleeDanger", "HelpAlly", "HealSelf",
-            "HealAlly", "SearchForObjective", "PickUpObjective", "ReachExtraction", "Hide",
-            "Regroup", "CreateDistraction",
+            "CompletePlayerMission", "ExploreUnknownArea", "FleeDanger", "HealSelf",
+            "SearchForObjective", "PickUpObjective", "ReachExtraction", "Hide",
         ];
 
         var declared = DeliveredGoals.Goals.Select(goal => goal.Name).ToArray();
@@ -490,6 +624,28 @@ public class UtilityTests
         {
             Assert.InRange(score.Score, 0f, 1f);
         }
+    }
+
+    [Fact]
+    public void Personne_ne_decide_seul_de_creer_une_diversion()
+    {
+        // Attirer la horde sur soi pour degager un allie n'est pas un reflexe : c'est un sacrifice
+        // calcule, decide en sachant qui est ou et ce qu'on protege. Il revient au joueur (livrable
+        // 15), et rien dans les catalogues livres ne doit le reprendre a son compte.
+        Assert.DoesNotContain(DeliveredGoals.Goals, goal => goal.Name.Contains("Distraction", StringComparison.OrdinalIgnoreCase));
+
+        var domain = PlanningDomain.FromJson(DemoMap.ReadConfig("planner_domain.json"));
+
+        Assert.Null(domain.FindAction("CreateNoiseDistraction"));
+        Assert.Null(domain.FindAction("ThrowFirecracker"));
+        Assert.Null(domain.FindGoal("CreateDistraction"));
+
+        // Le fait symbolique part avec les actions qui le posaient : un predicat que plus personne ne
+        // lit ni n'ecrit n'a pas a survivre a son action.
+        Assert.DoesNotContain(
+            domain.Actions,
+            action => action.Effects.Concat(action.Preconditions)
+                .Any(fact => fact.Contains("distraction_created", StringComparison.OrdinalIgnoreCase)));
     }
 
     [Fact]
@@ -703,5 +859,73 @@ public class UtilityTests
     {
         // Un pas de temps volontairement enorme : la panique rejoint exactement la valeur visee.
         survivor.UpdatePanic(value, 1000f);
+    }
+
+    /// <summary>
+    /// Une arme en main change la decision, pas seulement le plan.
+    ///
+    /// C'etait la moitie manquante : GBFS savait deja frapper avec ce qu'on tient, mais la Utility AI
+    /// ne regardait pas ce que le survivant tenait — un survivant a qui le joueur venait de confier
+    /// le fusil du camp prenait exactement les memes decisions que s'il partait les mains vides, et
+    /// fuyait le zombie unique qu'il pouvait abattre. C'est l\'entree « armed » qui les separe.
+    ///
+    /// Les deux Alice sont par ailleurs identiques : meme position, meme sante, meme zombie venant
+    /// droit sur elles.
+    /// </summary>
+    [Fact]
+    public void Une_arme_en_main_rend_le_combat_plus_attirant_que_les_mains_vides()
+    {
+        static Survivor Chased(string? weaponId)
+        {
+            var survivor = Alice(new GridPosition(10, 10));
+
+            survivor.Knowledge.RememberEntity(
+                "zombie-1", EntityKind.Zombie, new GridPosition(11, 10), 0d, heading: new Vector2(-1f, 0f));
+
+            if (weaponId is null) return survivor;
+
+            Assert.True(survivor.AddToInventory(weaponId));
+            Assert.True(survivor.Inventory.EquipWeapon(weaponId));
+            return survivor;
+        }
+
+        string weapon = DemoMap.Items.Items.First(item => item.IsWeapon).Id;
+
+        var scorer = new UtilityScorer(DeliveredGoals);
+
+        float empty = ScoreOf(scorer.ScoreAll(Context(Chased(null))), "FightZombie");
+        float armed = ScoreOf(scorer.ScoreAll(Context(Chased(weapon))), "FightZombie");
+
+        Assert.True(armed > empty, $"Arme {armed:0.00} devrait battre mains nues {empty:0.00}.");
+
+        // Et la consequence, celle qui se voit en jeu : les mains vides, fuir l'emporte encore.
+        Assert.True(
+            ScoreOf(scorer.ScoreAll(Context(Chased(null))), "FleeDanger") > empty,
+            "Un survivant desarme devrait continuer de preferer partir.");
+    }
+
+    /// <summary>
+    /// Une arme hors d'usage ne compte pas. Elle reste dans le sac — c'est une information a ramener
+    /// au camp — mais elle ne donne pas de courage, et ce serait le pire moment pour s'en apercevoir.
+    /// </summary>
+    [Fact]
+    public void Une_arme_cassee_ne_rend_pas_le_combat_plus_attirant()
+    {
+        var melee = DemoMap.Items.Items.First(item => item.IsWeapon && item.Durability > 0);
+
+        var alice = Alice(new GridPosition(10, 10));
+        alice.Knowledge.RememberEntity(
+            "zombie-1", EntityKind.Zombie, new GridPosition(11, 10), 0d, heading: new Vector2(-1f, 0f));
+
+        Assert.True(alice.AddToInventory(melee.Id));
+        Assert.True(alice.Inventory.EquipWeapon(melee.Id));
+
+        var scorer = new UtilityScorer(DeliveredGoals);
+        float intact = ScoreOf(scorer.ScoreAll(Context(alice)), "FightZombie");
+
+        for (int blow = 0; blow < melee.Durability; blow++) alice.Inventory.RegisterStrike(melee.Id);
+
+        Assert.True(alice.Inventory.IsBroken(melee.Id));
+        Assert.True(ScoreOf(scorer.ScoreAll(Context(alice)), "FightZombie") < intact);
     }
 }

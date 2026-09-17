@@ -1,10 +1,13 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Hordinary.AI.Instructions;
 using Hordinary.AI.Navigation;
+using Hordinary.AI.Planning;
 using Hordinary.AI.Replanning;
 using Hordinary.AI.Utility;
 using Hordinary.AI.Zombies;
 using Hordinary.Agents;
+using Hordinary.Game;
 using Hordinary.World;
 
 namespace Hordinary.Config;
@@ -31,6 +34,9 @@ public sealed record GameConfig
     public KnowledgeSettings Knowledge { get; init; } = new();
     public ExplorationSettings Exploration { get; init; } = new();
     public InventorySettings Inventory { get; init; } = new();
+    public MissionSettings Mission { get; init; } = new();
+    public MissionGenerationSettings MissionGeneration { get; init; } = new();
+    public InstructionSettings Instructions { get; init; } = new();
     public DebugSettings Debug { get; init; } = new();
 
     public static GameConfig Default { get; } = new();
@@ -106,13 +112,6 @@ public sealed class DebugSettings
     public bool HudText { get; init; } = true;
 
     /// <summary>
-    /// Saute l'ecran de preparation : la premiere mission du catalogue demarre aussitot avec toute
-    /// l'equipe. C'est ce qui permet de relancer une partie en boucle en observant une seule chose,
-    /// sans recliquer trois fois — et ce qui rend le jeu lancable sans interface, en integration.
-    /// </summary>
-    public bool SkipSetup { get; init; }
-
-    /// <summary>
     /// A <c>false</c>, la panique et le stress sont neutralises des le demarrage : la panique reste
     /// a zero et cesse d'influencer les scores Utility AI, la fuite et le budget de decision.
     ///
@@ -130,17 +129,14 @@ public sealed class DebugSettings
     public bool ShowNoise { get; init; }
 
     // --- Ce qui est reellement allume ------------------------------------------------------------
-    // Le reste du programme ne lit que ces quatre-la, jamais les proprietes brutes ci-dessus : c'est
-    // le seul endroit ou l'interrupteur general s'applique, donc le seul endroit ou l'on peut
-    // l'oublier.
+    // Le reste du programme ne lit que ceux-la, jamais les proprietes brutes ci-dessus : c'est le
+    // seul endroit ou l'interrupteur general s'applique, donc le seul endroit ou l'on peut l'oublier.
 
     public bool ShowsConsole => Enabled && ConsoleOutput;
 
     public bool AcceptsCommands => Enabled && Commands;
 
     public bool ShowsText => Enabled && HudText;
-
-    public bool SkipsSetup => Enabled && SkipSetup;
 
     public bool ShowsOverlay(bool wanted) => Enabled && wanted;
 
@@ -151,9 +147,24 @@ public sealed class DebugSettings
 /// Limites et reglages du planificateur GBFS (specification, livrable 5 : « Limites de recherche »
 /// et « Version enrichie » de l'heuristique). Toutes ces valeurs viennent de
 /// <c>config/game_config.json</c>, section <c>planner</c>.
+///
+/// <para>
+/// Un <c>record</c> et non une classe, comme <see cref="GameConfig"/> : desserrer un seul plafond
+/// sans recopier a la main les dix autres reglages — l'heuristique comprise — doit rester possible,
+/// sans quoi ce qui desserre finit par diverger de ce qui est livre.
+/// </para>
 /// </summary>
-public sealed class PlannerSettings
+public sealed record PlannerSettings
 {
+    /// <summary>
+    /// Ce qui ordonne la file de recherche : <c>gbfs</c> ou <c>astar</c>.
+    ///
+    /// GBFS par defaut parce que c'est ce que le livrable 5 demande et ce sur quoi l'equilibrage du
+    /// domaine a ete regle. A* est la pour etre compare, pas pour remplacer : les deux tournent sur
+    /// la meme boucle, et basculer de l'un a l'autre ne demande que ce champ.
+    /// </summary>
+    public PlannerSearch Search { get; init; } = PlannerSearch.Gbfs;
+
     /// <summary>Maximum de noeuds explores avant d'abandonner la recherche.</summary>
     public int MaxNodes { get; init; } = 1000;
 
@@ -189,16 +200,6 @@ public sealed class PlannerSettings
 
     /// <summary>Danger percu a partir duquel un lieu recoit le fait <c>zombie_near</c>.</summary>
     public float DangerThreshold { get; init; } = 0.25f;
-
-    /// <summary>
-    /// Sante rapportee en dessous de laquelle un allie recoit le fait <c>ally_wounded</c> — ce qui
-    /// donne enfin a <c>HealAlly</c> une precondition verifiable. Elle ne s'observe pas a distance :
-    /// seul le partage de connaissances la transmet (livrable 7).
-    /// </summary>
-    public float AllyWoundedThreshold { get; init; } = 0.6f;
-
-    /// <summary>Panique rapportee au-dela de laquelle un allie recoit le fait <c>ally_panicking</c>.</summary>
-    public float AllyPanicThreshold { get; init; } = 0.5f;
 
     /// <summary>Distance, en cellules, en deca de laquelle une porte connue est rattachee a un lieu.</summary>
     public int DoorLinkRadius { get; init; } = 4;

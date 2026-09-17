@@ -1,3 +1,4 @@
+using Hordinary.AI.Instructions;
 using Hordinary.AI.Navigation;
 using Hordinary.AI.Planning;
 using Hordinary.AI.Replanning;
@@ -27,7 +28,7 @@ public sealed class SurvivorAgent
     private readonly GameConfig _config;
 
     /// <summary>Le domaine commun, avant toute specialisation : la base de chaque recalcul.</summary>
-    private readonly PlanningDomain _baseDomain;
+    private PlanningDomain _baseDomain;
 
     private float _pursuit;
 
@@ -46,6 +47,14 @@ public sealed class SurvivorAgent
     /// </summary>
     public PlanningDomain Domain { get; private set; }
 
+    /// <summary>
+    /// Les contraintes actives du joueur (livrable 15), quand la mission en porte. Le survivant ne
+    /// les lit jamais pour decider : elles ont deja reecrit son domaine avant qu'il ne planifie. Il
+    /// les garde pour une seule raison — verifier apres coup que le plan produit dit bien ce que le
+    /// joueur a demande (portillon 4).
+    /// </summary>
+    public TacticalInstructions? Instructions { get; set; }
+
     public UtilitySelector Utility { get; }
     public Planner Planner { get; }
     public WorldPlanRuntime Runtime { get; }
@@ -62,6 +71,16 @@ public sealed class SurvivorAgent
 
     /// <summary>Journal d'execution du plan, tel que le moteur le raconte.</summary>
     public event Action<string>? Logged;
+
+    /// <summary>Ce que le survivant porte comme coups, relaye depuis <see cref="Runtime"/>.</summary>
+    public event Action<string>? Fought;
+
+    /// <summary>
+    /// Un plan produit qui trahit une contrainte du joueur (portillon 4). C'est un defaut du
+    /// compilateur, pas du survivant : il a son propre canal parce qu'il ne doit jamais se perdre
+    /// dans le journal d'execution, qui est ferme par defaut.
+    /// </summary>
+    public event Action<string>? Violated;
 
     public SurvivorAgent(
         SurvivorProfile profile,
@@ -128,6 +147,7 @@ public sealed class SurvivorAgent
             Survivor, world, Follower, Astar, Survivor.Settings, band, sharing, horde, catalogue);
 
         Runtime.Logged += message => Logged?.Invoke(message);
+        Runtime.Fought += message => Fought?.Invoke(message);
         Runtime.WorldChanged += _ => Perceive();
 
         // Le suiveur previent quand la case suivante devient infranchissable. Avec la carte mentale,
@@ -137,6 +157,10 @@ public sealed class SurvivorAgent
 
         Executor = new PlanExecutor(Runtime, config.Planner);
         Brain = new Replanner(Survivor, Utility, Planner, Executor, config.Replanning);
+
+        // Le portillon 4 se branche sur la production d'un plan, et non sur son execution : ce qu'il
+        // verifie est la compilation, pas le monde. Sans contrainte active il ne coute rien.
+        Brain.Replanned += _ => VerifyTrajectory();
 
         _world.SetEntity(Survivor.Id, EntityKind.Survivor, spawn);
     }
@@ -207,6 +231,51 @@ public sealed class SurvivorAgent
 
         Domain = _baseDomain.Specialize(modifiers);
         Planner.Respecialize(Domain);
+    }
+
+    /// <summary>
+    /// Change le repertoire commun : c'est ce que fait une instruction tactique du joueur
+    /// (livrable 15). Le domaine recu est celui que <c>DomainCompiler</c> a reecrit — des
+    /// preconditions en plus, un schema scinde, un schema retire — et il remplace celui d'origine
+    /// pour la duree de la mission.
+    ///
+    /// <para>
+    /// La specialisation par l'equipement se rejoue par-dessus, dans cet ordre et pas l'autre : ce
+    /// que le joueur interdit, un pied-de-biche ne le rend pas permis. Le survivant replanifie
+    /// ensuite, sans quoi il continuerait de jouer le plan que la consigne vient d'invalider.
+    /// </para>
+    /// </summary>
+    public void Rebase(PlanningDomain domain, string reason = "consigne tactique")
+    {
+        ArgumentNullException.ThrowIfNull(domain);
+
+        _baseDomain = domain;
+        RefreshDomain();
+
+        // La cause est celle que le livrable 6 reserve a ce qui rend le plan impraticable sans etre
+        // un echec d'action, comme un ordre du joueur : les dix causes sont exactement les dix
+        // evenements de la specification, et une contrainte n'en est pas un onzieme.
+        if (Survivor.Alive) Brain.Report(ReplanCause.ObstacleDiscovered, reason, _world.Time);
+    }
+
+    /// <summary>
+    /// Portillon 4, sur un plan reellement produit. Le plan vient d'un domaine reecrit ; la question
+    /// posee ici est celle que personne d'autre ne pose — « ce plan respecte-t-il ce que le joueur a
+    /// demande, et non ce que la compilation en a fait ? ».
+    ///
+    /// Une violation n'est pas une faute du survivant mais du compilateur : elle part au journal
+    /// plutot qu'a la corbeille, parce qu'un plan refuse ici laisserait le groupe sans plan du tout,
+    /// et qu'un bug de compilation doit se voir, pas paralyser une mission.
+    /// </summary>
+    private void VerifyTrajectory()
+    {
+        if (Instructions is not { Active.Count: > 0 } instructions) return;
+        if (Plan is not { } plan) return;
+
+        var verdict = instructions.Verify(TrajectoryTrace.Of(plan));
+        if (verdict.Satisfied) return;
+
+        foreach (string violation in verdict.Violations) Violated?.Invoke(violation);
     }
 
     // --- Boucle ---------------------------------------------------------------------------------

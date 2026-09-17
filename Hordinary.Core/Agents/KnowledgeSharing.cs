@@ -101,8 +101,9 @@ public sealed class KnowledgeSharing(KnowledgeSettings? settings = null)
     ///
     /// Se parler, c'est aussi se voir : l'auditeur note ou se tient son interlocuteur, et — c'est
     /// nouveau au livrable 7 — dans quel etat il dit etre. La sante et la panique ne se lisent pas a
-    /// distance ; elles n'entrent dans une carte mentale que par cette ligne, ce qui est exactement
-    /// ce qui rend <c>HealAlly</c> conditionne a une rencontre.
+    /// distance ; elles n'entrent dans une carte mentale que par cette ligne. Depuis le livrable 15
+    /// aucun objectif ne les consomme plus directement, mais elles restent ce qu'un survivant peut dire
+    /// de lui-meme, et le materiau des strategies que le joueur compose.
     /// </summary>
     public int Talk(Survivor speaker, Survivor listener, double now)
     {
@@ -130,6 +131,41 @@ public sealed class KnowledgeSharing(KnowledgeSettings? settings = null)
             now));
 
         return learned;
+    }
+
+    /// <summary>
+    /// <paramref name="speaker"/> annonce a voix haute ou il va, et seuls ceux qui sont a portee
+    /// l'entendent. Renvoie le nombre d'allies que l'annonce a effectivement renseignes.
+    ///
+    /// <para>
+    /// Ce n'est pas un <see cref="Talk"/> au rabais mais un echange d'une autre <b>cadence</b>.
+    /// Se raconter ce qu'on a vu attend la passe d'une fois par seconde, ce qui est realiste et sans
+    /// consequence. Une annonce, non : elle ne sert qu'a ce que l'allie qui decide juste apres en
+    /// tienne compte, et arrivee au tour suivant elle ne sert plus a rien. Trois survivants partis
+    /// du meme point s'en apercevaient — decidant tous les trois depuis le meme instantane
+    /// d'intentions perimees, ils choisissaient la meme frontiere, puis la quittaient ensemble pour
+    /// la meme suivante.
+    /// </para>
+    ///
+    /// <para>
+    /// Rien n'est tire au sort : c'est l'ordre du groupe qui departage, donc a graine egale le
+    /// resultat reste egal.
+    /// </para>
+    /// </summary>
+    public int Announce(Survivor speaker, IEnumerable<Survivor> listeners)
+    {
+        ArgumentNullException.ThrowIfNull(speaker);
+        ArgumentNullException.ThrowIfNull(listeners);
+
+        int heard = 0;
+
+        foreach (var listener in listeners)
+        {
+            if (!CanTalk(speaker, listener)) continue;
+            if (listener.Knowledge.LearnIntentFrom(speaker.Knowledge, speaker.Id)) heard++;
+        }
+
+        return heard;
     }
 
     /// <summary>Oublie la cadence en cours : nouvelle partie.</summary>

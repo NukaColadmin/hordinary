@@ -208,6 +208,24 @@ public class ConfigurationTests
         Assert.Equal(5f, GameConfig.FromJson(json).Survivor.SearchRadius, 3);
     }
 
+    /// <summary>
+    /// Le temps imparti d'une mission et le poids du rappel se reglent dans le fichier, comme le
+    /// reste : une mission courte, une mission longue et une mission sans van qui part ne demandent
+    /// pas une ligne de code.
+    /// </summary>
+    [Fact]
+    public void Les_reglages_de_mission_sont_lus_integralement()
+    {
+        const string json = """
+            { "mission": { "time_limit": 240, "recall_priority": 0.9 } }
+            """;
+
+        var mission = GameConfig.FromJson(json).Mission;
+
+        Assert.Equal(240d, mission.TimeLimit, 3);
+        Assert.Equal(0.9f, mission.RecallPriority, 3);
+    }
+
     [Fact]
     public void Les_reglages_d_exploration_et_de_partage_sont_lus_integralement()
     {
@@ -231,8 +249,8 @@ public class ConfigurationTests
                 "radio_enabled": true,
                 "intent_memory": 30
               },
-              "planner": { "ally_wounded_threshold": 0.45, "ally_panic_threshold": 0.65 },
-              "survivor": { "heal_amount": 60, "calm_amount": 0.25 }
+              "planner": { "danger_threshold": 0.45, "door_link_radius": 6 },
+              "survivor": { "heal_amount": 60 }
             }
             """;
 
@@ -251,11 +269,10 @@ public class ConfigurationTests
         Assert.True(config.Knowledge.RadioEnabled);
         Assert.Equal(30f, config.Knowledge.IntentMemory, 3);
 
-        Assert.Equal(0.45f, config.Planner.AllyWoundedThreshold, 3);
-        Assert.Equal(0.65f, config.Planner.AllyPanicThreshold, 3);
+        Assert.Equal(0.45f, config.Planner.DangerThreshold, 3);
+        Assert.Equal(6, config.Planner.DoorLinkRadius);
 
         Assert.Equal(60f, config.Survivor.HealAmount, 3);
-        Assert.Equal(0.25f, config.Survivor.CalmAmount, 3);
     }
 
     /// <summary>

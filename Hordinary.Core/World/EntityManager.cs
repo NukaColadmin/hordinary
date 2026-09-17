@@ -27,7 +27,11 @@ public sealed class EntityManager : IHorde
     /// <summary>Emis quand un zombie change d'etat. Alimente le journal des decisions.</summary>
     public event Action<Zombie, ZombieDecision>? StateChanged;
 
-    /// <summary>Emis a chaque coup porte. Les degats arrivent avec la sante (section 19).</summary>
+    /// <summary>
+    /// Emis a chaque coup porte. Les degats arrivent avec la sante (section 19).
+    ///
+    /// Jamais sur quelqu'un qui se tient au van : voir <see cref="Sheltered"/>.
+    /// </summary>
     public event Action<Zombie, string>? Attacked;
 
     public EntityManager(
@@ -198,6 +202,12 @@ public sealed class EntityManager : IHorde
         {
             zombie.Follower.Clear();
 
+            // Le van protege. La horde se presse contre le vehicule, elle n'atteint pas ce qui est
+            // dedans : rentrer est une fin, pas une pause. Sans cette regle, le premier rentre passait
+            // le reste de la mission a se faire entamer en attendant les autres, et le groupe etait
+            // puni de la seule chose que la victoire lui demande — s'attendre.
+            if (Sheltered(zombie.TargetId)) return;
+
             if (now - zombie.LastAttackAt >= Settings.AttackInterval)
             {
                 zombie.LastAttackAt = now;
@@ -212,6 +222,26 @@ public sealed class EntityManager : IHorde
         if (step is { } cell) zombie.Follower.SetPath([zombie.Position, cell]);
         else zombie.Follower.Clear();
     }
+
+    /// <summary>
+    /// Cette cible-la est-elle a l'abri ? Le van, et lui seul : la zone <see cref="ZoneKind.Extraction"/>
+    /// de la carte, dessinee ou generee. C'est le seul endroit du quartier ou l'on ne peut pas etre
+    /// frappe, et c'est ce qui fait du retour une conclusion plutot qu'une station debout sous les
+    /// coups — les survivants se conduisent deja comme si le van etait sur, encore fallait-il qu'il le
+    /// soit.
+    ///
+    /// La regle est posee ici, sur le monde, et non dans la decision du zombie : sa machine a etats ne
+    /// lit que sa propre memoire (invariant 2), et lui apprendre ou est le van reviendrait a lui donner
+    /// la carte. Il decide donc d'attaquer comme avant, et se heurte a la tole.
+    ///
+    /// Une carte sans zone d'extraction n'abrite personne. C'est le bon defaut : un abri se declare
+    /// dans <c>config/map_locations.json</c>, il ne s'invente pas.
+    /// </summary>
+    public bool Sheltered(string? targetId)
+        => targetId is { Length: > 0 }
+        && _world.Grid.GetZone(ZoneKind.Extraction) is { } van
+        && _world.GetEntity(targetId) is { } target
+        && van.Contains(target.Position);
 
     private static float Distance(GridPosition a, GridPosition b)
     {

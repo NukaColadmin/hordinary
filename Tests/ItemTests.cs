@@ -1,3 +1,4 @@
+using Hordinary.AI.Planning;
 using Hordinary.Agents;
 using Hordinary.Config;
 using Hordinary.Game;
@@ -20,6 +21,55 @@ public class ItemTests
     private static TileLegend Legend { get; } = TileLegend.FromJson(DemoMap.ReadConfig("tile_legend.json"));
 
     private static Survivor Carrier(string id = "bob") => MissionRun.Lone(id, new GridPosition(0, 0));
+
+    private static PlanningDomain Domain { get; } =
+        PlanningDomain.FromJson(DemoMap.ReadConfig("planner_domain.json"));
+
+    // --- BarricadeDoor : le geste, l'outil et le domaine se repondent ------------------------------
+
+    /// <summary>
+    /// <c>BarricadeDoor</c> etait le seul geste du livrable 11 que le moteur savait faire et que le
+    /// domaine ignorait : <c>WorldPlanRuntime.SetFlag</c> avait sa branche <c>door_barricaded</c>,
+    /// <c>config/items.json</c> citait l'action dans le commentaire de la caisse a outils, et aucune
+    /// entree de <c>planner_domain.json</c> ne permettait de la demander. Ce test verrouille les
+    /// quatre points de contact, parce que c'est precisement leur desaccord qui l'avait rendue
+    /// inexistante sans que rien n'echoue.
+    ///
+    /// Le plus important est le dernier : la precondition cite <c>toolbox</c> en toutes lettres. Si
+    /// quelqu'un renomme la caisse dans le catalogue, l'action deviendra silencieusement
+    /// inapplicable — jamais une erreur, juste un geste qui ne se produit plus. C'est exactement le
+    /// type de panne que ce fichier de tests existe pour attraper.
+    /// </summary>
+    [Fact]
+    public void Barricader_une_porte_demande_la_caisse_a_outils_du_catalogue()
+    {
+        var schema = Domain.FindAction("BarricadeDoor");
+
+        Assert.True(schema is not null, "BarricadeDoor est absente du domaine livre.");
+
+        // Le contrat de la spec 11, tableau des actions.
+        Assert.Contains("door_closed(?door)", schema!.Preconditions);
+        Assert.Contains("door_of(?door, ?location)", schema.Preconditions);
+        Assert.Contains("door_barricaded(?door)", schema.Effects);
+
+        // Le predicat pose est celui que WorldPlanRuntime sait traduire en changement du monde. Un
+        // autre nom passerait par le defaut « _ => true » du switch : l'action reussirait en silence
+        // sans que la porte bouge.
+        Assert.Equal("door_barricaded(?door)", schema.Params["condition"]);
+
+        // Et la porte finit verrouillee, parce que c'est ce que Barricade fait a la grille.
+        Assert.Contains("door_locked(?door)", schema.Effects);
+
+        // L'outil exige existe bel et bien au catalogue.
+        var required = schema.Preconditions
+            .Single(condition => condition.StartsWith("equipped(", StringComparison.Ordinal))
+            .Replace("equipped(", string.Empty, StringComparison.Ordinal)
+            .TrimEnd(')');
+
+        Assert.True(
+            Catalogue.Find(required) is not null,
+            $"BarricadeDoor exige « {required} », que config/items.json ne livre pas.");
+    }
 
     // --- Coherence entre les catalogues et la legende de tuiles -------------------------------------
 

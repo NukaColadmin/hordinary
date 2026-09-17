@@ -4,6 +4,7 @@ using Hordinary.AI.Planning;
 using Hordinary.AI.Utility;
 using Hordinary.Agents;
 using Hordinary.Config;
+using Hordinary.Game;
 using Hordinary.World;
 
 namespace Hordinary.Tests;
@@ -130,14 +131,20 @@ public class MemoryTests
     public void Une_pharmacie_vide_finit_par_etre_abandonnee()
     {
         // Aucun medicament nulle part : la fouille echouera, encore et encore, si rien ne l'apprend.
-        var mission = new MissionRun(withObjective: false);
+        // Le van n'a pas d'heure de depart ici : ce qu'on mesure est une memoire qui s'installe sur
+        // plusieurs minutes, et un rappel au milieu remplacerait la fouille observee par un retour.
+        var mission = new MissionRun(withObjective: false, settings: new MissionSettings { TimeLimit = 0d });
         mission.Alice.Mission = new MissionOrder(
             "recuperer les objet de la mission",
             mission.Spawn(ZoneKind.Pharmacy),
             MissionRun.Config.UtilityAi.PlayerOrderPriority);
 
+        // La fouille entre en memoire sous le nom que le planificateur relira, et la pharmacie est
+        // ici le lieu de la mission : c'est « objective_zone » et non « pharmacy » qui la designe
+        // (SymbolicStateBuilder.PlaceNameOf, surcharge Survivor). Interroger l'ancien nom revenait a
+        // attendre un souvenir que personne n'ecrit plus.
         bool learned = mission.RunUntil(
-            () => mission.Alice.Knowledge.GetSearch("pharmacy") is { Found: false },
+            () => mission.Alice.Knowledge.GetSearch("objective_zone") is { Found: false },
             maxTicks: MissionRun.DefaultMaxTicks);
 
         Assert.True(learned, $"Alice n'a jamais retenu que la pharmacie etait vide. {mission.Trace()}");

@@ -175,6 +175,60 @@ public class ZombieTests
         Assert.Equal(2, blows);
     }
 
+    [Fact]
+    public void Un_survivant_au_van_ne_peut_pas_etre_mordu()
+    {
+        // Meme situation qu'au-dessus, a une chose pres : Alice est dans la zone d'extraction.
+        var map = TestMaps.Parse("....", "....");
+        map.AddZone(new MapZone("Van", ZoneKind.Extraction, new GridPosition(1, 0), new GridPosition(3, 1)));
+
+        var world = new WorldState(map);
+        world.SetEntity("alice", EntityKind.Survivor, new GridPosition(1, 0));
+
+        var manager = new EntityManager(world, Settings());
+        var zombie = manager.Spawn("zombie-1", new GridPosition(0, 0));
+
+        int blows = 0;
+        manager.Attacked += (_, _) => blows++;
+
+        manager.Think(0d);
+        manager.Think(2d);
+        manager.Think(4d);
+
+        // Le zombie decide toujours d'attaquer : il ne sait pas ou est le van, et on ne le lui
+        // apprend pas. C'est le monde qui refuse le coup.
+        Assert.Equal(ZombieState.Attack, zombie.State);
+        Assert.Equal(0, blows);
+        Assert.True(manager.Sheltered("alice"));
+
+        // Un pas hors du vehicule, et la protection tombe avec lui.
+        world.SetEntity("alice", EntityKind.Survivor, new GridPosition(0, 1));
+        Assert.False(manager.Sheltered("alice"));
+
+        manager.Think(6d);
+        Assert.Equal(1, blows);
+    }
+
+    [Fact]
+    public void Sans_zone_d_extraction_personne_n_est_a_l_abri()
+    {
+        // L'abri se declare dans la carte ; une carte qui n'en pose pas n'en invente pas.
+        var map = TestMaps.Parse("....", "....");
+        var world = new WorldState(map);
+        world.SetEntity("alice", EntityKind.Survivor, new GridPosition(1, 0));
+
+        var manager = new EntityManager(world, Settings());
+        manager.Spawn("zombie-1", new GridPosition(0, 0));
+
+        int blows = 0;
+        manager.Attacked += (_, _) => blows++;
+
+        manager.Think(0d);
+
+        Assert.False(manager.Sheltered("alice"));
+        Assert.Equal(1, blows);
+    }
+
     // --- Ordre de priorite (section 17.3) ---------------------------------------------------
 
     [Fact]

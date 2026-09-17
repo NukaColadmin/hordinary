@@ -555,7 +555,11 @@ public class BandTests
             .Any(talking => !talking);
     }
 
-    // --- Entraide ---------------------------------------------------------------------------
+    // --- Soin et parole -----------------------------------------------------------------------
+    //
+    // Le livrable 15 a retire HelpAlly, HealAlly et CalmAlly : un survivant ne decide plus de
+    // lui-meme d'aller au secours d'un autre. Ce qui reste ici est ce qui n'etait pas une decision —
+    // ce qu'on apprend en se parlant, et le soin qu'on s'administre a soi.
 
     [Fact]
     public void Un_blesse_ne_se_devine_pas_il_se_raconte()
@@ -574,7 +578,9 @@ public class BandTests
         var blind = new UtilityContext(claire, 1d, Config.UtilityAi, Config.Exploration);
         Assert.Equal(1f, blind.AllyHealth, 3);
 
-        // Ils se parlent : Bob dit dans quel etat il est, et l'objectif de soin devient atteignable.
+        // Ils se parlent : Bob dit dans quel etat il est. Depuis le livrable 15 plus aucun objectif
+        // livre n'en tire de plan de soin, mais l'information arrive — c'est elle que les strategies
+        // du joueur auront a lire.
         sharing.Share([bob, claire], 2d);
 
         var informed = new UtilityContext(claire, 2d, Config.UtilityAi, Config.Exploration);
@@ -583,43 +589,27 @@ public class BandTests
     }
 
     [Fact]
-    public void Claire_soigne_reellement_l_allie_qu_elle_rejoint()
+    public void Claire_se_soigne_avec_l_efficacite_de_sa_propre_fiche()
     {
         var mission = new MissionRun(team: true);
 
-        var bob = mission.AgentOf("bob").Survivor;
         var claire = mission.AgentOf("claire").Survivor;
 
-        bob.TakeDamage(bob.Settings.MaxHealth * 0.7f);
+        claire.TakeDamage(claire.Settings.MaxHealth * 0.7f);
         claire.AddToInventory(Survivor.DefaultObjectiveItem);
 
-        float before = bob.Health;
+        float before = claire.Health;
 
-        // L'effet symbolique « healed(bob) », tel que l'executeur le posera au bout de l'action.
-        Assert.True(mission.AgentOf("claire").Runtime.SetFlag("healed(bob)", true, bob.Position));
+        // L'effet symbolique « healed(agent) », tel que HealSelf le posera au bout de l'action.
+        Assert.True(mission.AgentOf("claire").Runtime.SetFlag("healed(agent)", true, claire.Position));
 
-        Assert.True(bob.Health > before);
+        Assert.True(claire.Health > before);
         Assert.False(claire.Carries(Survivor.DefaultObjectiveItem));
 
-        // Et c'est bien la fiche de la soignante qui decide de l'efficacite du soin.
+        // Et c'est bien la fiche de la soignante qui decide de l'efficacite du soin : la meme boite
+        // de medicaments rend davantage entre les mains de Claire.
         Assert.Equal(
-            Math.Min(bob.Settings.MaxHealth, before + claire.Settings.HealAmount), bob.Health, 3);
-    }
-
-    [Fact]
-    public void Rassurer_un_allie_fait_redescendre_sa_panique()
-    {
-        var mission = new MissionRun(team: true);
-
-        var bob = mission.AgentOf("bob").Survivor;
-        var claire = mission.AgentOf("claire");
-
-        bob.UpdatePanic(1f, 10f);
-        float terrified = bob.Panic;
-        Assert.True(terrified > 0.4f);
-
-        Assert.True(claire.Runtime.SetFlag("calmed(bob)", true, bob.Position));
-        Assert.True(bob.Panic < terrified);
+            Math.Min(claire.Settings.MaxHealth, before + claire.Settings.HealAmount), claire.Health, 3);
     }
 
     [Fact]
@@ -632,5 +622,164 @@ public class BandTests
 
         Assert.False(claire.Runtime.SetFlag("healed(inconnu)", true, new GridPosition(0, 0)));
         Assert.True(claire.Survivor.Carries(Survivor.DefaultObjectiveItem));
+    }
+
+    // --- Descente du van ---------------------------------------------------------------------
+
+    /// <summary>Une carte entierement praticable, pour eprouver la dispersion sans decor.</summary>
+    private static WorldState OpenGround(int size = 20)
+    {
+        var grid = new GridMap(size, size, default, CellType.Floor);
+        return new WorldState(grid);
+    }
+
+    [Fact]
+    public void Les_survivants_descendent_du_van_sur_des_cases_distinctes()
+    {
+        var world = OpenGround();
+        var camp = new GridPosition(10, 10);
+
+        var starts = BandSpawn.Scatter(world, camp, count: 3, seed: 1234);
+
+        Assert.Equal(3, starts.Count);
+        Assert.Equal(3, starts.Distinct().Count());
+    }
+
+    /// <summary>
+    /// Le carre annonce est un 5x5 centre sur le van : personne ne nait a plus de deux cases, dans
+    /// aucune des huit directions.
+    /// </summary>
+    [Fact]
+    public void Personne_ne_depasse_le_carre_de_cinq_cases_autour_du_van()
+    {
+        var world = OpenGround();
+        var camp = new GridPosition(10, 10);
+
+        // Beaucoup de tirages, pour que ce ne soit pas une graine chanceuse qui reponde.
+        for (int seed = 0; seed < 200; seed++)
+        {
+            foreach (var start in BandSpawn.Scatter(world, camp, count: 3, seed))
+            {
+                Assert.True(start.ChebyshevDistanceTo(camp) <= BandSpawn.DefaultRadius, $"{start} pour la graine {seed}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Un van gare dans l'angle de la carte : la moitie du carre tombe hors grille. Personne n'y
+    /// nait, parce que la praticabilite commence par verifier que la case existe.
+    /// </summary>
+    [Fact]
+    public void Le_carre_de_depart_ne_deborde_pas_de_la_carte()
+    {
+        var world = OpenGround(size: 8);
+        var camp = new GridPosition(0, 0);
+
+        for (int seed = 0; seed < 200; seed++)
+        {
+            foreach (var start in BandSpawn.Scatter(world, camp, count: 3, seed))
+            {
+                Assert.True(world.Grid.Contains(start), $"{start} hors carte pour la graine {seed}");
+            }
+        }
+    }
+
+    [Fact]
+    public void Personne_ne_nait_dans_un_mur()
+    {
+        var world = OpenGround();
+        var camp = new GridPosition(10, 10);
+
+        // Une croix de murs autour du van : il ne reste que la case du camp et ses quatre diagonales,
+        // et ces dernieres ne sont plus joignables orthogonalement sans quitter le carre.
+        foreach (var offset in GridPosition.OrthogonalOffsets) world.Grid.SetCell(camp + offset, CellType.Wall);
+
+        var starts = BandSpawn.Scatter(world, camp, count: 3, seed: 7);
+
+        Assert.All(starts, start => Assert.True(world.Grid.IsWalkable(start)));
+
+        // Enferme, le groupe se retrouve sur la case du van plutot que dans la maconnerie.
+        Assert.All(starts, start => Assert.Equal(camp, start));
+    }
+
+    /// <summary>
+    /// Un mur qui coupe le carre en deux : le van est d'un cote, et personne ne se materialise de
+    /// l'autre. C'est ce que le parcours de proche en proche garantit, la ou un simple tirage dans
+    /// le rectangle aurait pose un survivant dans la piece voisine.
+    /// </summary>
+    [Fact]
+    public void Un_mur_qui_traverse_le_carre_retient_tout_le_monde_du_cote_du_van()
+    {
+        var world = OpenGround();
+        var camp = new GridPosition(10, 10);
+
+        for (int dy = -3; dy <= 3; dy++) world.Grid.SetCell(new GridPosition(11, 10 + dy), CellType.Wall);
+
+        for (int seed = 0; seed < 200; seed++)
+        {
+            foreach (var start in BandSpawn.Scatter(world, camp, count: 3, seed))
+            {
+                Assert.True(start.X <= 10, $"{start} de l'autre cote du mur pour la graine {seed}");
+            }
+        }
+    }
+
+    [Fact]
+    public void Un_meuble_lourd_ne_sert_pas_de_place_de_depart()
+    {
+        var world = OpenGround();
+        var camp = new GridPosition(10, 10);
+        var wardrobe = new GridPosition(11, 10);
+
+        world.Heavy.Add(new HeavyObject("armoire", "wardrobe", wardrobe, mass: 4f));
+
+        for (int seed = 0; seed < 200; seed++)
+        {
+            Assert.DoesNotContain(wardrobe, BandSpawn.Scatter(world, camp, count: 3, seed));
+        }
+    }
+
+    /// <summary>
+    /// Meme graine, meme depart. Sans cela, deux parties rejouees ne se comparent plus : le groupe
+    /// n'aurait pas vu les memes cases a la premiere passe de perception.
+    /// </summary>
+    [Fact]
+    public void La_meme_graine_rejoue_exactement_le_meme_depart()
+    {
+        var world = OpenGround();
+        var camp = new GridPosition(10, 10);
+
+        Assert.Equal(
+            BandSpawn.Scatter(world, camp, count: 3, seed: 99),
+            BandSpawn.Scatter(world, camp, count: 3, seed: 99));
+
+        Assert.NotEqual(
+            BandSpawn.Scatter(world, camp, count: 3, seed: 99),
+            BandSpawn.Scatter(world, camp, count: 3, seed: 100));
+    }
+
+    /// <summary>
+    /// La carte livree gare le van contre le bord haut : le camp occupe (-1,-8)-(3,-7), et l'origine
+    /// de la grille est en y = -8. La moitie superieure du carre de depart tombe donc hors carte.
+    ///
+    /// Ce test-la n'est pas redondant avec les precedents : les autres eprouvent la regle sur des
+    /// cartes fabriquees pour elle, celui-ci l'eprouve sur le terrain que le joueur voit vraiment.
+    /// </summary>
+    [Fact]
+    public void Sur_la_carte_livree_le_groupe_descend_du_van_sans_sortir_de_la_grille()
+    {
+        var mission = new MissionRun(team: true);
+        var camp = mission.Spawn(ZoneKind.Start);
+
+        var starts = BandSpawn.Scatter(mission.World, camp, count: 3, seed: 2026);
+
+        Assert.Equal(3, starts.Distinct().Count());
+
+        Assert.All(starts, start =>
+        {
+            Assert.True(mission.Map.Contains(start), $"{start} hors grille");
+            Assert.True(mission.Map.IsWalkable(start), $"{start} n'est pas praticable");
+            Assert.True(start.ChebyshevDistanceTo(camp) <= BandSpawn.DefaultRadius, $"{start} trop loin du van");
+        });
     }
 }

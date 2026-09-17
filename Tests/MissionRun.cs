@@ -1,5 +1,7 @@
+using Hordinary.AI.Instructions;
 using Hordinary.AI.Navigation;
 using Hordinary.AI.Planning;
+using Hordinary.AI.Planning.Pddl;
 using Hordinary.AI.Replanning;
 using Hordinary.AI.Utility;
 using Hordinary.Agents;
@@ -60,6 +62,9 @@ internal sealed class MissionRun
         return survivor;
     }
 
+    /// <summary>Graine de l'erreur de localisation des bruits, quand le test en demande une.</summary>
+    private readonly Random? _noise;
+
     public GridMap Map { get; }
     public WorldState World { get; }
     public SurvivorBand Band { get; }
@@ -69,6 +74,9 @@ internal sealed class MissionRun
 
     /// <summary>Ou en est la mission. Comme dans <c>GameRoot</c>, c'est la boucle qui l'interroge.</summary>
     public MissionTracker Tracker { get; }
+
+    /// <summary>Les compteurs du livrable 16, quand la mission jouee est une offre generee.</summary>
+    public MissionObjectiveTracker? Objectives { get; }
 
     /// <summary>L'agent principal. Les tests des livrables 5 et 6 ne connaissent que lui.</summary>
     public SurvivorAgent Agent { get; }
@@ -100,6 +108,12 @@ internal sealed class MissionRun
     /// <param name="withObjective">A <c>false</c>, la pharmacie est vide : fouiller n'y donnera rien.</param>
     /// <param name="team">A <c>true</c>, les trois survivants du livrable 7 partent ensemble.</param>
     /// <param name="definition">La mission jouee ; par defaut la premiere de <c>config/missions.json</c>.</param>
+    /// <param name="settings">
+    /// Reglages de mission — le temps imparti, essentiellement. Par defaut ceux du fichier livre :
+    /// une mission de test est chronometree comme une vraie. Un test qui observe autre chose que
+    /// l'horloge — une memoire qui s'efface, un plan qui se rebatit — passe un
+    /// <c>TimeLimit = 0</c> pour que le van ne parte pas au milieu de sa mesure.
+    /// </param>
     public MissionRun(
         GridMap? map = null,
         IEnumerable<GridPosition>? lockedDoors = null,
@@ -107,19 +121,39 @@ internal sealed class MissionRun
         GridPosition? objective = null,
         bool withObjective = true,
         bool team = false,
-        MissionDefinition? definition = null)
+        MissionDefinition? definition = null,
+        MissionSettings? settings = null,
+        IEnumerable<string>? instructions = null,
+        int? noiseSeed = null,
+        PlannerSettings? planner = null)
     {
+        // Sans graine de bruit, l'erreur de localisation tire dans Random.Shared et deux parcours de
+        // la meme partie divergent des qu'un bruit est entendu de loin. Le defaut reste celui du jeu ;
+        // un test qui compare deux deroules en passe une.
+        _noise = noiseSeed is { } seed ? new Random(seed) : null;
+
         Map = map ?? DemoMap.Load();
 
         foreach (var cell in lockedDoors ?? []) Map.SetCell(cell, CellType.DoorLocked);
 
         World = new WorldState(Map, Config.Noise);
 
-        if (withObjective) World.SetItem("objective-1", Survivor.DefaultObjectiveItem, objective ?? ObjectiveCell);
+        // Une mission generee (livrable 16) pose ce que ses exigences reclament, la ou elle les
+        // reclame : c'est GameRoot.PlaceSupplies, mais dans le harnais. Une mission ecrite a la main
+        // garde la caisse unique des livrables 5 a 8, a la case que le test choisit.
+        if (withObjective && (definition?.IsOffer ?? false)) PlacePayload(definition);
+        else if (withObjective) World.SetItem("objective-1", Survivor.DefaultObjectiveItem, objective ?? ObjectiveCell);
 
         // Les tests du livrable 6 resserrent les cadences de replanification pour ne pas simuler des
         // minutes de jeu ; le reste de la configuration livree ne bouge pas.
-        var config = replanning is null ? Config : Config with { Replanning = replanning };
+        var config = Config;
+        if (replanning is not null) config = config with { Replanning = replanning };
+
+        // Le budget de planification est une horloge (planner.max_time_ms). Un test qui compare deux
+        // deroules doit donc pouvoir le desserrer : sinon la suite de plans depend de la charge de la
+        // machine, et non de la simulation.
+        if (planner is not null) config = config with { Planner = planner };
+
         Band = new SurvivorBand(World, config, catalogue: DemoMap.Items);
 
         var profiles = team
@@ -132,6 +166,12 @@ internal sealed class MissionRun
 
         // Les agents commencent et finissent au meme endroit : le camp est le point de depart.
         var start = Spawn(Definition.Camp);
+
+        // Les instructions tactiques du joueur (livrable 15), avant l'enrolement comme dans GameRoot :
+        // un survivant nait avec le repertoire que la consigne laisse. Un texte refuse par un
+        // portillon fait echouer le harnais plutot que de partir en silence — un test qui croirait
+        // mesurer l'effet d'une contrainte inactive ne mesurerait rien.
+        Band.Instruct(Instruct(instructions));
 
         foreach (var profile in profiles) Watch(Band.Enlist(profile, start, Goals, Domain));
 
@@ -151,7 +191,11 @@ internal sealed class MissionRun
 
         if (Definition.ObjectiveIn(Map) is { } objectiveZone) Band.Brief(objectiveZone);
 
-        Tracker = new MissionTracker(World, Band, Definition);
+        Objectives = Definition.IsOffer
+            ? new MissionObjectiveTracker(Definition, World, Band, DemoMap.Items)
+            : null;
+
+        Tracker = new MissionTracker(World, Band, Definition, settings ?? config.Mission, Objectives);
 
         Tracker.Finished += verdict => Journal.Add(verdict.ToString());
 
@@ -170,6 +214,7 @@ internal sealed class MissionRun
     private void Watch(SurvivorAgent agent)
     {
         agent.Logged += Journal.Add;
+        agent.Fought += Journal.Add;
         agent.Executor.ActionCompleted += action => Executed.Add(action.Schema.Name);
         agent.Executor.ActionFailed += (action, failure) => Failures.Add($"{action.Schema.Name} : {failure.Reason}");
         agent.Brain.Monitor.Detected += Triggers.Add;
@@ -180,6 +225,69 @@ internal sealed class MissionRun
         {
             if (result.Plan is { } plan) Plans.Add(plan);
         };
+    }
+
+    /// <summary>
+    /// Pose ce qu'une mission generee demande de rapporter, dans sa zone cible — la meme regle que
+    /// <c>GameRoot.PlaceSupplies</c> : les cases les plus eloignees du camp d'abord, pour qu'un
+    /// objectif ne se trouve pas en poussant la premiere porte.
+    /// </summary>
+    private void PlacePayload(MissionDefinition definition)
+    {
+        if (definition.ObjectiveIn(Map) is not { } zone) return;
+
+        var camp = definition.CampIn(Map)?.Center ?? default;
+
+        var cells = zone.Positions()
+            .Where(Map.IsWalkable)
+            .OrderByDescending(cell => cell.ChebyshevDistanceTo(camp))
+            .ThenBy(cell => cell.X)
+            .ThenBy(cell => cell.Y)
+            .ToList();
+
+        if (cells.Count == 0) return;
+
+        int placed = 0;
+
+        foreach (var line in definition.SuppliesFor(DemoMap.Items))
+        {
+            for (int copy = 0; copy < line.Quantity; copy++)
+            {
+                World.SetItem($"supply-{++placed}", line.Item, cells[placed % cells.Count]);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Les instructions tactiques de la mission (livrable 15), compilees comme <c>GameRoot</c> les
+    /// compile : memes portillons, meme contexte, meme domaine exporte.
+    ///
+    /// Un texte refuse leve ici plutot que de partir en silence. C'est une difference assumee avec le
+    /// jeu, ou un refus fait tomber la contrainte et laisse la mission continuer : un test qui
+    /// croirait mesurer l'effet d'une contrainte inactive ne mesurerait rien du tout.
+    /// </summary>
+    private TacticalInstructions? Instruct(IEnumerable<string>? texts)
+    {
+        var wanted = texts?.ToList() ?? [];
+        if (wanted.Count == 0) return null;
+
+        var instructions = new TacticalInstructions(PddlDomainBuilder.From(Domain), Config.Instructions);
+
+        var kinds = new HashSet<string>(
+            Map.Zones.Select(zone => SymbolicStateBuilder.KindNameOf(zone.Kind)).OfType<string>(),
+            StringComparer.OrdinalIgnoreCase);
+
+        var context = new CompilationContext(Config.Planner.Search, kinds);
+
+        foreach (string text in wanted)
+        {
+            var entry = instructions.Add(text, context);
+
+            if (!entry.Accepted)
+                throw new InvalidOperationException($"« {text} » refusee par le portillon {entry.Gate} : {entry.Reason}");
+        }
+
+        return instructions;
     }
 
     /// <summary>Cellule representative d'un lieu : celle que la memoire retiendra pour lui.</summary>
@@ -196,7 +304,7 @@ internal sealed class MissionRun
     public void Tick()
     {
         World.Advance(Step);
-        Band.Advance(Step);
+        Band.Advance(Step, _noise);
 
         Tracker.Evaluate(World.Time);
     }

@@ -238,7 +238,7 @@ public class ReplanningTests
         // Ce qu'apprend la perception : la porte de la pharmacie est fermee a clef, donc le lieu
         // n'est plus accessible. Aucune action du plan ne prevoit de la forcer.
         var discovered = initial
-            .With("door_locked(door_1)", "!door_closed(door_1)", "!accessible(pharmacy)");
+            .With("door_locked(door_1)", "!door_closed(door_1)", "!accessible(objective_zone)");
 
         var trigger = PlanValidity.Check(plan, discovered, now: 12d);
 
@@ -255,7 +255,7 @@ public class ReplanningTests
 
         // Alice est sur place, mais les medicaments qu'elle croyait avoir repere n'y sont pas :
         // c'est « un objet attendu est absent », le huitieme declencheur.
-        var state = initial.With("at(agent, pharmacy)", "searched(pharmacy)");
+        var state = initial.With("at(agent, objective_zone)", "searched(objective_zone)");
         var pickUp = new Plan(plan.Problem, [plan.Actions.Last()], createdAt: 0d);
 
         var trigger = PlanValidity.Check(pickUp, state, now: 3d);
@@ -285,21 +285,30 @@ public class ReplanningTests
     }
 
     /// <summary>
-    /// Le plan de reference : aller a la pharmacie, ouvrir, fouiller, ramasser. Il est construit a la
-    /// main pour que les tests d'invalidation ne dependent pas de ce que GBFS aura trouve ce jour-la.
+    /// Le plan de reference : aller au lieu de la mission, ouvrir, fouiller, ramasser. Il est construit
+    /// a la main pour que les tests d'invalidation ne dependent pas de ce que GBFS aura trouve ce
+    /// jour-la.
+    ///
+    /// <para>
+    /// Le lieu s'appelle <c>objective_zone</c> et pas <c>pharmacy</c> : <c>LocateObjective</c> et
+    /// <c>PickUpObjective</c> citent ce symbole en <b>constante</b> dans
+    /// <c>config/planner_domain.json</c>, et non par un parametre <c>?location</c>. Un fixture qui
+    /// nommait son lieu autrement produisait un plan dont les preconditions ne pouvaient pas tenir,
+    /// quelle que soit la suite d'actions — la mission designe un lieu, pas une categorie de commerce.
+    /// </para>
     /// </summary>
     private static Plan PharmacyPlan(out SymbolicState initial)
     {
         initial = new SymbolicState([
-            "known(pharmacy)",
-            "accessible(pharmacy)",
-            "door_of(door_1, pharmacy)",
+            "known(objective_zone)",
+            "accessible(objective_zone)",
+            "door_of(door_1, objective_zone)",
             "door_closed(door_1)",
         ]);
 
         var objects = new List<PlanningObject>
         {
-            new("pharmacy", PlanningObjectTypes.Location, new GridPosition(5, 0)),
+            new("objective_zone", PlanningObjectTypes.Location, new GridPosition(5, 0)),
             new("door_1", PlanningObjectTypes.Door, new GridPosition(4, 0)),
             new("objective", PlanningObjectTypes.Item, new GridPosition(5, 0)),
         };
@@ -376,6 +385,58 @@ public class ReplanningTests
         Assert.False(monitor.HasReport);
     }
 
+    [Fact]
+    public void Un_plan_identique_sans_itineraire_est_mis_en_attente()
+    {
+        var map = TestMaps.Parse("........");
+        var knowledge = new AgentKnowledge("alice", map.Width, map.Height, map.Origin);
+
+        foreach (var cell in map.AllPositions())
+            knowledge.ObserveCell(cell, map.GetCell(cell), map.IsIndoor(cell), 0d);
+
+        var alice = new Survivor(
+            "alice", "Alice", knowledge,
+            settings: MissionRun.Config.Survivor,
+            catalogue: DemoMap.Items)
+        {
+            Position = new GridPosition(0, 0),
+        };
+
+        knowledge.RememberItem(
+            "objective-1", Survivor.DefaultObjectiveItem, new GridPosition(7, 0), 0d);
+
+        var runtime = new NoRouteRuntime(alice.Position);
+        var executor = new PlanExecutor(runtime, MissionRun.Config.Planner);
+        var planner = new Planner(Domain, MissionRun.Config.Planner);
+        var utility = new UtilitySelector(MissionRun.Goals, MissionRun.Config.UtilityAi);
+        var brain = new Replanner(
+            alice,
+            utility,
+            planner,
+            executor,
+            new ReplanningSettings { CheckInterval = 0f, MinimumInterval = 0f });
+
+        for (int tick = 0; tick < 40; tick++)
+        {
+            double now = tick * 0.1d;
+            brain.Advance(new UtilityContext(alice, now, MissionRun.Config.UtilityAi), 0.1f);
+        }
+
+        Assert.Equal(1, runtime.MoveAttempts);
+        Assert.Equal(2, planner.SearchCount);
+        Assert.Equal(1, brain.ReplanCount);
+        Assert.Contains("suspendu", brain.LastReason, StringComparison.Ordinal);
+
+        // Une nouvelle information rouvre bien la tentative : la mise en attente n'est pas un
+        // abandon definitif de l'objectif.
+        knowledge.RememberLocation(
+            "Sortie", ZoneKind.Extraction, new GridPosition(1, 0), 4d, KnowledgeSource.DirectObservation);
+        brain.Advance(new UtilityContext(alice, 5d, MissionRun.Config.UtilityAi), 0.1f);
+
+        Assert.Equal(2, runtime.MoveAttempts);
+        Assert.Equal(3, planner.SearchCount);
+    }
+
     [Theory]
     [InlineData(ActionFailureKind.Precondition, ReplanCause.PreconditionFalse)]
     [InlineData(ActionFailureKind.Verb, ReplanCause.ActionFailed)]
@@ -402,6 +463,31 @@ public class ReplanningTests
     /// <summary>Une passe du moniteur, sans plan a surveiller : seules les deductions comptent.</summary>
     private static ReplanTrigger? Inspect(ReplanMonitor monitor, Survivor survivor, double now)
         => monitor.Inspect(new UtilityContext(survivor, now), plan: null, SymbolicState.Empty);
+
+    /// <summary>A* de test qui refuse toute destination et compte les tentatives.</summary>
+    private sealed class NoRouteRuntime(GridPosition start) : IPlanRuntime
+    {
+        public GridPosition AgentCell { get; } = start;
+
+        public int MoveAttempts { get; private set; }
+
+        public bool BeginMove(GridPosition destination)
+        {
+            MoveAttempts++;
+            return false;
+        }
+
+        public MoveState PollMove(GridPosition destination) => MoveState.Blocked;
+        public GridPosition? WhereIs(string item) => null;
+        public bool Take(string item) => false;
+        public bool Put(string item, GridPosition where) => false;
+        public bool SetFlag(string fact, bool value, GridPosition? where) => false;
+        public bool Damage(string target, float amount) => false;
+        public bool Push(string target) => false;
+        public bool ThrowNoise(string target, float amount) => false;
+        public void CancelMove() { }
+        public void EmitNoise(float level, GridPosition where, string? label = null) { }
+    }
 
     // --- Reconciliation de l'etat symbolique --------------------------------------------------------
 

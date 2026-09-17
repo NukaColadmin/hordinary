@@ -29,6 +29,26 @@ public sealed class PlanningGoal
 }
 
 /// <summary>
+/// Les lieux que le domaine nomme sans qu'aucune action ne les pose (section <c>places</c> de
+/// <c>config/planner_domain.json</c>).
+///
+/// Deux listes, deux natures. <see cref="Kinds"/> sont des <b>categories</b> — batiment, rue, ruelle
+/// — qui deviennent des predicats unaires sur les lieux ; <see cref="Landmarks"/> sont des
+/// <b>reperes</b> recalcules a chaque decision — le barycentre du groupe, une cachette, une frontiere
+/// d'exploration — qui sont des objets du probleme et non des constantes du domaine.
+///
+/// Elles sont en configuration et non dans le code parce qu'elles sont exactement ce qu'une
+/// instruction du joueur a le droit de nommer : « regroupez-vous avant d'entrer dans un batiment »
+/// cite <c>group</c> et <c>building</c>, dont ni l'un ni l'autre n'apparait dans une action.
+/// </summary>
+public sealed class PlanningPlaces
+{
+    public List<string> Kinds { get; init; } = [];
+
+    public List<string> Landmarks { get; init; } = [];
+}
+
+/// <summary>
 /// Le domaine de planification, charge depuis <c>config/planner_domain.json</c> : les actions
 /// disponibles et la traduction des objectifs en conditions symboliques.
 ///
@@ -42,6 +62,14 @@ public sealed class PlanningDomain
     public List<ActionSchema> Actions { get; init; } = [];
 
     public List<PlanningGoal> Goals { get; init; } = [];
+
+    /// <summary>
+    /// Le vocabulaire de lieux que le moteur pose lui-meme et qu'aucune action ne declare, section
+    /// <c>places</c> du fichier. Il ne change rien a la recherche : il sert a l'export PDDL, qui doit
+    /// declarer ces predicats, et a la grammaire des instructions tactiques (livrable 15), qui refuse
+    /// tout symbole absent du domaine.
+    /// </summary>
+    public PlanningPlaces Places { get; init; } = new();
 
     public static PlanningDomain Empty { get; } = new();
 
@@ -117,6 +145,7 @@ public sealed class PlanningDomain
                     : action),
             ],
             Goals = Goals,
+            Places = Places,
         };
     }
 

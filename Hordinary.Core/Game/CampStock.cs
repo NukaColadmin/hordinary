@@ -40,6 +40,29 @@ public sealed record CampSettings
 
     public float FullThreshold { get; init; } = 0.6f;
 
+    /// <summary>
+    /// Emplacements de l'entrepot du camp — celui qui recoit les recompenses de mission (livrable
+    /// 16), pas les quatre reserves ci-dessus, qui se comptent et ne s'empilent pas.
+    ///
+    /// Il est fini pour que « le stock est plein » soit une situation reelle et non une clause de
+    /// style : c'est elle qui fait exister la file d'attente des recompenses, et la promesse qu'une
+    /// recompense annoncee ne disparait jamais en silence.
+    /// </summary>
+    public int StorageSlots { get; init; } = 24;
+
+    /// <summary>
+    /// Ce que l'entrepot contient avant la premiere sortie, par identifiant d'objet.
+    ///
+    /// Sans cette liste l'entrepot n'existe qu'apres une victoire : le camp ouvre les mains vides, et
+    /// le paquetage — ce que le joueur confie a chacun avant le depart — n'a rien a distribuer le
+    /// premier jour. C'est une donnee comme le reste : le materiel de depart se regle dans
+    /// <c>config/camp.json</c>, et un camp qui ouvre demuni s'ecrit avec une liste vide.
+    ///
+    /// Ce qui deborde de <see cref="StorageSlots"/> est ignore au chargement : un entrepot ne peut
+    /// pas commencer plus plein qu'il n'est grand.
+    /// </summary>
+    public List<ItemRequirement> Storage { get; init; } = [];
+
     public static CampSettings Default { get; } = new();
 
     public static CampSettings FromJson(string json)
@@ -122,6 +145,110 @@ public sealed class CampStock(CampSettings? settings = null)
     private readonly List<CampDay> _history = [];
 
     public IReadOnlyList<CampDay> History => _history;
+
+    // --- L'entrepot et les recompenses (livrable 16) ----------------------------------------------
+
+    /// <summary>Ce que le camp entrepose, par identifiant d'objet. Une entree par exemplaire.</summary>
+    private readonly List<string> _stored = [.. InitialStorage(settings ?? CampSettings.Default)];
+
+    /// <summary>Ce qui a ete gagne mais que l'entrepot n'a pas pu prendre.</summary>
+    private readonly List<MissionReward> _pending = [];
+
+    public IReadOnlyList<string> Stored => _stored;
+
+    /// <summary>
+    /// La file des recompenses a recuperer. Une recompense qui ne rentre pas y attend, visible dans
+    /// l'ecran de camp : elle n'est <b>jamais</b> supprimee. Le joueur a choisi sa mission sur ce
+    /// qu'elle promettait, et un entrepot plein est un probleme de rangement, pas une annulation.
+    /// </summary>
+    public IReadOnlyList<MissionReward> Pending => _pending;
+
+    public bool StorageFull => _stored.Count >= Settings.StorageSlots;
+
+    public int FreeSlots => Math.Max(0, Settings.StorageSlots - _stored.Count);
+
+    /// <summary>Combien d'exemplaires de cet objet le camp possede.</summary>
+    public int CountOf(string itemId)
+        => _stored.Count(id => id.Equals(itemId, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Range une recompense. Ce qui rentre est range, ce qui deborde passe en file d'attente — et le
+    /// total des deux est toujours exactement ce que l'offre annoncait.
+    /// </summary>
+    public void Store(MissionReward reward)
+    {
+        ArgumentNullException.ThrowIfNull(reward);
+
+        int taken = Store(reward.Item, reward.Quantity);
+
+        int left = reward.Quantity - taken;
+        if (left > 0) _pending.Add(reward with { Quantity = left });
+    }
+
+    /// <summary>
+    /// Range des exemplaires d'un objet, autant que l'entrepot en accepte.
+    ///
+    /// Cette forme-la ne met rien en file d'attente, et c'est voulu : la file est la promesse d'une
+    /// <b>recompense</b> annoncee avant le depart, pas un second entrepot. Ce qui rentre du sac d'un
+    /// survivant rentre, ou ne rentre pas — au retour ce n'est pas une promesse, c'est un probleme de
+    /// rangement, et l'appelant le dit au journal.
+    /// </summary>
+    /// <returns>Le nombre d'exemplaires reellement ranges.</returns>
+    public int Store(string itemId, int quantity = 1)
+    {
+        int taken = Math.Min(Math.Max(0, quantity), FreeSlots);
+
+        for (int i = 0; i < taken; i++) _stored.Add(itemId);
+
+        return taken;
+    }
+
+    /// <summary>Le contenu de depart de l'entrepot, borne par le nombre d'emplacements.</summary>
+    private static IEnumerable<string> InitialStorage(CampSettings settings)
+        => settings.Storage
+            .SelectMany(line => Enumerable.Repeat(line.Item, Math.Max(0, line.Quantity)))
+            .Take(Math.Max(0, settings.StorageSlots));
+
+    /// <summary>
+    /// Vide la file dans l'entrepot, autant que la place le permet. C'est le geste de l'ecran de
+    /// camp : on a fait de la place, on va chercher ce qui attendait.
+    /// </summary>
+    /// <returns>Ce qui a reellement ete range.</returns>
+    public IReadOnlyList<MissionReward> ClaimPending()
+    {
+        var claimed = new List<MissionReward>();
+
+        for (int index = 0; index < _pending.Count && FreeSlots > 0; index++)
+        {
+            var reward = _pending[index];
+            int taken = Math.Min(reward.Quantity, FreeSlots);
+
+            for (int i = 0; i < taken; i++) _stored.Add(reward.Item);
+            claimed.Add(reward with { Quantity = taken });
+
+            if (taken == reward.Quantity)
+            {
+                _pending.RemoveAt(index--);
+                continue;
+            }
+
+            _pending[index] = reward with { Quantity = reward.Quantity - taken };
+        }
+
+        return claimed;
+    }
+
+    /// <summary>Retire un exemplaire entrepose — l'equiper avant de partir, par exemple.</summary>
+    public bool Withdraw(string itemId)
+    {
+        int index = _stored.FindIndex(id => id.Equals(itemId, StringComparison.OrdinalIgnoreCase));
+        if (index < 0) return false;
+
+        _stored.RemoveAt(index);
+        return true;
+    }
+
+    // --- Les quatre reserves ----------------------------------------------------------------------
 
     public void Add(string resource, float amount)
     {
@@ -206,13 +333,20 @@ public sealed class CampStock(CampSettings? settings = null)
 
     /// <summary>
     /// Rentre au camp ce qu'un survivant rapporte. Le catalogue decide de ce que chaque objet vaut :
-    /// une conserve fait une ration, un jerrican vingt d'essence. Un objet sans effet sur le camp
-    /// reste dans le sac.
+    /// une conserve fait une ration, un jerrican vingt d'essence.
+    ///
+    /// Ce qui n'alimente aucune reserve — une arme, une trousse, une lampe — va a l'entrepot. Il y
+    /// allait nulle part avant que le joueur puisse confier du materiel au depart : le survivant est
+    /// recree a chaque mission, et un fusil pret par le camp disparaissait avec l'objet qui le
+    /// portait. Preter n'est pas donner.
     /// </summary>
-    public void Deposit(Survivor survivor, World.ItemCatalogue catalogue)
+    /// <returns>Ce que l'entrepot n'a pas pu prendre, faute de place. Vide le plus souvent.</returns>
+    public IReadOnlyList<string> Deposit(Survivor survivor, World.ItemCatalogue catalogue)
     {
         ArgumentNullException.ThrowIfNull(survivor);
         ArgumentNullException.ThrowIfNull(catalogue);
+
+        var refused = new List<string>();
 
         foreach (string itemId in survivor.Inventory.Enumerate().ToList())
         {
@@ -228,8 +362,22 @@ public sealed class CampStock(CampSettings? settings = null)
                 banked = true;
             }
 
-            if (banked) survivor.RemoveFromInventory(itemId);
+            if (banked)
+            {
+                survivor.RemoveFromInventory(itemId);
+                continue;
+            }
+
+            if (Store(itemId) == 0)
+            {
+                refused.Add(itemId);
+                continue;
+            }
+
+            survivor.RemoveFromInventory(itemId);
         }
+
+        return refused;
     }
 
     /// <summary>

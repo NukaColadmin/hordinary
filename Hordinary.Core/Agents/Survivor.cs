@@ -232,21 +232,6 @@ public sealed class Survivor : IPerceivingAgent
         Health = Math.Min(MaxHealth, Health + amount);
     }
 
-    /// <summary>
-    /// Faire redescendre la panique — l'action speciale de Claire (livrable 7). Elle ne soigne rien :
-    /// elle rend au survivant la marge de decision que la peur lui prenait, ce qui suffit souvent a
-    /// lui faire lacher la fuite pour reprendre la mission.
-    ///
-    /// L'apaisement ne tient pas contre les faits : <see cref="UpdatePanic"/> fera remonter la
-    /// panique des la passe suivante si le danger, lui, est toujours la.
-    /// </summary>
-    public void Calm(float amount)
-    {
-        if (amount <= 0f || !Alive) return;
-
-        Panic = Math.Clamp(Panic - amount, 0f, 1f);
-    }
-
     /// <summary>Ramasser. Echoue si l'objet est inconnu du catalogue ou si le sac est plein.</summary>
     public bool AddToInventory(string itemId) => Inventory.Add(itemId);
 

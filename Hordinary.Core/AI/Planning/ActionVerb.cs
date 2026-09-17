@@ -5,10 +5,13 @@ namespace Hordinary.AI.Planning;
 /// verbes primitifs, pas une classe par action »).
 ///
 /// Il n'existe volontairement aucun <c>MoveToAction</c>, <c>OpenDoorAction</c>, <c>PickUpObjectiveAction</c> :
-/// les dix-sept actions executables de la specification sont des <b>instances</b> de ces six verbes,
-/// decrites dans <c>config/planner_domain.json</c> avec des parametres differents. Ajouter une action
-/// au jeu, ou en retirer une pour isoler un comportement en test, se fait dans ce fichier — jamais en
-/// recompilant.
+/// les vingt-quatre actions livrees sont des <b>instances</b> de ces huit verbes, decrites dans
+/// <c>config/planner_domain.json</c> avec des parametres differents. Ajouter une action au jeu, ou en
+/// retirer une pour isoler un comportement en test, se fait dans ce fichier — jamais en recompilant.
+///
+/// Ecrire l'action ne suffit pas a la rendre jouable : il lui faut encore un but symbolique qui lise
+/// ses effets, et un objectif d'utilite qui reclame ce but. Cinq schemas livres n'en ont pas — voir
+/// l'en-tete de <c>config/planner_domain.json</c>.
 /// </summary>
 public enum ActionVerb
 {
@@ -24,7 +27,11 @@ public enum ActionVerb
     /// <summary>Changer l'etat du monde ou de l'agent : ouvrir une porte, fouiller, soigner, partager.</summary>
     SetFlag,
 
-    /// <summary>Laisser passer du temps. Combine a un <c>noise_level</c> eleve, c'est une distraction.</summary>
+    /// <summary>
+    /// Laisser passer du temps. Combine a un <c>noise_level</c> eleve, c'etait la diversion sur
+    /// place — <c>CreateNoiseDistraction</c>, retiree au livrable 15 : faire du bruit expres pour
+    /// attirer la horde sur soi n'est pas un reflexe, c'est un ordre qu'on recoit.
+    /// </summary>
     Wait,
 
     /// <summary>
@@ -42,9 +49,13 @@ public enum ActionVerb
     Push,
 
     /// <summary>
-    /// Faire du bruit ailleurs qu'a l'endroit ou l'on est (livrable 11). <c>CreateNoiseDistraction</c>
-    /// faisait deja du bruit, mais sous les pieds de celui qui le produit ; un petard lance separe
-    /// enfin le bruit de celui qui l'a cause, ce qui est tout l'interet d'une diversion.
+    /// Faire du bruit ailleurs qu'a l'endroit ou l'on est (livrable 11) : le petard lance separe le
+    /// bruit de celui qui l'a cause, ce qui est tout l'interet d'une diversion.
+    ///
+    /// Aucune action du domaine livre ne l'emploie plus : <c>ThrowFirecracker</c> a ete retiree au
+    /// livrable 15 avec le reste de la diversion autonome. Le verbe reste parce que le geste, lui,
+    /// n'est pas retire du jeu — il change de main. Le moteur sait toujours l'executer
+    /// (<c>WorldPlanRuntime.ThrowNoise</c>), et c'est au joueur de le commander.
     /// </summary>
     EmitNoise,
 }

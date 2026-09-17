@@ -5,6 +5,14 @@
 // distance_to(cible), ...) et les courbes de reponse (linear, quadratic, inverse, threshold).
 // Ajouter, retirer ("enabled": false) ou repondérer un objectif se fait ici, sans recompilation.
 //
+// Aucun objectif ne pousse plus un survivant a porter secours de lui-meme : HelpAlly, HealAlly,
+// CalmAlly et Regroup ont ete retires au livrable 15, ou c'est le joueur qui decide des strategies.
+// CreateDistraction est parti avec eux, et pour la meme raison : attirer la horde sur soi pour
+// degager un allie n'est pas un reflexe, c'est un sacrifice calcule — personne ne le fait sans qu'on
+// le lui demande. Le domaine a perdu du meme coup CreateNoiseDistraction et ThrowFirecracker.
+// Le survivant garde ses reflexes personnels — fuir, se cacher, se soigner, se battre — et le groupe
+// reste une cible atteignable ("group"), mais par un ordre du joueur, pas par un score.
+//
 // Lecture d'une consideration :
 //   input     entree primitive lue dans la memoire du survivant, toujours entre 0 et 1
 //   curve     forme de la reponse ; "exponent" durcit linear/quadratic/inverse
@@ -33,9 +41,12 @@
 
     {
       "name": "ExploreUnknownArea",
-      "description": "Decouvrir le terrain quand rien de plus urgent ne se presente. La cible « frontier » n'est plus la frontiere la plus proche mais la mieux notee (livrable 7) : gain d'information attendu, moins le trajet, le danger et ce qu'un allie explore deja. C'est ce dernier terme, et lui seul, qui repartit les trois survivants au lieu de les envoyer au meme endroit — aucun d'eux n'est meilleur explorateur qu'un autre.",
+      "description": "Decouvrir le terrain quand rien de plus urgent ne se presente. La cible « frontier » n'est plus la frontiere la plus proche mais la mieux notee (livrable 7) : gain d'information attendu, moins le trajet, le danger et ce qu'un allie explore deja. C'est ce dernier terme, et lui seul, qui repartit les trois survivants au lieu de les envoyer au meme endroit — aucun d'eux n'est meilleur explorateur qu'un autre. « has_objective » ferme l'objectif une fois la caisse dans le sac : sans cette precondition, un porteur arrive au van voyait « ReachExtraction » se fermer sur « at_extraction », repartait explorer, redevenait loin de l'extraction — et faisait l'aller-retour indefiniment. Celui qui rapporte ce que tout le monde est venu chercher ne repart pas en reconnaissance : decider d'aller voir ailleurs avec la caisse sur le dos est une strategie, elle revient au joueur.",
       "target": "frontier",
-      "preconditions": [ { "input": "frontier_known", "min": 0.5 } ],
+      "preconditions": [
+        { "input": "frontier_known", "min": 0.5 },
+        { "input": "has_objective", "max": 0.5 }
+      ],
       "considerations": [
         { "input": "unexplored_ratio", "curve": "linear" },
         { "input": "personal_safety", "curve": "linear" }
@@ -45,25 +56,13 @@
 
     {
       "name": "FleeDanger",
-      "description": "flee_score de la section 11.3. La pression ressentie garde son droit de veto ; sante et panique ne font que moduler : un survivant calme et en pleine forme fuit quand meme une horde a trois cases.",
+      "description": "flee_score de la section 11.3. La pression ressentie garde son droit de veto ; sante et panique ne font que moduler : un survivant calme et en pleine forme fuit quand meme une horde a trois cases. « at_extraction » ferme l'objectif au van, et seulement la : le van est le seul endroit du quartier ou l'on ne peut pas etre frappe (EntityManager.Sheltered), donc le seul ou fuir revient a courir vers le danger. Sans cette precondition, un survivant rentre voyait « ReachExtraction » se fermer sur « at_extraction », fuyait pour un score de 0,15, ressortait, redevenait mordable — et refaisait le trajet. Rester sous la tole n'est pas tenir la position : il n'y a rien a tenir.",
       "target": "away_from_danger",
+      "preconditions": [ { "input": "at_extraction", "max": 0.5 } ],
       "considerations": [
         { "input": "threat_pressure", "curve": "linear" },
         { "input": "health_ratio", "curve": "inverse", "min": 0.7 },
         { "input": "panic", "curve": "linear", "min": 0.7 }
-      ],
-      "combine": "multiply"
-    },
-
-    {
-      "name": "HelpAlly",
-      "description": "help_ally_score de la section 11.3.",
-      "target": "ally",
-      "preconditions": [ { "input": "has_ally", "min": 0.5 } ],
-      "considerations": [
-        { "input": "ally_danger", "curve": "linear" },
-        { "input": "distance_to(ally)", "curve": "inverse", "min": 0.2 },
-        { "input": "personal_safety", "curve": "linear", "min": 0.2 }
       ],
       "combine": "multiply"
     },
@@ -81,39 +80,6 @@
         { "input": "panic", "curve": "inverse", "min": 0.3 }
       ],
       "weight": 0.9
-    },
-
-    {
-      "name": "HealAlly",
-      "description": "Soigner un allie blesse. « ally_wounded » est une precondition et non une simple consideration : depuis le livrable 7 la sante d'un allie est une croyance, et elle n'arrive que par la parole. Un survivant qui n'a parle a personne ne part donc jamais soigner quelqu'un — il ne sait pas qu'il y a un blesse.",
-      "target": "ally",
-      "preconditions": [
-        { "input": "has_remedy", "min": 0.5 },
-        { "input": "has_ally", "min": 0.5 },
-        { "input": "ally_wounded", "min": 0.25 }
-      ],
-      "considerations": [
-        { "input": "ally_wounded", "curve": "linear" },
-        { "input": "distance_to(ally)", "curve": "inverse", "min": 0.2 },
-        { "input": "personal_safety", "curve": "linear" }
-      ],
-      "weight": 1.1
-    },
-
-    {
-      "name": "CalmAlly",
-      "description": "Rassurer un allie terrifie — l'action speciale de Claire. Comme la sante, la panique d'autrui ne s'observe pas : elle se raconte. L'objectif ne demande pas de medicaments, seulement d'etre pres de quelqu'un qui a peur et de ne pas etre soi-meme en train de courir.",
-      "target": "ally",
-      "preconditions": [
-        { "input": "has_ally", "min": 0.5 },
-        { "input": "ally_panicking", "min": 0.3 }
-      ],
-      "considerations": [
-        { "input": "ally_panicking", "curve": "linear" },
-        { "input": "distance_to(ally)", "curve": "inverse", "min": 0.2 },
-        { "input": "personal_safety", "curve": "linear" }
-      ],
-      "weight": 0.7
     },
 
     {
@@ -139,7 +105,8 @@
       "target": "objective",
       "preconditions": [
         { "input": "has_objective", "max": 0.5 },
-        { "input": "objective_known", "min": 0.5 }
+        { "input": "objective_known", "min": 0.5 },
+        { "input": "objective_reachable", "min": 0.5 }
       ],
       "considerations": [
         { "input": "player_priority", "curve": "linear", "min": 0.4 },
@@ -166,8 +133,9 @@
 
     {
       "name": "Hide",
-      "description": "Se terrer plutot que courir : demande un abri connu tout proche. Se cacher marche contre ce qui ne vous a pas vu, pas contre ce qui vous suit : « pursued » divise le score par trois quand un zombie vient droit sur elle, et la fuite reprend la main.",
+      "description": "Se terrer plutot que courir : demande un abri connu tout proche. Se cacher marche contre ce qui ne vous a pas vu, pas contre ce qui vous suit : « pursued » divise le score par trois quand un zombie vient droit sur elle, et la fuite reprend la main. Meme precondition que « FleeDanger », et pour la meme raison : on ne quitte pas le van pour aller se cacher moins bien.",
       "target": "cover",
+      "preconditions": [ { "input": "at_extraction", "max": 0.5 } ],
       "considerations": [
         { "input": "perceived_danger", "curve": "linear" },
         { "input": "distance_to(cover)", "curve": "inverse" },
@@ -178,38 +146,16 @@
     },
 
     {
-      "name": "Regroup",
-      "description": "Rejoindre le groupe : d'autant plus tentant qu'on est loin et paniqué.",
-      "target": "group",
-      "preconditions": [ { "input": "has_ally", "min": 0.5 } ],
-      "considerations": [
-        { "input": "distance_to(group)", "curve": "linear" },
-        { "input": "panic", "curve": "linear", "min": 0.4 }
-      ],
-      "weight": 0.7
-    },
-
-    {
       "name": "FightZombie",
-      "description": "Se battre quand fuir n'est plus une option (livrable 8). « pursued » est la precondition : un zombie loin ne se combat pas, il s'evite — et il n'existe aucune action pour aller au contact. La sante en courbe inverse est ce qui fait la difference : un survivant en pleine forme prefere partir, un survivant acule et blesse se retourne.",
+      "description": "Se battre quand partir n'est plus la meilleure idee (livrable 8). « pursued » est la precondition : un zombie loin ne se combat pas, il s'evite — et il n'existe aucune action pour aller au contact. Deux considerations decident ensuite du reste. La sante en courbe inverse est celle du MVP : un survivant acule et blesse se retourne. « armed » est la seconde, et c'est elle qui donne un sens a l'arme que le joueur a confiee au depart — les mains vides, l'objectif ne pese plus qu'un tiers, et fuir reprend la main. Un seul poursuivant se regle donc au fusil ; deux restent une raison de courir, parce que le danger ressenti s'accumule quand la poursuite, elle, ne retient que le pire des deux.",
       "target": "danger",
       "preconditions": [ { "input": "pursued", "min": 0.35 } ],
       "considerations": [
         { "input": "pursued", "curve": "linear" },
-        { "input": "health_ratio", "curve": "inverse", "min": 0.3 }
+        { "input": "health_ratio", "curve": "inverse", "min": 0.55 },
+        { "input": "armed", "curve": "linear", "min": 0.3 }
       ],
-      "weight": 0.85
-    },
-
-    {
-      "name": "CreateDistraction",
-      "description": "Attirer la horde loin d'un allie en danger — a condition de ne pas etre soi-meme au contact. Sans cible : on ne se deplace pas pour distraire, on fait du bruit.",
-      "considerations": [
-        { "input": "ally_danger", "curve": "linear" },
-        { "input": "perceived_danger", "curve": "inverse", "min": 0.2 },
-        { "input": "distance_to(danger)", "curve": "inverse", "min": 0.3 }
-      ],
-      "weight": 0.8
+      "weight": 1.0
     }
   ]
 }

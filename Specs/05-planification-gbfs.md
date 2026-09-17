@@ -34,7 +34,6 @@ has(agent, item)
 objective_found
 objective_collected
 zombie_near(location)
-ally_in_danger(ally)
 extraction_known
 ```
 
@@ -48,7 +47,6 @@ BreakWindow
 SearchRoom
 PickUpObjective
 EscapeLocation
-HelpAlly
 ReachExtraction
 ```
 
@@ -97,13 +95,35 @@ PickUpObjective
 DropItem
 Flee
 Hide
-HelpAlly
-HealAlly
-CreateNoiseDistraction
 Wait
 ReachExtraction
 ShareKnowledge
 ```
+
+Toutes sont **écrites** dans [`config/planner_domain.json`](../config/planner_domain.json), et toutes
+sont exécutables. Quatre ne sont pour autant jamais **jouées** : `Observe`, `Wait` — auxquelles le
+livrable 11 a ajouté `UseItem` et `PushHeavyObject` — posent des faits (`observed`, `waited`, `used`,
+`pushed`) qu'aucune précondition et aucun but ne lisent, si bien que `ActionRelevance` les écarte
+pour tous les objectifs. `DropItem` passe le tri mais rien ne demande jamais de poser un objet, et
+`ShareKnowledge` a un but symbolique qu'aucun objectif d'utilité ne réclame.
+
+Ce n'est pas un manquement de ce livrable-ci : couvrir une action, c'est l'écrire et savoir
+l'exécuter, ce qui est fait. Leur donner un demandeur revient au
+[livrable 15](./15-instructions-tactiques.md), où c'est le joueur qui dit « observe », « attends » ou
+« pousse ça » — aucune de ces trois n'est un réflexe.
+
+`HelpAlly`, `HealAlly` et `CalmAlly` figuraient dans cette liste jusqu'au
+[livrable 15](./15-instructions-tactiques.md), qui les a retirées du domaine : un survivant ne décide plus
+seul d'aller au secours d'un autre. `ShareKnowledge` reste — dire ce qu'on a vu n'est pas porter secours,
+et c'est ce qui alimente les croyances de tout le monde. Les prédicats `ally_in_danger`, `ally_wounded` et
+`ally_panicking` disparaissent avec elles : aucun schéma ne les lisait plus, et un prédicat qu'aucune action
+ne déclare n'a pas de traduction en PDDL (voir [G-export-pddl.md](./G-export-pddl.md)).
+
+`CreateNoiseDistraction` est partie de la même façon, avec `ThrowFirecracker` du
+[livrable 11](./11-objets-armes-et-economie-du-camp.md), le but `CreateDistraction` et le prédicat
+`distraction_created`. Attirer la horde ailleurs pour dégager quelqu'un est un sacrifice calculé, pas un
+réflexe : c'est au joueur de le demander. Le verbe `emitNoise` et `WorldPlanRuntime.ThrowNoise` restent
+exécutables, sans aucune action qui les emploie — comme `BarricadeDoor`, ils attendent un demandeur.
 
 ## Data-driven : verbes primitifs, pas une classe par action
 
@@ -144,7 +164,7 @@ sans stress. Trois manques distincts, dans cet ordre de difficulté :
 
 Conséquence pour la conception du socle de verbes primitifs décrit ci-dessus : il doit pouvoir
 porter une action qui **affecte une autre entité** (`damage(target, amount)`, ou un `setFlag` sur une
-cible), pas seulement le monde ou l'inventaire de l'agent. `Flee`, `Hide` et `HelpAlly` figurent
+cible), pas seulement le monde ou l'inventaire de l'agent. `Flee`, `Hide` et `ShareKnowledge` figurent
 déjà dans la liste des actions exécutables à couvrir ; une action offensive suit exactement le même
 gabarit `préconditions / effets / coût / bruit / durée`. Prévoir cette forme dès maintenant évite
 d'avoir à rouvrir le domaine au livrable 8.

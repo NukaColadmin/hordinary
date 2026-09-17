@@ -78,11 +78,13 @@ c'est la mission qui décide lequel, ce que le domaine n'a pas à savoir.
 Extraits mécaniquement des `preconditions` et `effects` de **toutes les actions du fichier**. L'arité et
 les types se déduisent des `parameters`.
 
-Le nombre d'actions n'est jamais écrit en dur, ni ici ni dans un test : `planner_domain.json` en compte
-23 aujourd'hui, et le livrable 11 en ajoute sept (`PickUpItem`, `UseItem`, `EquipWeapon`,
-`AttackWithWeapon`, `ThrowFirecracker`, `PushHeavyObject`, `BarricadeDoor`). Comme l'export se fait
-**après** ce livrable, la seule formulation qui ne périme pas est « autant d'actions que le fichier en
-déclare, moins celles à `"enabled": false` ».
+Le nombre d'actions n'est jamais écrit en dur, ni ici ni dans un test : le fichier en comptait 23, le
+livrable 11 en a ajouté sept (`PickUpItem`, `UseItem`, `EquipWeapon`, `AttackWithWeapon`,
+`ThrowFirecracker`, `PushHeavyObject`, `BarricadeDoor` — cette dernière n'a jamais été écrite), et le
+livrable 15 en a retiré deux (`CreateNoiseDistraction`, `ThrowFirecracker`). Il en déclare vingt-quatre
+au moment où ces lignes sont écrites, ce qui est exactement la raison de la règle : la seule formulation
+qui ne périme pas est « autant d'actions que le fichier en déclare, moins celles à
+`"enabled": false` ».
 
 ### Les six verbes ne se traduisent pas
 

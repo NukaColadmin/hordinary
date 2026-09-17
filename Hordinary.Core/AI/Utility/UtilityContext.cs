@@ -108,6 +108,15 @@ public sealed class UtilityContext
     public bool KnowsObjective { get; }
 
     /// <summary>
+    /// Vrai lorsqu'au moins un exemplaire connu de l'objet de mission est relie a la position de
+    /// l'agent par sa carte mentale. Voir un objet derriere une zone coupee ne suffit pas a en faire
+    /// une destination : sinon <c>PickUpObjective</c> reconstruit sans fin le meme trajet qu'A* vient
+    /// de refuser. La valeur redevient vraie naturellement des qu'une ouverture relie les deux
+    /// composantes.
+    /// </summary>
+    public bool CanReachObjective => NearestObjective() is not null;
+
+    /// <summary>
     /// Nom symbolique du lieu que la mission designe comme objectif. Il vaut pour la Utility AI, pour
     /// le planificateur et pour la memoire des fouilles : c'est parce que les trois emploient le meme
     /// mot qu'une fouille infructueuse peut fermer un objectif au lieu de le laisser se reproposer.
@@ -314,6 +323,7 @@ public sealed class UtilityContext
 
         return Self.Knowledge.KnownItems.Values
             .Where(item => item.ItemId.Equals(Self.ObjectiveItem, StringComparison.OrdinalIgnoreCase) && item.Confidence > minimumConfidence)
+            .Where(item => CanReach(item.Value))
             .OrderBy(item => Distance(Self.Position, item.Value))
             .Select(item => (GridPosition?)item.Value)
             .FirstOrDefault();

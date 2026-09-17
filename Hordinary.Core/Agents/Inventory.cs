@@ -120,6 +120,26 @@ public sealed class Inventory(ItemCatalogue catalogue, InventorySettings? settin
         => _stacks.SelectMany(stack => Enumerable.Repeat(stack.ItemId, stack.Count));
 
     /// <summary>
+    /// Ce sac prendrait-il un exemplaire de plus ? C'est la regle du ramassage posee une fois, et
+    /// non deux : <see cref="Add"/> commence par la consulter, et un ecran qui propose de donner un
+    /// objet a un survivant la consulte aussi plutot que de recompter les emplacements pour son
+    /// compte.
+    /// </summary>
+    public bool Accepts(string itemId)
+    {
+        if (_catalogue.Find(itemId) is not { } definition) return false;
+
+        if (definition.Stackable
+            && _stacks.Any(stack => stack.ItemId.Equals(definition.Id, StringComparison.OrdinalIgnoreCase)
+                                 && stack.Count < definition.MaxStack))
+        {
+            return true;
+        }
+
+        return !IsFull;
+    }
+
+    /// <summary>
     /// Ramasser. Echoue quand l'objet est inconnu du catalogue, ou quand il ne reste ni emplacement
     /// ni pile ouverte — un inventaire plein refuse un ramassage de plus, et c'est l'echec d'action
     /// qui declenche une replanification.
@@ -129,6 +149,7 @@ public sealed class Inventory(ItemCatalogue catalogue, InventorySettings? settin
     public bool Add(string itemId)
     {
         if (_catalogue.Find(itemId) is not { } definition) return false;
+        if (!Accepts(definition.Id)) return false;
 
         if (definition.Stackable)
         {

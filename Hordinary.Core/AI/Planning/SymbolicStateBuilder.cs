@@ -81,6 +81,55 @@ public static class SymbolicStateBuilder
     };
 
     /// <summary>
+    /// La <b>categorie</b> d'un lieu, telle qu'une instruction tactique la nomme : « avant d'entrer
+    /// dans un batiment » parle de <c>building</c>, pas d'un batiment en particulier.
+    ///
+    /// <para>
+    /// Ce sont les entrees de <c>places.kinds</c> dans <c>config/planner_domain.json</c>, declarees
+    /// la-bas comme predicats unaires et posees ici comme faits. Aucune action ne les produit : c'est
+    /// le moteur qui les emet, comme il emet <c>known</c>. La spec G explique pourquoi un predicat
+    /// plutot qu'un sous-type PDDL — le typage n'a pas de negation, et la moitie residuelle du schema
+    /// scinde a besoin de <c>(not (building ?loc))</c> de toute facon.
+    /// </para>
+    /// </summary>
+    public static string? KindNameOf(ZoneKind kind)
+        => kind.IsCommon() ? kind.ToString().ToLowerInvariant() : PlaceNameOf(kind);
+
+    /// <summary>
+    /// Le nom d'objet de planification d'une zone dont la categorie ne suffit pas a la designer :
+    /// « Entrepot ouest » devient <c>entrepot_ouest</c>.
+    ///
+    /// Les accents tombent et les espaces deviennent des soulignes parce que ce nom traverse le PDDL,
+    /// ou un symbole est un mot sans ponctuation. Deux zones ne peuvent pas porter le meme nom — la
+    /// carte les indexe par nom et le generateur de quartier les rend uniques — donc deux objets de
+    /// planification non plus.
+    /// </summary>
+    public static string ObjectNameOf(string zoneName)
+    {
+        ArgumentNullException.ThrowIfNull(zoneName);
+
+        var builder = new System.Text.StringBuilder(zoneName.Length);
+        bool pending = false;
+
+        foreach (char letter in zoneName.Normalize(System.Text.NormalizationForm.FormD))
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(letter) == UnicodeCategory.NonSpacingMark) continue;
+
+            if (char.IsLetterOrDigit(letter))
+            {
+                if (pending && builder.Length > 0) builder.Append('_');
+                pending = false;
+                builder.Append(char.ToLowerInvariant(letter));
+                continue;
+            }
+
+            pending = true;
+        }
+
+        return builder.Length == 0 ? "place" : builder.ToString();
+    }
+
+    /// <summary>
     /// Le meme nom, mais du point de vue d'un survivant en mission : le lieu qu'on l'a envoye
     /// fouiller s'appelle <c>objective_zone</c>, quelle que soit sa categorie.
     ///
@@ -94,9 +143,13 @@ public static class SymbolicStateBuilder
         ArgumentNullException.ThrowIfNull(zone);
         ArgumentNullException.ThrowIfNull(survivor);
 
-        return survivor.ObjectiveZone is { } site && site.Matches(zone)
-            ? UtilityContext.ObjectiveZoneTarget
-            : PlaceNameOf(zone.Kind);
+        if (survivor.ObjectiveZone is { } site && site.Matches(zone)) return UtilityContext.ObjectiveZoneTarget;
+
+        // Un batiment, une rue ou une ruelle n'ont pas de nom de categorie a eux : ils portent le
+        // leur. C'est ce qui permet a une fouille infructueuse dans « Entrepot ouest » d'entrer dans
+        // la memoire sous un nom que le planificateur sait relire, meme quand la mission visait
+        // ailleurs.
+        return PlaceNameOf(zone.Kind) ?? (zone.Kind.IsCommon() ? ObjectNameOf(zone.Name) : null);
     }
 
     /// <summary>
@@ -113,8 +166,7 @@ public static class SymbolicStateBuilder
     {
         "known", "accessible", "at", "extraction_known", "zombie_near", "zombie_adjacent",
         "door_open", "door_closed", "door_locked", "door_of", "window_intact", "window_of",
-        "has", "item_at", "objective_found", "objective_collected", "ally_in_danger",
-        "ally_wounded", "ally_panicking", "searched_in_vain",
+        "has", "item_at", "objective_found", "objective_collected", "searched_in_vain",
 
         // Livrable 11. « equipped », « usable » et « inventory_full » decrivent le sac, que le
         // survivant a sous les yeux en permanence ; « heavy_at », « mass_ok » et « zombie_in_range »
@@ -124,6 +176,12 @@ public static class SymbolicStateBuilder
         // « door_locked » dit deja et qu'un regard peut confirmer. Le fait de barricade n'est qu'un
         // marqueur d'avancement de plan, comme « searched ».
         "equipped", "usable", "inventory_full", "heavy_at", "mass_ok", "zombie_in_range",
+
+        // Livrable 15. Les categories de lieux (« places.kinds ») decrivent le terrain, et le
+        // terrain ne change pas de nature : une observation les repose telles quelles a chaque
+        // instantane. Les reconduire d'un plan a l'autre ferait survivre la categorie d'un lieu que
+        // le survivant a cesse de connaitre.
+        "building", "street", "alley", "pharmacy", "extraction", "start",
     };
 
     /// <param name="carried">
@@ -205,8 +263,9 @@ public static class SymbolicStateBuilder
         var facts = new List<string>();
         var danger = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
 
-        var locations = CollectLocations(context, objects, facts, danger, tuning);
-        var places = locations.Where(location => NamedPlaces.Contains(location.Name)).ToList();
+        var kinds = new Dictionary<string, ZoneKind>(StringComparer.OrdinalIgnoreCase);
+        var locations = CollectLocations(context, objects, facts, danger, kinds, tuning);
+        var places = locations.Where(location => Encloses(location.Name, kinds)).ToList();
 
         var doorsteps = CollectOpenings(knowledge, locations, places, objects, facts, tuning, self.Position);
 
@@ -216,7 +275,7 @@ public static class SymbolicStateBuilder
         CollectPositions(context, locations, facts, tuning);
         CollectItems(context, locations, objects, facts);
         CollectSearches(knowledge, facts);
-        CollectAllies(context, objects, facts, danger, tuning);
+        CollectAllies(context, objects, danger);
         CollectThreats(context, objects, facts);
         CollectHeavy(context, objects, facts);
 
@@ -235,6 +294,7 @@ public static class SymbolicStateBuilder
         List<PlanningObject> objects,
         List<string> facts,
         Dictionary<string, float> danger,
+        Dictionary<string, ZoneKind> kinds,
         PlannerSettings settings)
     {
         var locations = new List<PlanningObject>();
@@ -255,24 +315,116 @@ public static class SymbolicStateBuilder
 
             string name = LocationAliases.GetValueOrDefault(target, target);
 
-            var location = new PlanningObject(name, PlanningObjectTypes.Location, cell);
-            locations.Add(location);
-            objects.Add(location);
+            if (KindOfTarget(target, context) is { } kind) kinds[name] = kind;
 
-            facts.Add($"known({name})");
-
-            float threat = context.DangerAt(cell);
-            danger[name] = threat;
-            if (threat >= settings.DangerThreshold) facts.Add($"zombie_near({name})");
+            Declare(new PlanningObject(name, PlanningObjectTypes.Location, cell), context, locations, objects, facts, danger, settings);
         }
+
+        CollectKnownZones(context, objects, facts, danger, locations, kinds, objectiveCell, settings);
 
         // La specification liste « extraction_known » parmi les faits de l'etat : c'est la condition
         // qui autorise a planifier une sortie.
         if (locations.Any(location => location.Name.Equals("extraction", StringComparison.OrdinalIgnoreCase)))
             facts.Add("extraction_known");
 
+        // La categorie de chaque lieu qui en a une. C'est le seul fait de l'etat qu'aucune action ne
+        // pose ni ne retire : le terrain ne change pas de nature, et c'est precisement ce qui permet
+        // a une instruction du joueur de s'y accrocher.
+        foreach (var location in locations)
+        {
+            if (kinds.TryGetValue(location.Name, out var kind) && KindNameOf(kind) is { } category)
+                facts.Add($"{category}({location.Name})");
+        }
+
         return locations;
     }
+
+    /// <summary>
+    /// Les lieux que le survivant a vus de ses yeux et que sa categorie ne suffit pas a nommer : les
+    /// batiments, les rues et les ruelles de <c>config/map_locations.json</c>, un objet chacun.
+    ///
+    /// <para>
+    /// C'est le prerequis du livrable 15, et il vaut meme sans lui : jusqu'ici, seul le batiment vise
+    /// par la mission existait pour le planificateur — sous le nom <c>objective_zone</c> — et
+    /// l'autre n'etait rien. Une instruction qui nommait un batiment quelconque, ou une fouille
+    /// infructueuse ailleurs qu'a l'objectif, n'avaient donc rien sur quoi se poser.
+    /// </para>
+    ///
+    /// <para>
+    /// Un lieu deja declare ne l'est pas deux fois. Celui de la mission s'appelle
+    /// <c>objective_zone</c> et rien d'autre : un jumeau au meme endroit ne recevrait pas la porte,
+    /// et passerait pour ouvert (voir <see cref="IsMergedIntoObjective"/>).
+    /// </para>
+    /// </summary>
+    private static void CollectKnownZones(
+        UtilityContext context,
+        List<PlanningObject> objects,
+        List<string> facts,
+        Dictionary<string, float> danger,
+        List<PlanningObject> locations,
+        Dictionary<string, ZoneKind> kinds,
+        GridPosition? objectiveCell,
+        PlannerSettings settings)
+    {
+        var self = context.Self;
+
+        foreach (var belief in self.Knowledge.KnownLocations.Values.OrderBy(belief => belief.Name, StringComparer.Ordinal))
+        {
+            if (!belief.Kind.IsCommon()) continue;
+            if (self.ObjectiveZone is { } site && site.Name.Equals(belief.Name, StringComparison.OrdinalIgnoreCase)) continue;
+            if (objectiveCell is { } objective && belief.Value == objective) continue;
+
+            string name = ObjectNameOf(belief.Name);
+            if (locations.Any(location => location.Name.Equals(name, StringComparison.OrdinalIgnoreCase))) continue;
+
+            kinds[name] = belief.Kind;
+
+            Declare(new PlanningObject(name, PlanningObjectTypes.Location, belief.Value), context, locations, objects, facts, danger, settings);
+        }
+    }
+
+    /// <summary>Un lieu de plus : l'objet, le fait qu'on le connait, et le danger qu'on y prete.</summary>
+    private static void Declare(
+        PlanningObject location,
+        UtilityContext context,
+        List<PlanningObject> locations,
+        List<PlanningObject> objects,
+        List<string> facts,
+        Dictionary<string, float> danger,
+        PlannerSettings settings)
+    {
+        locations.Add(location);
+        objects.Add(location);
+
+        facts.Add($"known({location.Name})");
+
+        if (location.Position is not { } cell) return;
+
+        float threat = context.DangerAt(cell);
+        danger[location.Name] = threat;
+        if (threat >= settings.DangerThreshold) facts.Add($"zombie_near({location.Name})");
+    }
+
+    /// <summary>La categorie d'une cible du livrable 4, quand elle vient du terrain.</summary>
+    private static ZoneKind? KindOfTarget(string target, UtilityContext context) => target.ToLowerInvariant() switch
+    {
+        "pharmacy" => ZoneKind.Pharmacy,
+        "extraction" => ZoneKind.Extraction,
+        "start" => ZoneKind.Start,
+        UtilityContext.ObjectiveZoneTarget => context.Self.ObjectiveZone?.Kind,
+        _ => null,
+    };
+
+    /// <summary>
+    /// Un lieu qu'une ouverture peut fermer, donc un lieu auquel rattacher une porte ou une fenetre.
+    ///
+    /// Une rue n'a pas de porte. Lui en rattacher une ferait passer un quartier entier pour une piece
+    /// verrouillee des qu'un survivant apercevrait une porte close depuis le trottoir — et
+    /// <see cref="Relocate"/> ramenerait la rue a ce pas de porte. Les reperes recalcules
+    /// (<c>cover</c>, <c>frontier</c>…) n'en sont pas non plus : ils n'ont pas de categorie du tout.
+    /// </summary>
+    private static bool Encloses(string name, IReadOnlyDictionary<string, ZoneKind> kinds)
+        => kinds.TryGetValue(name, out var kind) ? !kind.IsOpenAir() : NamedPlaces.Contains(name);
 
     /// <summary>
     /// Vrai si ce lieu nomme est en fait celui de la mission, deja declare sous le nom
@@ -570,6 +722,7 @@ public static class SymbolicStateBuilder
         var knowledge = context.Self.Knowledge;
         float floor = knowledge.Settings.MinimumConfidence;
         var declared = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var spots = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var belief in knowledge.KnownItems.Values
                      .Where(item => item.Confidence > floor)
@@ -584,9 +737,17 @@ public static class SymbolicStateBuilder
             string spot = Token("spot", belief.Value);
 
             objects.Add(new PlanningObject(belief.ItemId, PlanningObjectTypes.Item, belief.Value));
-            objects.Add(new PlanningObject(spot, PlanningObjectTypes.Location, belief.Value));
 
-            facts.Add($"known({spot})");
+            // Deux objets peuvent gesir sur la meme case. C'est rare sur un grand quartier, courant
+            // sur un petit — et le lieu se nomme par sa position : le declarer une fois par objet
+            // donnait deux lieux homonymes, que PlanningProblem refuse. Un seul lieu par case, donc,
+            // et autant de faits « item_at » qu'il y a d'objets dessus.
+            if (spots.Add(spot))
+            {
+                objects.Add(new PlanningObject(spot, PlanningObjectTypes.Location, belief.Value));
+                facts.Add($"known({spot})");
+            }
+
             facts.Add($"item_at({belief.ItemId}, {spot})");
         }
     }
@@ -598,14 +759,22 @@ public static class SymbolicStateBuilder
     /// </summary>
     private static void CollectHeavy(UtilityContext context, List<PlanningObject> objects, List<string> facts)
     {
+        var places = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
         foreach (var heavy in context.KnownHeavyObjects.OrderBy(item => item.Id, StringComparer.Ordinal))
         {
             string place = Token("heavy", heavy.Value);
 
             objects.Add(new PlanningObject(heavy.Id, PlanningObjectTypes.Heavy, heavy.Value));
-            objects.Add(new PlanningObject(place, PlanningObjectTypes.Location, heavy.Value));
 
-            facts.Add($"known({place})");
+            // Meme regle que pour les objets au sol : le lieu porte le nom de sa case, donc deux
+            // meubles voisins de position en demanderaient deux fois le meme.
+            if (places.Add(place))
+            {
+                objects.Add(new PlanningObject(place, PlanningObjectTypes.Location, heavy.Value));
+                facts.Add($"known({place})");
+            }
+
             facts.Add($"heavy_at({heavy.Id}, {place})");
 
             bool alone = heavy.Mass > HeavyObjects.SoloMassLimit
@@ -629,32 +798,26 @@ public static class SymbolicStateBuilder
     }
 
     /// <summary>
-    /// Les allies dont le survivant connait la position, et ce qu'il sait de leur etat.
+    /// Les allies dont le survivant connait la position. Ils deviennent des objets adressables — ce
+    /// dont <c>ShareKnowledge</c> a besoin pour designer a qui l'on parle — et leur position entre
+    /// dans la carte de danger, qui sert a evaluer les trajets.
     ///
-    /// <c>ally_in_danger</c> se deduit de la carte mentale : voir des zombies pres de quelqu'un
-    /// suffit a s'inquieter pour lui. <c>ally_wounded</c> et <c>ally_panicking</c>, non — une
-    /// blessure ne se lit pas a trente metres. Ces deux faits n'apparaissent que si l'interesse l'a
-    /// <b>dit</b>, c'est-a-dire apres un partage de connaissances (livrable 7). C'est ce qui donne a
-    /// <c>HealAlly</c> une precondition que seule la rencontre peut rendre vraie, au lieu d'un plan
-    /// de soin fonde sur une intuition.
+    /// Leur <b>etat</b>, en revanche, ne produit plus aucun fait. <c>ally_in_danger</c>,
+    /// <c>ally_wounded</c> et <c>ally_panicking</c> n'existaient que pour conditionner HelpAlly,
+    /// HealAlly et CalmAlly, retirees au livrable 15 : sans action pour les lire, ce seraient des
+    /// predicats declares par aucun schema — exactement ce que l'export PDDL de la spec G ne peut pas
+    /// representer. Ce que le survivant sait de la sante et de la panique de ses allies reste dans ses
+    /// croyances (livrable 7) et dans le contexte d'utilite ; simplement, il n'en tire plus de plan.
     /// </summary>
     private static void CollectAllies(
         UtilityContext context,
         List<PlanningObject> objects,
-        List<string> facts,
-        Dictionary<string, float> danger,
-        PlannerSettings settings)
+        Dictionary<string, float> danger)
     {
         foreach (var ally in context.Allies.OrderBy(a => a.Id, StringComparer.Ordinal))
         {
             objects.Add(new PlanningObject(ally.Id, PlanningObjectTypes.Ally, ally.Value));
-
-            float threat = context.DangerAt(ally.Value);
-            danger[ally.Id] = threat;
-
-            if (threat >= settings.DangerThreshold) facts.Add($"ally_in_danger({ally.Id})");
-            if (ally.HealthRatio <= settings.AllyWoundedThreshold) facts.Add($"ally_wounded({ally.Id})");
-            if (ally.Panic >= settings.AllyPanicThreshold) facts.Add($"ally_panicking({ally.Id})");
+            danger[ally.Id] = context.DangerAt(ally.Value);
         }
     }
 

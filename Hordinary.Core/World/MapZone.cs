@@ -54,3 +54,25 @@ public sealed class MapZone(string name, ZoneKind kind, GridPosition min, GridPo
     public override string ToString()
         => $"{Name} [{Kind}{(Profile is { } profile ? $"/{profile}" : string.Empty)}] {Min}-{Max}";
 }
+
+/// <summary>
+/// Ce que la categorie d'une zone dit de son nom.
+///
+/// La pharmacie, le camp et l'extraction sont uniques sur une carte : leur categorie suffit a les
+/// designer, et le planificateur les connait sous ce nom-la. Un batiment, une rue ou une ruelle ne
+/// se distinguent que par leur nom propre — « allez fouiller le batiment » ne designe rien quand il
+/// y en a deux. C'est toute la difference, et elle vaut a la fois pour la memoire d'un survivant et
+/// pour le vocabulaire du domaine de planification.
+/// </summary>
+public static class ZoneKinds
+{
+    public static bool IsCommon(this ZoneKind kind)
+        => kind is ZoneKind.Building or ZoneKind.Street or ZoneKind.Alley;
+
+    /// <summary>
+    /// Vrai pour les lieux qu'aucune ouverture ne ferme. Une rue n'a pas de porte : ce qu'on y voit
+    /// de portes garde les batiments qui la bordent, jamais elle.
+    /// </summary>
+    public static bool IsOpenAir(this ZoneKind kind)
+        => kind is ZoneKind.Street or ZoneKind.Alley;
+}

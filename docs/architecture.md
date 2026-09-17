@@ -19,13 +19,18 @@ La specification complete est dans [`Specs/`](Specs/00-INDEX.md), decoupee en hu
 | 7 — Survivants et partage | fait |
 | 8 — Interface et boucle complete | fait |
 | 11 — Objets, armes et economie du camp | fait (code, tests et tuiles ; rendu a verifier dans l'editeur) |
+| 15 — Instructions tactiques | fait, sauf le service de langage (portillon 3 hors ligne) |
+| 16 — Missions aleatoires et recompenses | fait |
+| G — Export PDDL | fait |
 
 Le MVP est complet : une partie se joue du choix de l'equipe jusqu'a la victoire ou la defaite.
 
 Au-dela des huit livrables, la boucle de jeu est passee de « une partie » a « une mission » :
 
 * **Preparation** — le joueur choisit ses agents dans une grille de fiches en bas d'ecran, puis sa
-  mission dans `config/missions.json`, puis demarre. Voir [Preparation de mission](#preparation-de-mission).
+  mission parmi trois offres generees a la graine de la partie, puis demarre. Voir
+  [Preparation de mission](#preparation-de-mission) et
+  [Missions aleatoires et recompenses](#missions-aleatoires-et-recompenses).
 * **Le camp** — une mission commence et finit au meme endroit. La zone d'extraction est posee sur la
   zone de depart : on part du camp, on y revient.
 * **La ligne d'arrivee** — la partie est gagnee des que la caisse revient au camp avec quelqu'un.
@@ -50,9 +55,9 @@ dotnet build Hordinary.sln
 Puis ouvrir le dossier dans Godot 4.7 et lancer la scene `Scenes/Main.tscn` (scene principale par defaut).
 
 Le jeu s'ouvre sur l'ecran de preparation : choisir ses agents dans la grille du bas, une mission
-dans la liste, puis `DEMARRER LA MISSION`. Pour aller droit au but, `debug.skip_setup` a `true` dans
-[`config/game_config.json`](config/game_config.json) lance directement la premiere mission avec toute
-l'equipe.
+dans la liste, composer leur paquetage, puis `DEMARRER LA MISSION`. C'est le seul chemin d'entree
+d'une partie : il n'existe plus de raccourci de debug qui le saute, parce qu'une partie qui commence
+sans que le joueur ait rien confie ne joue pas le meme jeu que celle qu'on livre.
 
 > Le runtime .NET 8 n'est pas requis : `Hordinary.csproj` active `RollForward=LatestMajor`,
 > l'assembly s'execute donc sur le runtime .NET majeur installe.
@@ -211,8 +216,9 @@ Scripts/                 couche Godot (projet Hordinary.csproj)
 Tests/                   xUnit, sans Godot
 config/                  parametres externes (aucune valeur de gameplay codee en dur)
 ├── game_config.json     navigation, perception, bruit, survivant, zombies, utility_ai, planner,
-│                        replanning, knowledge, exploration, inventory, debug
-├── missions.json        les missions proposees : objectif, camp, caisses, taille de horde
+│                        replanning, knowledge, exploration, inventory, mission,
+│                        mission_generation, debug
+├── missions.json        les missions ecrites a la main : objectif, camp, caisses, taille de horde
 ├── survivors.json       les trois profils : un identifiant, un nom, une image
 ├── utility_goals.json   les objectifs et leurs considerations
 ├── planner_domain.json  les actions du planificateur et la traduction des objectifs en buts
@@ -475,13 +481,15 @@ qu'elle sait : un ordre du joueur n'est qu'un score parmi d'autres.
 ### Un objectif est une donnee, pas une methode
 
 Il n'existe ni `ComputeFleeScore()` ni classe `FleeDanger`. Le code connait un socle de
-**considerations primitives** et quatre **courbes de reponse** ; les douze objectifs de la
-specification sont douze entrees de [`config/utility_goals.json`](config/utility_goals.json) :
+**considerations primitives** et quatre **courbes de reponse** ; les neuf objectifs livres sont neuf
+entrees de [`config/utility_goals.json`](config/utility_goals.json) — la specification en decrivait
+douze, cinq ont ete retires au livrable 15 et `FightZombie` ajoute au livrable 8 :
 
 ```json
 {
   "name": "FleeDanger",
   "target": "away_from_danger",
+  "preconditions": [ { "input": "at_extraction", "max": 0.5 } ],
   "considerations": [
     { "input": "threat_pressure",      "curve": "linear" },
     { "input": "health_ratio",         "curve": "inverse", "min": 0.7 },
@@ -502,7 +510,7 @@ fuite impossible a froid.
 | `perceived_danger` | zombies memorises + bruits entendus | rien en vue -> menace au contact |
 | `threat_pressure` | le plus fort du danger percu et de la panique | tout va bien -> menace ou terreur |
 | `personal_safety` | complement de `threat_pressure` | menace ou terreur -> tout va bien |
-| `ally_danger` | menaces autour d'un allie croyable | allie tranquille -> allie assailli |
+| `ally_danger` | menaces autour d'un allie croyable | allie tranquille -> allie assailli (plus aucun objectif ne la lit, voir « Limites connues ») |
 | `pursued` | cap memorise des menaces proches | personne ne la cherche -> on lui court apres |
 | `health_ratio`, `panic` | etat du survivant | agonisant -> intact, calme -> panique |
 | `has_objective`, `has_ally`, `objective_known` | inventaire et memoire | non -> oui |
@@ -544,9 +552,29 @@ objectif. Sans cette precondition, un survivant arrive a destination continuerai
 `CompletePlayerMission`, et le planificateur lui repondrait indefiniment « zero action » au lieu de le
 laisser passer a ce que la consigne impliquait — fouiller la pharmacie, par exemple.
 
+Un objectif qui se ferme en arrivant a destination laisse la place a un autre, et c'est la que se
+loge le piege : si celui qui prend la suite fait ressortir le survivant, la precondition redevient
+fausse et le premier objectif revient. `ReachExtraction` se fermait sur `at_extraction`,
+`ExploreUnknownArea` prenait la suite, le porteur quittait le van, cessait d'etre a l'extraction, y
+retournait — un aller-retour de deux secondes, tenu jusqu'a la fin de la partie. La reponse n'est pas
+d'empecher la sortie du van mais de fermer ce qui n'a plus lieu d'etre : `has_objective` retire
+l'exploration a qui rapporte la caisse. Cela reste une precondition dans un fichier, pas une regle
+dans le code, et c'est la ligne de partage du livrable 15 — repartir en reconnaissance avec la caisse
+sur le dos serait une strategie, elle revient au joueur.
+
+Le piege a deux autres pretendants, `FleeDanger` et `Hide`, et la reponse est la meme sans etre la
+meme raison. Tant que la horde pouvait mordre au van, fuir en etait un reflexe legitime : celui qui se
+fait entamer en attendant les autres a raison de partir, et tenir la position sous les coups aurait ete
+une decision tactique — donc au joueur. Le van protege maintenant (voir « Fin de partie »), et la
+question change de sens : le seul endroit du quartier ou l'on ne peut pas etre frappe est aussi le seul
+d'ou fuir revient a courir vers le danger. `FleeDanger` et `Hide` recoivent donc la precondition
+`at_extraction`, et la seule chose qu'on abandonne en la posant est une erreur. Dehors, elles scorent
+exactement comme avant.
+
 Un evenement important court-circuite le cooldown, jamais l'hysteresis : zombie repere, bruit fort
-entendu, survivant blesse, itineraire bloque, nouvel ordre du joueur. La raison remonte telle quelle
-dans le journal :
+entendu, survivant blesse, itineraire bloque, nouvel ordre du joueur. Une seule chose la franchit, le
+rappel du van (`Reconsider`, voir « Fin de partie ») : il ne se discute plus, et l'hysteresis figeait
+un survivant terre pour le reste de la partie. La raison remonte telle quelle dans le journal :
 
 ```
 [Agent] Alice repere zombie-21.
@@ -625,9 +653,9 @@ pourquoi fouiller ou ramasser porte sur le local entier quand on est a l'interie
 
 ### Une action est une donnee, pas une classe
 
-Il n'y a ni `MoveToAction` ni `OpenDoorAction`. Le code connait **six verbes primitifs** —
-`toPos`, `take`, `put`, `setFlag`, `wait`, `damage` — et les vingt actions de la specification sont
-vingt entrees de [`config/planner_domain.json`](config/planner_domain.json) :
+Il n'y a ni `MoveToAction` ni `OpenDoorAction`. Le code connait **huit verbes primitifs** — `toPos`,
+`take`, `put`, `setFlag`, `wait`, `damage`, `push`, `emitNoise` — et les vingt-cinq actions livrees
+sont vingt-cinq entrees de [`config/planner_domain.json`](config/planner_domain.json) :
 
 ```json
 {
@@ -648,24 +676,126 @@ retire toute position memorisee avant que le deplacement n'en pose une nouvelle 
 sont appliquees avant les ajouts.
 
 `OpenDoor`, `SearchRoom`, `HealSelf` et `ShareKnowledge` sont tous des `setFlag` avec un fait
-different. `CreateNoiseDistraction` est un `wait` de 0,5 s avec `noise_level: 10` : toute action
-executee emet son bruit, celle-la n'est faite que pour ca. `damage` n'est utilise par aucune action
-livree — le combat est le livrable 8 — mais le verbe existe deja, comme la specification le demande,
-pour qu'une action offensive n'ait pas a rouvrir le domaine.
+different. `AttackZombie` est un `damage` a mains nues, `AttackWithWeapon` le meme verbe avec
+`amount: 0`, qui veut dire « ce que je tiens » et fait lire les degats dans `config/weapons.json`.
+
+Le verbe `emitNoise` n'a plus d'action qui l'emploie : `ThrowFirecracker` a ete retiree du domaine en
+meme temps que `CreateNoiseDistraction`, l'objectif `CreateDistraction` et le fait
+`distraction_created`. Faire du bruit expres pour attirer la horde ailleurs n'est pas un reflexe,
+c'est un sacrifice calcule — voir « Ce qui a ete retire, et pourquoi ». Le moteur sait toujours
+l'executer (`WorldPlanRuntime.ThrowNoise`, et l'effet `emit_noise` du petard de `config/items.json`) :
+c'est le demandeur qui manque, et le livrable 15 doit le fournir.
 
 Un verbe inconnu, un parametre manquant, une variable non declaree ou un type d'objet inexistant sont
 refuses **au chargement**, avec le vocabulaire disponible.
 
-### GBFS, et pourquoi ce n'est pas A*
+### Ce que le domaine sait faire, et ce qui y dort
+
+Une action n'est jouable que si une chaine arriere la relie a un but symbolique, et si un objectif de
+la Utility AI demande ce but. Les vingt-cinq schemas ne se valent donc pas, et c'est mesurable : le
+tri de `ActionRelevance` part des faits que le but reclame et remonte jusqu'au point fixe, si bien
+qu'une action dont **aucun** effet n'entre dans cette cloture ne peut apparaitre dans aucun plan, pour
+aucun objectif.
+
+| Etat | Actions | Ce qui les tient |
+|---|---|---|
+| **Jouees** — vues dans un plan sur la carte livree | `MoveToLocation`, `Explore`, `SearchRoom`, `LocateObjective`, `PickUpObjective`, `PickUpSpottedObjective`, `ForceDoor` | la mission elle-meme |
+| **Atteignables** — chaine complete, selon la partie | `OpenDoor`, `BreakWindow`, `ReachExtraction`, `EscapeLocation`, `Hide`, `PushBackZombie`, `AttackZombie`, `HealSelf`, `EquipWeapon`, `AttackWithWeapon`, `PickUpItem` | une porte fermee, un zombie au contact, une blessure, une arme au sol |
+| **Degeneree** | `DropItem` | elle survit au tri par `item_at` et `!has`, mais aucun but ne demande de poser quoi que ce soit : elle ne peut apparaitre que dans un cycle que GBFS ne prefere jamais |
+| **Inertes** — jamais pertinentes, quel que soit le but | `Observe`, `Wait`, `UseItem`, `PushHeavyObject` | leurs effets — `observed`, `waited`, `used`, `pushed` — ne sont lus par aucune precondition et par aucun but |
+| **Sans demandeur** | `ShareKnowledge` | le but symbolique existe, aucun objectif de `utility_goals.json` ne le reclame |
+
+Les quatre inertes ne sont pas des oublis. `Observe`, `Wait` et `DropItem` sont listees par
+[`Specs/05`](../Specs/05-planification-gbfs.md) parmi les actions a couvrir : elles sont ecrites, et il
+leur manque un but qui les reclame. `UseItem` et `PushHeavyObject` viennent du livrable 11 et
+attendent la meme chose — c'est au livrable 15 de le leur donner, sous la forme d'une instruction
+tactique du joueur plutot que d'un objectif d'utilite de plus.
+
+Deux consequences a connaitre avant d'ecrire une instruction tactique :
+
+* **`PickUpItem` ne sert plus qu'a s'armer.** Le seul chemin qui y mene passe par `EquipWeapon` →
+  `AttackWithWeapon` → `FightZombie`. Il y en avait un second, `ThrowFirecracker` →
+  `CreateDistraction`, qui est parti avec la diversion. Aucun but ne dit « ramasse ce qui traine », et
+  ramasser des vivres n'est donc pas planifiable.
+* **Un blesse ne peut pas planifier de ramasser un bandage qu'il voit.** `HealSelf` demande
+  `has(agent, remedy)`, et `remedy` n'est declare par `SymbolicStateBuilder` que si le sac en contient
+  **deja** un : ce qui soigne au sol reste un `item_at(bandage, spot_x_y)` que rien ne relie au soin.
+  L'objectif d'utilite `HealSelf` a la meme precondition (`has_remedy`) et ne score meme pas.
+
+`BarricadeDoor` etait un cas a part, et ne l'est plus. [`Specs/11`](../Specs/11-objets-armes-et-economie-du-camp.md)
+la decrivait, `WorldPlanRuntime.SetFlag` avait sa branche `door_barricaded` et `config/items.json` la
+citait dans le commentaire de la caisse a outils — mais elle n'avait **aucune entree** dans
+`planner_domain.json`. Le moteur savait barricader une porte ; personne ne savait le lui demander, et
+surtout personne ne *pouvait* : la grammaire du livrable 15 valide les instructions du joueur contre ce
+fichier, et aurait rejete « barricade cette porte » comme symbole inconnu.
+
+Le schema y figure desormais, au contrat exact du tableau de la spec 11 : `at(agent, ?location)`,
+`door_of(?door, ?location)`, `door_closed(?door)` et `equipped(toolbox)` en preconditions,
+`door_barricaded(?door)` en effet. Deux ajouts au tableau, et tous deux pour dire la verite sur le
+monde plutot que de la taire — `!door_closed(?door)` et `door_locked(?door)`, parce que c'est ce que
+`WorldPlanRuntime.Barricade` fait reellement a la grille. La caisse a outils est citee **en toutes
+lettres** et non par un modificateur de `config/items.json` : un seul mecanisme de disponibilite vaut
+mieux que deux, ce que le commentaire de la caisse disait deja.
+
+Ce que cet ajout ne fait **pas** : rendre l'action jouable. Aucun but ne lit `door_barricaded`, donc
+`ActionRelevance` l'ecarte pour tous les objectifs, exactement comme `Observe` ou `Wait`. Elle passe
+de « inexistante » a « en sommeil », ce qui est le bon etat d'attente — et c'est tout ce qu'un
+livrable anterieur au 15 peut lui offrir sans violer la regle de coupe : condamner une porte est une
+strategie, pas un reflexe.
+
+### GBFS, et pourquoi ce n'est pas A* par defaut
 
 ```
-priorite du noeud = heuristique(etat, but)
+priorite du noeud = (heuristique(etat, but), cout accumule, ordre de generation)
 ```
 
-Uniquement l'heuristique : pas `g + h`. La recherche est donc rapide et **non optimale** ; le cout
-accumule ne sert qu'a rendre compte du plan retenu, jamais a le choisir. Deux estimations egales sont
-departagees par l'ordre de generation, si bien que deux planifications sur la meme memoire rendent le
-meme plan — le journal et les tests sont reproductibles.
+L'heuristique d'abord, et elle seule : la priorite n'est **pas** `g + h`, le cout ne s'ajoute jamais
+a l'estimation. La recherche reste donc gloutonne et **non optimale**.
+
+Le cout n'intervient qu'a estimation egale, comme second critere. Ce n'est pas un detail : `Heuristic`
+rend exactement `0` pour tout etat qui satisfait le but, si bien que **toutes** les actions terminales
+sont a egalite. Sans le cout, c'est l'ordre de declaration dans `planner_domain.json` qui tranchait —
+et les couts d'action, les `transition_cost` et les coefficients d'arme de `config/weapons.json`
+n'avaient aucun effet sur le plan retenu, alors que tout le reste du projet raisonne comme s'ils en
+avaient un. C'est ce qui faisait repousser un zombie plutot que de l'abattre, machette en main.
+
+L'ordre de generation ferme la marche : a estimation et cout egaux, deux planifications sur la meme
+memoire rendent le meme plan — le journal et les tests restent reproductibles.
+
+#### L'autre strategie : `planner.search`
+
+```json
+"planner": { "search": "gbfs" }
+```
+
+`astar` change **une seule ligne** du chercheur, la fonction de priorite :
+
+```
+gbfs  : (h,     g, ordre de generation)
+astar : (g + h, h, ordre de generation)
+```
+
+Tout le reste — la frontiere, la table des etats fermes, les trois garde-fous, la reconstruction du
+plan — est le meme code. C'est la raison de ne pas avoir ecrit deux chercheurs : deux boucles, c'est
+deux fois la meme correction a faire, et une seule des deux qui la recevrait.
+
+Le second terme change lui aussi de role. Sous `gbfs` il departage des estimations egales par le
+cout ; sous `astar` le cout est deja dans la cle, et c'est `h` qui departage — a somme egale, on
+developpe le noeud le plus proche du but plutot que le plus avance dans un detour.
+
+**`gbfs` reste le defaut, et c'est ce que le jeu joue.** Deux raisons. Le livrable 5 nomme GBFS, et
+[`Specs/D`](../Specs/D-qualite-et-definition-of-done.md) en fait un critere d'acceptation. Et
+l'equilibrage du domaine — les couts de `planner_domain.json`, les coefficients de `weapons.json` —
+a ete regle en lisant les plans que GBFS produit ; basculer la strategie par defaut reviendrait a
+rejouer cet equilibrage.
+
+`astar` est donc la pour etre **compare**, pas pour remplacer : un meme objectif, deux fichiers de
+configuration, et l'on lit dans le journal ce que le plan a coute et combien de noeuds il a fallu
+ouvrir pour le trouver. Une mise en garde honnete tant qu'a faire : ce n'est A* qu'au sens de la
+fonction de priorite. `Heuristic` ajoute au nombre de conditions non satisfaites des termes de
+distance, de danger et de bruit ponderes par la configuration ; rien ne borne leur somme par le cout
+reel du reste du plan, l'heuristique n'est donc pas admissible et l'optimalite n'est pas garantie
+pour autant. C'est un A* pondere, ce qui est la situation ordinaire d'un A* de planification.
 
 L'heuristique livree est la version enrichie de la specification, et ses poids sont dans
 `planner` :
@@ -954,9 +1084,9 @@ que le partage lit dans le monde physique est la distance entre deux corps, et c
 doit lire — la portee de la voix n'est pas une croyance.
 
 Se parler transmet aussi deux informations qui ne s'observent pas : la **sante** et la **panique** de
-l'interlocuteur. C'est ce qui donne enfin a `HealAlly` une precondition verifiable (`ally_wounded`),
-et ce qui fait qu'un survivant qui n'a parle a personne ne part jamais soigner un blesse qu'il aurait
-devine.
+l'interlocuteur. Elles conditionnaient `HealAlly` et `CalmAlly` jusqu'au livrable 15, qui a retire
+l'entraide autonome ; elles restent les entrees `ally_wounded` et `ally_panicking` de la Utility AI —
+le vocabulaire ou puiseront les strategies que le joueur, lui, a le droit de composer.
 
 ### `merge_belief`
 
@@ -1016,22 +1146,100 @@ comme sa carte mentale n'est pas la sienne.
 
 ### Fin de partie
 
-`MissionTracker` observe le monde et ne modifie rien. La ligne d'arrivee est une seule et meme
-chose : **la caisse revient au camp avec quelqu'un**, et la partie est gagnee. Depart et arrivee au
-meme endroit — la zone d'extraction est posee sur la zone de depart — et c'est ce qui donne un sens
-au mot « mission ». Il faut la caisse **et** quelqu'un dans la zone : c'est elle qui doit franchir la
-ligne, pas seulement un survivant.
+`MissionTracker` observe le monde, tient l'horloge de la mission, et ne modifie rien d'autre. La
+ligne d'arrivee est double : **la caisse revient au van, et le groupe avec elle**. Depart et arrivee
+au meme endroit — la zone d'extraction est posee sur la zone de depart — et c'est ce qui donne un
+sens au mot « mission ». Il faut la caisse **et** tout le monde au van : c'est elle qui doit franchir
+la ligne, mais on ne laisse personne derriere.
 
-Deux facons de perdre :
+Le retour d'un seul ne conclut donc rien. C'etait le cas avant, et cela vidait la fin de partie de
+tout enjeu : le plus rapide franchissait le seuil, et le sort des deux autres n'avait aucune
+consequence. « Tout le monde » s'entend des survivants **encore capables d'agir** — on n'attend pas
+indefiniment celui qui est reste sur le pave, sans quoi une seule perte empecherait a jamais la
+mission de se conclure.
+
+Un survivant compte comme rentre s'il est au van **maintenant**, ou s'il y est rentre plus tot et ne
+s'en est pas ecarte de plus de `mission.home_radius` cases. Les deux, parce que ni l'un ni l'autre ne
+suffit : celui qui n'a jamais quitte le vehicule n'a aucun retour a effectuer, et celui qui est
+arrive a rempli son ordre — la Utility AI lui rend la main, et il peut tourner autour du van en
+attendant les autres.
+
+Le retour est **revocable**, et c'est ce qui compte. Tant qu'il ne l'etait pas, un survivant qui
+traversait le camp dans les premieres secondes de l'expedition comptait comme rentre jusqu'a la fin
+de la partie. Sur la carte livree, ou le camp jouxte la ruelle, les trois y passaient : la victoire
+se declarait a la seconde ou la caisse etait ramassee, tout le groupe etant encore dans la pharmacie.
+Le rayon est ce qui separe les deux erreurs symetriques — declarer « ressorti » quiconque fait un pas
+de cote repousse la fin de la mission a un instant ou les trois sont sur la meme poignee de cases ;
+retenir le retour une fois pour toutes la declare n'importe ou.
+
+**Le temps imparti** (`mission.time_limit`, cinq minutes dans le fichier livre) : une expedition ne
+dure pas une soiree. Le delai ecoule, le van annonce le depart et tout le monde rentre. Le rappel
+passe par `SurvivorBand.Recall` et emprunte le chemin d'un ordre du joueur — un `MissionOrder` de
+plus dans les scores d'utilite, avec le poids `mission.recall_priority`, resolu dans la memoire de
+chacun. Ce n'est donc pas un pilotage : celui qui a une horde aux trousses commence par lui echapper,
+puis rentre. Une mission de `config/missions.json` peut redire `time_limit` pour elle seule, et zero
+desamorce le chronometre.
+
+Le rappel **reconsidere** au lieu de simplement demander a reflechir (`UtilitySelector.Reconsider`
+contre `Request`). La nuance decide de la fin de partie : `Request` rend la main tout de suite mais
+laisse au titulaire le benefice de l'hysteresis, et un objectif installe qui reste sous le pretendant
+d'un ecart inferieur au seuil ne lache jamais. Deux survivants terres dans la pharmacie scoraient
+`Hide` a 0,25 contre le rappel a 0,37 — meilleur score, ecart de 0,12 sous une hysteresis de 0,15 —
+et se terrer entretient exactement le danger qui fait se terrer : le van partait, ils restaient, la
+mission ne se concluait pas. Reconsiderer refait la decision sans l'imposer ; celui qu'une horde
+poursuit rescore la fuite en tete et fuit d'abord.
+
+**Le van protege.** La zone `Extraction` est le seul endroit du quartier ou l'on ne peut pas etre
+frappe : `EntityManager.Sheltered` regarde si la cible d'un zombie s'y tient, et le coup n'est pas
+porte. La horde se presse contre la tole, elle n'atteint pas ce qui est dedans. Sans cette regle, le
+premier rentre passait le reste de la mission a se faire entamer en attendant les autres — le groupe
+etait puni de la seule chose que la victoire lui demande, s'attendre.
+
+La regle est posee sur le monde et non dans la decision du zombie : sa machine a etats ne lit que sa
+propre memoire (invariant 2), et lui apprendre ou est le van reviendrait a lui donner la carte. Il
+decide donc d'attaquer comme avant. Une carte qui ne declare pas de zone d'extraction n'abrite
+personne, et c'est le bon defaut : un abri se declare, il ne s'invente pas.
+
+Sa contrepartie est cote decision, dans « Les garde-fous contre l'oscillation » : `FleeDanger` et
+`Hide` se ferment au van. Un abri que l'IA quitte a la premiere silhouette n'est pas un abri.
+
+Le rappel appartient au `MissionTracker` et non a l'appelant parce que c'est lui qui tient l'horloge :
+le confier a la boucle en ferait deux copies — une dans `GameRoot`, une dans le harnais de test — qui
+divergeraient le jour ou l'une des deux changerait.
+
+Trois facons de perdre :
 
 * plus aucun survivant en etat d'agir ;
-* plus aucun medicament nulle part. Cette clause n'est pas decorative — `HealSelf` et `HealAlly`
-  consomment la caisse que la mission demandait de rapporter, et soigner un blesse avec le dernier
-  stock perd donc la partie.
+* plus aucun medicament nulle part. Cette clause n'est pas decorative — `HealSelf` consomme ce qui
+  soigne, et se soigner avec le dernier stock perd donc la partie ;
+* le temps ecoule et le groupe rentre les mains vides. Avant le rappel, un groupe au complet au van
+  ne perd rien : rien ne dit qu'il a renonce, et il peut repartir.
+
+**Une mission finie ramene au camp.** Le verdict rendu, la carte se laisse regarder
+`mission.debrief_seconds`, puis `GameRoot` resout la journee (`CampStock.ResolveDay` : le camp
+mange), vide la scene de tout ce que la mission y avait pose, rend aux couches de tuiles la carte
+dessinee, et rouvre l'ecran de camp avec le verdict en tete et les offres du lendemain. Le prototype
+s'arretait sur un verdict fige : tout ce que le camp sait faire — consommer, entreposer, reproposer —
+n'arrivait jamais, et le jour de campagne ne bougeant pas, les trois memes offres seraient revenues.
+
+Le nettoyage passe par un registre (`AddMissionChild`) plutot que par une recherche de noeuds par
+leur nom : ce qui appartient a la mission y est inscrit en y entrant, et un noeud ajoute demain sera
+retire sans qu'on y revienne. Ce qui appartient a la **partie** — la camera, les couches, l'ecran de
+camp — n'y est pas et reste en place. Les couches de tuiles sont recopiees telles que l'editeur les a
+laissees avant toute peinture, une fois pour toutes : `MapPainter.Paint` efface les couches pour
+poser un quartier genere, et sans cette copie la « carte dessinee » de la mission suivante serait le
+quartier de la precedente.
+
+Une limite assumee : `ResolveDay` plafonne la sante de ceux que le camp n'a pas pu nourrir, et ce
+plafond ne survit pas au retour — un survivant est recree a partir de son profil a chaque depart, et
+rien ne porte encore son etat d'une mission a l'autre. La disette se voit dans les reserves et au
+journal, pas dans les corps.
 
 `OutcomeTests` joue une partie entiere sur la carte livree, du depart a la victoire, sans jamais
 placer personne a la main : le joueur demande les medicaments, la Utility AI bascule seule sur
-`ReachExtraction` une fois la caisse en poche, et le camp est la sortie.
+`ReachExtraction` une fois la caisse en poche, et le camp est la sortie. Un autre test laisse le
+chronometre aller a son terme et verifie que la boucle ramene le groupe au van sans que personne ait
+a conclure la mission a sa place.
 
 ### Preparation de mission
 
@@ -1041,9 +1249,15 @@ lisant la difficulte.
 
 1. **Les agents**, dans une grille horizontale de fiches en bas d'ecran. Chaque fiche porte le nom, le
    role, et la jauge `HP 80/80`. Un clic enrole ou retire.
-2. **La mission**, choisie dans [`config/missions.json`](config/missions.json) : nom, difficulte,
-   equipe conseillee, et le briefing en clair.
-3. **Demarrer** — et rien n'existait avant : ni les survivants, ni la horde, ni les caisses.
+2. **La mission**, choisie parmi trois offres generees (livrable 16) : titre, difficulte, zone,
+   objectif chiffre, equipe conseillee, temps, cout d'entree en essence et recompenses exactes. Une
+   offre generee n'a pas de briefing — l'ecran affiche des donnees comparables, et rien qu'elles. Les
+   missions ecrites dans [`config/missions.json`](config/missions.json) restent proposees telles
+   quelles, avec leur briefing, quand `mission_generation.enabled` est a `false`.
+3. **Le paquetage** — ce que chacun emporte, pris dans l'entrepot du camp. Une ligne par survivant
+   enrole : ce qu'il porte deja, ce que l'etagere offre encore, ses emplacements et son poids.
+4. **Demarrer** — le cout d'entree est debite une seule fois, et rien n'existait avant : ni les
+   survivants, ni la horde, ni les caisses.
 
 La grille d'agents est en bas parce que c'est la qu'elle **reste** : la meme barre, aux memes
 coordonnees, devient la fiche d'equipe pendant la mission. Le joueur n'a pas a chercher ou sont
@@ -1073,8 +1287,35 @@ batiments — et retombe sur le type si le nom ne correspond a rien. `zombie_cou
 reellement la difficulte ; `difficulty` ne fait que l'annoncer, et `MissionCatalogueTests` verifie
 que les deux restent d'accord.
 
-`debug.skip_setup` saute cet ecran et demarre la premiere mission avec toute l'equipe : de quoi
-relancer une partie en boucle en observant une seule chose, sans recliquer trois fois.
+#### Le paquetage : ce que le joueur confie, et ce qui doit revenir
+
+Distribuer le materiel du camp est une **strategie**, pas un reflexe — la regle de coupe du livrable
+15, appliquee telle quelle. Un survivant ramasse ce qu'il trouve sur place parce qu'il en a besoin
+la tout de suite ; decider la veille lequel des trois emporte l'unique fusil est une decision de
+joueur, et elle se prend au camp.
+
+`CampLoadout` (`Hordinary.Core/Game/`) tient ces promesses, et rien de plus :
+
+* **composer ne coute rien.** L'entrepot n'est debite qu'au depart (`HandOver`), comme le cout
+  d'entree d'une offre : consulter, defaire, changer d'avis est gratuit. `Available` est ce que
+  l'entrepot contient moins ce qui est deja promis, de sorte qu'un camp qui n'a qu'une trousse ne
+  peut pas l'avoir confiee a deux survivants ;
+* **les limites du sac ne sont pas redites.** Un paquetage **est** un `Inventory`, construit avec les
+  reglages de `inventory` : emplacements, piles et poids sont ceux du jeu. `Inventory.Accepts` est la
+  regle du ramassage posee une fois — `Add` la consulte, l'ecran aussi pour griser un bouton, et il
+  n'existe pas de second comptage a faire diverger ;
+* **une arme confiee part en main.** Le joueur a decide qui porte le fusil ; la lui laisser au fond du
+  sac reviendrait a ne pas ecouter la decision ;
+* **preter n'est pas donner.** Ce que le camp a confie revient a l'entrepot avec celui qui rentre,
+  mission gagnee ou perdue (`Recover`). Seul ce que le groupe a ramasse en chemin depend du verdict.
+  Ce qui ne rentre pas — un sac reste dehors, un objet consomme — est perdu, et c'est la que le pret
+  coute.
+
+Le materiel de depart de l'entrepot se declare dans [`config/camp.json`](config/camp.json)
+(`storage`). Sans lui, l'entrepot n'existerait qu'apres une premiere victoire et le premier jour
+n'aurait rien a repartir ; une liste vide rend un camp demuni. Symetriquement, ce qu'un survivant
+rapporte et qui n'alimente aucune reserve va desormais a l'entrepot (`CampStock.Deposit`) : le
+survivant est recree a chaque mission, et une arme y disparaissait avec l'objet qui la portait.
 
 ### Le camp : partir et revenir au meme endroit
 
@@ -1111,6 +1352,10 @@ Il n'existe volontairement **aucune action pour rejoindre un zombie**. La precon
 un survivant ne peut donc pas planifier une chasse, seulement repondre a ce qui est deja sur lui.
 `CombatTests` verifie cette absence explicitement — c'est le genre de propriete qu'une action ajoutee
 par distraction ferait disparaitre en silence.
+
+Dans l'autre sens, il existe un endroit ou aucun coup ne porte : la zone d'extraction. Voir « Fin de
+partie » — c'est la seule exception a « un zombie au contact mord », et elle est posee sur le monde,
+pas sur la decision du zombie.
 
 ### La barre d'equipe et les trois panneaux
 
@@ -1156,7 +1401,6 @@ fixe, et deux parties lancees sur la meme configuration restent comparables.
   "console_output": true,
   "commands": true,
   "hud_text": true,
-  "skip_setup": false,
 
   "panic_enabled": false,
   "show_navigation": false,
@@ -1178,7 +1422,6 @@ rallumer l'interrupteur rend exactement le regime qu'on avait ecrit.
 | `console_output` | le journal : plans, replanifications, bruits, ordres, partages |
 | `commands` | `F1` a `F7`, `C`, `Espace`, clic droit — les touches de l'observateur, pas celles du joueur |
 | `hud_text` | les trois panneaux de texte ; il reste la carte et la barre d'equipe |
-| `skip_setup` | rien : il **saute** l'ecran de preparation et demarre la premiere mission |
 
 Une erreur de configuration, elle, ne se coupe jamais : un fichier introuvable ou invalide est un
 probleme que le joueur doit voir, meme sur une partie livree avec le mode debug eteint. C'est la
@@ -1292,6 +1535,416 @@ enfin compter.
 Le champ `objective` de `config/missions.json` accepte desormais les deux vocabulaires dans la meme
 chaine : `"Pharmacy"` designe un `ZoneKind`, `"station_service"` un profil. La carte de demonstration
 ne declare aucun `profile` et reste jouable.
+
+Une zone peut aussi declarer les types de mission qu'elle accepte (`mission_types`, livrable 16). Le
+champ existe pour les exceptions, pas pour la norme : declarer les trois types sur les cinq zones
+livrees ne dirait rien de plus que le silence, et ferait mentir la premiere zone qu'on ajouterait en
+oubliant la ligne. A defaut, les regles generales s'appliquent — une zone avec des zombies peut
+recevoir une elimination, une zone avec un butin une recuperation, une zone contenant une ressource
+vitale un ravitaillement.
+
+## Missions aleatoires et recompenses
+
+Le catalogue ecrit a l'avance est devenu un **generateur d'offres** (livrable 16). A l'ouverture de
+l'ecran de camp, `MissionGenerator` tire `mission_generation.offer_count` missions : une zone cible,
+un objectif mesurable, une recompense annoncee, un cout d'entree en essence. Le fichier
+`config/missions.json` reste charge et jouable — c'est `mission_generation.enabled` qui tranche, et
+c'est aussi ce qui rend le livrable retirable sans toucher au MVP.
+
+### Une offre est une `MissionDefinition`
+
+Il n'existe pas de classe `GeneratedMission`. Une offre est une `MissionDefinition` avec cinq champs
+de plus (`type`, `requirements`, `rewards`, `seed`, `entry_fuel_cost`), et leur **absence** est ce qui
+distingue une mission ecrite a la main. Le choix vaut la peine d'etre dit : tout ce qui est en aval —
+`MissionTracker`, `ZonePass`, `GameRoot.PlaceSupplies`, `CampScreen`, le harnais `Tests/MissionRun.cs`
+— travaille sur une `MissionDefinition` et ne sait pas d'ou elle vient. Une seconde classe aurait
+demande une seconde branche a chacun de ces endroits, et c'est la seconde branche qui aurait diverge.
+
+`MissionDefinition.SuppliesFor(catalogue)` est la seule reponse a la question « qu'est-ce qu'on pose
+dans la zone ? ». Elle est unique pour que le moteur et le harnais de test posent la meme chose.
+
+### Trois objectifs, trois compteurs
+
+`MissionObjectiveTracker` porte les trois mesures, et rien d'autre : il ne rend aucun verdict, c'est
+toujours `MissionTracker` qui le fait. La separation tient a la duree de vie des deux questions — un
+verdict est definitif, une progression fait des aller-retours. Un objet ramasse puis perdu redescend
+le compteur, et c'est voulu : la mission se conclut au retour, pas au ramassage.
+
+| Type | Ce qui est compte | Ce qui le rend acquis |
+|---|---|---|
+| `KillZombies` | morts enregistrees **dans la zone cible** | le compteur, plus le retour du groupe |
+| `CollectObjects` | objets ramasses dans la zone **et encore portes** | le retour du groupe au camp |
+| `CollectPriorityResources` | idem, pour `food`, `water`, `fuel` | le retour du groupe au camp |
+
+Un zombie qui tombe hors de la zone est enregistre pour ne pas etre recompte, mais ne fait rien
+progresser : c'est ce qui donne son sens a la zone cible.
+
+**Pourquoi observer plutot que s'abonner.** `EntityManager.Remove` emet bien un evenement, mais
+`IHorde` — l'interface que le groupe connait — ne l'expose pas, et l'y ajouter obligerait chaque
+horde de test a le porter. Le tracker compare donc la horde d'une passe a l'autre : un identifiant
+qui disparait est un zombie qui est tombe, et sa derniere position connue dit ou. Rien de nouveau
+n'a besoin d'etre cable pour qu'une mission se deroule en test.
+
+Un compteur ne conclut jamais a l'impossible avant d'avoir constate l'existence de ce qu'il cherche.
+Sans ce garde-fou, une mission serait perdue au premier tick — avant que la horde ou les caisses ne
+soient posees.
+
+### Ce que le domaine ne recoit pas
+
+Aucun nom de zone generee, d'objet requis ou de recompense n'entre dans le domaine de planification.
+Une mission generee lui parle exactement comme une mission ecrite : par `objective_zone` et par
+`item`.
+
+D'ou une consequence assumee, et documentee ici plutot que cachee : **une elimination n'a pas de
+demandeur dans le domaine**. « Tuer huit zombies au supermarche » n'est un but symbolique de personne,
+alors que « il y a quelque chose a chercher la-bas » en est un depuis le livrable 5. Une offre
+`KillZombies` pose donc un objet d'appel dans sa zone — c'est ce qui donne au groupe une raison d'y
+aller —, et le combat reste ce qu'il a toujours ete : un reflexe (`FightZombie`) qui se declenche une
+fois sur place. Faire de l'elimination un but planifie serait une decision **tactique** prise seule
+par l'IA, donc du ressort du livrable 15 : c'est au joueur de dire « nettoyez cet endroit ».
+
+### La graine d'une offre
+
+Elle est derivee de quatre valeurs — graine de partie, jour de campagne, rang de l'offre, et
+`generator_version` — melangees par le meme FNV + xorshift que `Deterministic`. Une somme donnerait
+la meme graine a (jour 2, offre 0) et (jour 1, offre 1), et les offres du lendemain seraient celles
+de la veille decalees d'un cran.
+
+`generator_version` merite un mot : une graine ne promet un contenu identique **que pour un jeu de
+regles donne**. Le jour ou une borne ou un poids change, l'ancienne graine ne reproduit plus rien —
+et pretendre le contraire serait le pire des deux mondes. La version entre dans le calcul, et
+l'incrementer dit honnetement « ce sont d'autres missions ».
+
+Deux precautions rendent la generation independante de l'ordre d'ecriture de la configuration : les
+types sont parcourus dans l'ordre de l'enumeration, jamais celui du fichier, et toute table lue dans
+un dictionnaire — butin d'une zone, vivier de recompenses — est triee avant d'etre parcourue.
+Deplacer une ligne dans un fichier ne doit pas changer les missions du jour.
+
+### La difficulte n'est pas une etiquette
+
+Elle se **calcule**, a partir de ce que la mission demande (la charge) et de la densite de zombies de
+la zone, ponderees par `difficulty.zone_weight`. Tout le reste se lit par elle : temps imparti,
+equipe conseillee, ambiance de quartier, table de recompenses, cout d'entree. C'est ce qui empeche
+l'etiquette et le contenu de diverger — defaut que `config/missions.json` avait avant ce livrable, et
+qu'un test devait surveiller a la main.
+
+Pour une elimination, la taille de horde est calculee et non tiree : la part de la horde qui echoit a
+la zone est sa densite, et on la fait croitre jusqu'a ce que le compte y soit. C'est exactement
+« augmenter la densite de la zone » du livrable — et c'est ce qui garantit qu'on ne demande jamais
+plus de morts que la zone n'en recevra.
+
+### Le grand livre : `MissionRewardService`
+
+Ce qu'une mission coute a l'aller et ce qu'elle rapporte au retour tiennent dans la meme classe,
+parce que ce sont deux fois la meme garantie : un mouvement de stock ne doit se produire **qu'une
+fois**. L'essence est debitee au lancement et pas a chaque clic sur l'offre ; les recompenses sont
+versees au verdict de victoire et pas a chaque passe qui le relit — or `MissionTracker.Evaluate` est
+appele a chaque frame, et un verdict deja rendu y repasse indefiniment.
+
+Le service est cree **par mission jouee**, jamais une fois pour la partie : rejouer la meme mission un
+autre jour la repaie, ce qui est le comportement voulu. Une defaite, un abandon ou la mort du groupe
+ne versent rien, et l'essence de l'aller n'est pas rendue — le van a roule.
+
+Une recompense que l'entrepot du camp ne peut pas prendre (`camp.storage_slots`) passe en file
+d'attente et reste visible a l'ecran de camp. Elle n'est jamais supprimee en silence : le joueur a
+choisi son expedition sur ce qu'elle promettait.
+
+### Le repli
+
+Apres `max_attempts_per_offer` tentatives infructueuses, le generateur emploie le profil de secours
+ecrit dans `mission_generation.fallback` et ecrit la raison dans son journal. Ce profil est **ecrit**
+et non calcule : une offre de secours calculee echouerait comme celles qu'elle remplace. Il passe par
+la meme validation que les autres, et un profil de secours fautif leve — c'est la seule facon qu'un
+« ne jamais afficher une mission impossible » ait un sens.
+
+## Export PDDL et instructions tactiques
+
+### Une representation, deux rendus
+
+`Hordinary.Core/AI/Planning/Pddl/` n'est pas un ecrivain de fichiers `.pddl` : c'est une
+**representation intermediaire** (`PddlDomain`, `PddlAction`, `PddlFormula`, `PddlConstraint`)
+construite depuis `config/planner_domain.json` par `PddlDomainBuilder`, et rendue de deux facons.
+
+```
+planner_domain.json → PddlDomain → PddlWriter          → texte, pour Fast Downward et VAL (hors ligne)
+                                 → PlanningDomainRenderer → PlanningDomain, pour GBFS (en jeu)
+```
+
+C'est la seule propriete qui compte ici : il n'y a pas deux compilateurs a maintenir d'accord, donc
+pas de derive possible entre ce qu'un planificateur tiers valide et ce que le jeu execute. C'est
+aussi ce qui fait que les contraintes du joueur changent reellement le comportement du groupe — le
+domaine reecrit repasse par le second rendu, et le survivant planifie dessus.
+
+Rien n'y est ecrit en dur. Les predicats, leur arite et leurs types sont deduits mecaniquement des
+preconditions et des effets de toutes les actions activees ; les constantes sont les symboles nommes
+en dur par ces memes actions. La ligne de partage entre domaine et probleme suit PDDL : un lieu
+depend de la carte et de la mission, donc il appartient au probleme (`Landmarks`) ; `agent`,
+`objective` ou `remedy` sont des symboles du langage, donc au domaine (`Constants`).
+
+Un seul point demandait une decision : le joker `*`. `"!at(agent, *)"` n'a pas d'equivalent STRIPS
+et se rend en effet universellement quantifie, `(forall (?l - location) (not (at agent ?l)))` —
+fidele, et supporte par Fast Downward via ADL. Le rendu inverse refait le chemin.
+
+`PddlAction.Origin` porte la couche execution (verbe, parametres de verbe, duree, bruit) que PDDL ne
+decrit pas et que `PddlWriter` n'ecrit jamais. Sans elle, un domaine reecrit par une contrainte serait
+un joli PDDL que le jeu ne saurait pas jouer.
+
+### Le probleme : un instantane, pas le monde
+
+Le domaine ne change pas d'une partie a l'autre ; un **probleme** est un instantane. `PddlProblemBuilder`
+traduit le `PlanningProblem` que GBFS resout reellement — celui que `SymbolicStateBuilder` a derive de
+la memoire d'**un** survivant.
+
+Rien n'y est ajoute, et c'est tout l'interet. Un lieu jamais percu n'a pas d'objet, donc pas de fait,
+donc aucun plan ne peut s'appuyer dessus — ni sous GBFS, ni sous Fast Downward. C'est ce qui rend la
+corroboration honnete : le planificateur tiers ne voit pas plus que le survivant
+(`Un_objet_jamais_percu_n_apparait_pas_dans_le_probleme`), et trois croyances divergentes donnent trois
+`:init` distincts pour un seul domaine (`Deux_agents_produisent_deux_problemes_differents`).
+
+**Un instantane tient en 45 a 72 lignes**, et c'est venu d'une coupe. Le probleme exportait une table
+des distances entre lieux — un `(= (distance a b) n)` par paire, les deux tiers du fichier — que rien
+dans le domaine ne lisait, et que rien ne pouvait lire : ecrire
+`(increase (total-cost) (distance ?from ?to))` demande un parametre d'origine que
+`MoveToLocation(?location)` n'a pas. La fonction et sa table sont parties, et avec elles l'illusion
+que le cout exporte tenait compte du trajet.
+
+C'est donc une **limite assumee** : le `distance_cost` de `planner_domain.json` — le cout par cellule
+parcourue, que quatre schemas portent — n'est pas exprimable dans cette forme de domaine, et le
+`total-cost` exporte est la part fixe seule. Comparer le cout d'un plan de Fast Downward a celui de
+GBFS demande de le savoir. `Le_probleme_ne_fixe_aucune_valeur_que_personne_ne_lit` interdit a ce poids
+mort de revenir, sous ce nom ou un autre : toute fonction declaree doit etre incrementee quelque part.
+
+Les sorties versionnees vivent dans [`tools/pddl/`](../tools/pddl/README.md) : `domain.pddl` et dix
+`snapshots/` preleves dans une partie jouee du depart au verdict. Des fichiers generes **et**
+versionnes, ce qui est normalement une mauvaise idee — ils le sont parce que ce sont eux qu'on donne
+aux outils hors ligne, et le risque de derive est couvert par `PddlArtifactsTests`, qui rend a nouveau
+et compare.
+
+Comparer le premier instantane et le dernier donne la mesure de ce qu'une mission apprend : 12 objets
+et 1 action instanciee au depart, 25 objets et 105 actions a l'arrivee — avec `entrepot_ouest`,
+`hangar_sud`, `rue_principale` et `ruelle`, c'est-a-dire le prerequis des batiments visible jusque dans
+le PDDL.
+
+Deux ecueils que cette capture a mis au jour, et qui depassent l'export :
+
+* **`planner.max_time_ms` est une horloge.** Une recherche qui aboutit seule peut expirer quand la
+  machine est chargee, donc la suite des plans d'une mission n'est pas reproductible sous charge. Un
+  test qui compare deux deroules desserre ce plafond (`MissionRun(planner:)`), et un test de budget
+  porte sur les **noeuds** — le facteur de branchement dit quelque chose du domaine, l'horloge dit
+  surtout que la machine etait occupee.
+* **`NoiseSystem.Localize` retombe sur `Random.Shared`** quand personne ne lui passe de generateur.
+  Une mission rejouee n'est donc pas identique des qu'un bruit est entendu de loin.
+  `SurvivorBand.Advance(delta, rng)` et `MissionRun(noiseSeed:)` permettent d'en passer un ; le jeu
+  n'en passe toujours pas. C'est un accroc connu a l'invariant « a graine egale, resultat egal », et il
+  est anterieur au livrable 15.
+
+### Les cinq formes, et ce qu'elles deviennent
+
+Une instruction du joueur se lit dans une grammaire fermee de cinq formes, et rien d'autre :
+`require_before(P, A)`, `require_after(P, A)`, `forbid(A)`, `require_always(P)`, `penalize(A, k)`.
+`A` designe un schema (`ForceDoor`) ou une **classe** de schemas par la categorie du lieu vise
+(`enter:building`) — PDDL ne connait pas la notion d'« entrer », seulement celle d'emmener l'agent
+quelque part.
+
+Trois des cinq sont des modalites de trajectoire PDDL 3 (`always`, `sometime-before`,
+`sometime-after`). Les deux autres n'en sont pas — `forbid` est un retrait de schema, `penalize` une
+preference de cout — et le rendu declaratif le dit en commentaire plutot que de faire semblant.
+
+Ce rendu declaratif n'est donne a **aucun** planificateur : ni GBFS ni Fast Downward ne prennent un
+bloc `(:constraints …)` en entree. Ce qui leur est donne est la forme **compilee**, methode de
+Gerevini & Long : la modalite temporelle devient des preconditions supplementaires, quitte a scinder
+une action en deux. Une precondition PDDL est conjonctive — on ne peut pas y ecrire « si batiment
+alors regroupe » — alors on ecrit « batiment **et** regroupe » d'un cote, « pas batiment » de
+l'autre. L'union des deux moities couvre exactement les instances du schema d'origine, leur
+intersection est vide, et le domaine reste dans le meme fragment que celui de la spec G.
+
+La compilation est **plus stricte que la contrainte, et c'est voulu** : `sometime-before` demande le
+fait a un moment quelconque avant, la forme compilee l'exige dans l'etat immediatement precedent.
+Elle est donc correcte et incomplete, et l'approximation va dans le sens de l'intention.
+
+### Quatre portillons
+
+| | Ou | Quoi |
+|---|---|---|
+| 1 — grammaire | `ConstraintGrammar` | cinq formes, predicats et schemas valides **contre le domaine PDDL** |
+| 2 — compilation | `DomainCompiler` | `PddlDomain` → `PddlDomain`, fonction pure |
+| 3 — satisfiabilite | Fast Downward | **hors ligne** : aucun planificateur tiers ne tourne pendant une partie |
+| 4 — conformite | `TrajectoryChecker` | le plan produit satisfait-il la forme *declarative* ? Il tourne **en jeu**, sur chaque plan |
+
+Le portillon 1 ne tient aucune liste de symboles a la main : le vocabulaire est le domaine exporte.
+Il n'y a donc nulle part ou oublier de le mettre a jour quand le domaine bouge — un modele qui
+proposerait `require_before(barricaded(?door), enter:building)` est refuse parce que `barricaded`
+n'existe pas, et il le reste sans que personne y pense.
+
+Le portillon 4 va dans l'autre sens que le 3 : le 3 verifie le domaine compile, le 4 verifie **la
+compilation elle-meme**. Une compilation fausse produit un plan valide au regard du domaine reecrit
+et faux au regard de la phrase du joueur ; rien d'autre dans la chaine ne le voit. Il lit la
+structure, jamais du texte PDDL, et interprete les modalites dans leur lecture **large** — un plan
+qui rejoint le groupe, traverse une rue puis entre dans le batiment est accepte, alors que la forme
+compilee ne l'aurait pas produit. Sans cela il ne verifierait plus la contrainte mais sa traduction,
+et l'incompletude assumee deviendrait invisible.
+
+Un refus n'est pas un echec du systeme, c'est son contenu : `InstructionLog` garde la raison et le
+portillon qui l'a produite. Un systeme qui n'affiche que ses succes ne prouve rien.
+
+### `penalize` depend de la recherche active
+
+`penalize(A, k)` multiplie le cout de `A`. Sous GBFS la file est ordonnee sur `h` seul et le cout ne
+departage que les ex aequo : la contrainte est **exacte dans le PDDL et sans effet sur le plan joue**.
+Sous A*, la priorite est `g + h` et elle agit. Le compilateur accepte dans les deux cas et n'avertit
+que dans le premier ; la question se lit dans `planner.search` (`PlannerSearches.UsesCost`) et nulle
+part ailleurs. L'avertissement est conditionne a la recherche active, il n'est pas une propriete de
+la forme — c'est ce que verifient `Un_penalize_sous_gbfs_avertit_sans_refuser` et
+`Un_penalize_sous_astar_agit_et_n_avertit_pas`.
+
+### Sans modele de langage
+
+`instructions.enabled` est livre a `false` : aucune requete n'est emise et les huit instructions
+pre-ecrites de [`config/instruction_presets.json`](config/instruction_presets.json) restent
+proposees. Ce qui est desactive est la **traduction** d'une phrase libre en contrainte, pas les
+contraintes : les portillons, le compilateur et le verificateur tournent exactement pareil dans les
+deux cas, et `ConstraintGrammar` ne fait aucune difference entre les deux sources.
+
+Retirer toutes les instructions rend le jeu bit a bit identique a ce qu'il etait : le domaine source
+n'est jamais modifie et le domaine compile repart de lui a chaque changement.
+
+### Un vocabulaire de lieux commun au joueur et au planificateur
+
+C'etait le prerequis bloquant du livrable, et il vaut **meme sans lui**. Jusqu'ici, seul le batiment
+vise par la mission existait pour le planificateur, sous le nom `objective_zone` ; l'autre n'etait
+rien. « Avant d'entrer dans un batiment » n'avait donc rien sur quoi se poser.
+
+Trois changements, bornes :
+
+* **La perception nomme les lieux.** `PerceptionSystem.RememberZones` : apercevoir un bout
+  d'entrepot, c'est savoir qu'il y a un entrepot la. Seules les categories dont la carte compte
+  plusieurs exemplaires passent par la (`ZoneKinds.IsCommon` — Building, Street, Alley) ; la
+  pharmacie, le camp et l'extraction sont annonces au briefing et se reconnaissent au sol, et leur
+  souvenir ne doit pas se deplacer a chaque coup d'oeil. Le premier regard fait foi, sauf quand il
+  n'avait vu qu'une facade : une case praticable du meme lieu la remplace, parce que c'est le moment
+  ou l'on apprend par ou entrer.
+* **Un nom de zone devient un symbole.** `SymbolicStateBuilder.ObjectNameOf` : « Entrepot ouest » →
+  `entrepot_ouest`. Les accents tombent et les espaces deviennent des soulignes, parce que ce nom
+  traverse le PDDL ou un symbole est un mot sans ponctuation.
+* **Chaque lieu porte sa categorie.** `building(entrepot_ouest)`, `street(rue_principale)`,
+  `alley(ruelle)` — et `building(objective_zone)`, sans quoi l'instruction vaudrait pour tous les
+  batiments sauf celui qu'on envoie fouiller. Ce sont les entrees de `places.kinds`, declarees dans
+  `planner_domain.json` et posees ici : **aucune action ne les produit**, c'est le moteur qui les
+  emet, comme il emet `known`.
+
+Pourquoi un predicat et pas un sous-type PDDL : le typage est une hierarchie de subsomption **sans
+negation**, et il n'existe aucun type « location qui n'est pas un building ». La moitie residuelle du
+schema scinde a besoin de `(not (building ?loc))` de toute facon, donc du predicat — autant n'avoir
+qu'un seul mecanisme a tester.
+
+Deux effets de bord, tous deux traites :
+
+* **Une rue n'a pas de porte.** Rattacher une ouverture a une rue ferait passer un quartier entier
+  pour une piece verrouillee des qu'un survivant apercevrait une porte close depuis le trottoir, et
+  `Relocate` ramenerait la rue a ce pas de porte. Les lieux `IsOpenAir()` sont donc exclus du
+  rattachement des ouvertures — `Une_rue_n_est_jamais_fermee_par_une_ouverture`.
+* **Le facteur de branchement augmente.** Plus d'objets `location`, donc plus d'instances de
+  `MoveToLocation`. La specification demande de verifier que `planner.max_nodes` et
+  `planner.max_time_ms` tiennent encore ; la reponse vient d'une mesure sur un **quartier genere**,
+  le cas defavorable, et non sur la carte dessinee :
+  `Nommer_tous_les_lieux_ne_fait_pas_deborder_les_budgets_du_planificateur`. Aucune recherche ne
+  sature son budget. Si un jour l'une le faisait, ce serait un chiffre a relever dans
+  `config/game_config.json`, jamais en dur.
+
+### Ce qu'une contrainte fait a une mission
+
+Une instruction ne donne **aucun ordre**. Elle change le repertoire, et le survivant decide comme
+avant — sauf que le plan qu'on ne voulait pas n'existe plus.
+
+```
+config/planner_domain.json   (jamais modifie)
+        │
+        ▼
+   PddlDomain  ──► TacticalInstructions.Add(texte)  ──► portillons 1 et 2
+        │                     │
+        │                     ▼
+        │              PddlDomain compile ──► PlanningDomain ──► SurvivorBand.Instruct
+        │                     │                                        │
+        │                     ▼                                        ▼
+        │        missions/<id>/domain.constrained.pddl        SurvivorAgent.Rebase
+        │        missions/<id>/domain.declared.pddl           (puis replanification)
+        ▼
+   tools/pddl/domain.pddl     (jamais modifie)
+```
+
+* **Le groupe porte les contraintes, pas l'agent.** `SurvivorBand.Instructions` : une instruction
+  s'applique aux trois, et a ceux qui s'enrolent apres elle. Des instructions individuelles
+  demanderaient un domaine compile par agent — possible, hors perimetre.
+* **Poser une contrainte fait replanifier.** Sans cela le groupe continuerait de jouer le plan que la
+  consigne vient d'invalider, et le joueur verrait sa regle ignoree pendant une action entiere.
+* **Tout retirer rend le repertoire d'origine**, et non le dernier domaine reecrit : `Instruct(null)`
+  repart de la source que le groupe a retenue au premier enrolement.
+* **Le portillon 4 tourne en jeu**, sur chaque plan produit (`Brain.Replanned` →
+  `SurvivorAgent.VerifyTrajectory`). Une violation est un defaut du **compilateur**, pas du
+  survivant : elle sort sur un canal qui ne se coupe jamais (`Trace.Error`) plutot que de faire
+  tomber le plan — un plan refuse la laisserait le groupe sans plan du tout.
+
+`GameRoot` ne decide de rien ici non plus : il compile **apres la carte et avant le groupe**, parce
+que « aucun batiment ici » ne se sait qu'une fois le quartier tire. Les contraintes ont deja ete
+acceptees au camp, par ces memes portillons ; on recommence sur le terrain reel parce que le
+portillon 2 n'y dit pas la meme chose. Un refus a ce stade ne casse pas la mission : la contrainte
+tombe, la raison part au journal, le groupe part avec ce qui reste.
+
+Le but courant n'est pas donne au compilateur. Un survivant en choisit un par seconde et par tete, et
+figer celui du depart ferait refuser une contrainte au nom d'un objectif que personne ne poursuit
+encore ; c'est le portillon 3, hors ligne, qui pose cette question-la.
+
+### Le domaine compile d'une mission, sur disque
+
+`config/planner_domain.json` et le `tools/pddl/domain.pddl` versionne ne bougent **jamais**. La
+compilation ecrit, pour la duree de la mission, `missions/<id>/` — genere, non versionne, relu par
+personne :
+
+| Fichier | Pour qui |
+|---|---|
+| `domain.constrained.pddl` | le portillon 3. Le domaine reecrit, **sans** bloc `(:constraints …)`, dans le meme fragment que la spec G — Fast Downward ne prend pas les contraintes de trajectoire PDDL 3 en entree. |
+| `domain.declared.pddl` | VAL, et le lecteur. Le meme domaine **avec** le bloc PDDL 3 : ce que le joueur voulait, plutot que ce que la compilation en a fait. |
+
+Les deux portent la phrase du joueur en commentaire de tete, parce qu'un fichier doit pouvoir
+s'ouvrir seul. Sans contrainte active, rien n'est ecrit : un domaine que personne n'a reecrit vit
+deja dans `tools/pddl/`.
+
+### L'interface
+
+`Scripts/UI/InstructionPanel.cs`, a l'ecran de camp. Il ne compile rien lui-meme : il appelle
+`TacticalInstructions` et affiche ce qui en revient — la contrainte acceptee, ses avertissements, ou
+le refus **avec le portillon qui l'a produit et sa raison**. Les refus s'affichent au meme endroit
+que les acceptations : un systeme qui ne montre que ses succes ne prouve rien.
+
+Les instructions pre-ecrites sont des cases a cocher, chacune montrant a cote la contrainte qu'elle
+vaut — c'est elle qui est appliquee, il n'y a rien a cacher. La saisie libre attend une contrainte de
+la **grammaire fermee**, pas du francais : traduire une phrase est le travail du service de langage,
+et lui seul. Pendant la mission, le HUD rappelle les consignes actives : une contrainte n'est visible
+nulle part ailleurs sur la carte — elle n'ajoute aucun ordre, elle retire des plans — et un
+comportement qu'on ne sait plus avoir demande passe pour un defaut.
+
+### Limites assumees
+
+* Le portillon 3 n'est pas cable : Fast Downward et VAL restent des outils **hors ligne**, et ne sont
+  installes sur aucune machine du projet. Aucun planificateur tiers ne tourne pendant une partie, et
+  le refus par preuve d'insatisfiabilite — le meilleur moment de demonstration du livrable — n'existe
+  donc pas encore en jeu. `tools/pddl/results.md`, qui doit porter le tableau des dix instantanes
+  (plan FD, plan GBFS, ecart), attend de les avoir lances.
+* **`ally` est a la fois un type et un objet** dans les instantanes : le domaine declare
+  `(:types ally …)` et le repere « l'allie le plus proche » s'appelle `ally`. Les deux vivent dans des
+  espaces de noms distincts au sens de la grammaire PDDL, et la plupart des analyseurs l'acceptent ;
+  certains s'en plaignent. Le mecanisme pour le corriger existe deja —
+  `SymbolicStateBuilder.LocationAliases` renomme `objective` en `objective_spot` pour exactement cette
+  raison — mais le faire change le vocabulaire du domaine livre, alors on attend de savoir si c'est
+  necessaire plutot que de le changer a l'aveugle.
+* La traduction d'une phrase libre en contrainte (service FastAPI/LangGraph/OpenRouter, et le
+  `InstructionClient.cs` qui l'appellerait) n'est pas faite. `instructions.enabled` est livre a
+  `false`, et tout le reste du livrable fonctionne sans.
+* Les contraintes sont **collectives** et ne sont pas figees dans une sauvegarde de mission : rejouer
+  une mission demande de reposer les memes instructions.
+* La compilation reste **correcte et non complete** : la lecture « immediatement avant » est plus
+  stricte que le `sometime-before` de PDDL 3. Le verificateur de trajectoire, lui, lit la modalite au
+  sens large — sans quoi il ne verifierait plus la contrainte mais sa traduction.
 
 ## Carte de demonstration
 
@@ -1407,29 +2060,40 @@ une porte au demarrage, tout est en place — a la reserve pres notee dans les l
 * Les trois survivants partagent la meme case de depart et le meme briefing. Les faire arriver par
   des cotes differents de la carte rendrait la repartition de l'exploration plus lisible, mais
   demanderait plusieurs zones de depart dans `map_locations.json`.
-* `CalmAlly` est un treizieme objectif, au-dela des douze de la specification : « reduire la panique »
-  est une action speciale de Claire (livrable 7) et n'avait pas d'objectif pour la declencher. Le
-  catalogue etant une donnee, le test verifie que les douze sont toujours la, pas qu'il n'y en a que
-  douze.
+* Cinq objectifs de la specification ne sont plus livres : `HelpAlly`, `HealAlly`, `CalmAlly`,
+  `Regroup` et `CreateDistraction`, retires au livrable 15. Porter secours n'est pas un reflexe, c'est
+  une strategie, et les strategies viennent du joueur — « Regroupez-vous » reste un ordre direct,
+  touche 5. La diversion est partie pour la meme raison, en un peu plus tranche : faire du bruit
+  expres pour attirer la horde sur soi et degager un allie est un sacrifice calcule, decide en sachant
+  qui est ou et ce qu'on protege. Personne ne fait cela sans qu'on le lui demande. Les deux actions
+  qui la servaient — `CreateNoiseDistraction` et `ThrowFirecracker` — et le fait `distraction_created`
+  ont ete retires avec elle ; `ally_danger` reste au vocabulaire, sans lecteur. Le catalogue etant une
+  donnee, le test verifie que ceux qui restent sont toujours la, pas qu'il n'y en a pas d'autres.
 * L'action `ShareKnowledge` existe et fonctionne, mais aucun objectif Utility AI ne la declenche :
   le partage passif a portee de voix suffit au critere du livrable, et un objectif « aller raconter »
   ferait passer au groupe plus de temps a discuter qu'a survivre. Le but symbolique est declare dans
   `planner_domain.json` pour qui voudrait l'activer.
+* Cinq actions du domaine sont inertes — `Observe`, `Wait`, `UseItem`, `PushHeavyObject`,
+  `BarricadeDoor` — parce qu'aucun but ne lit leurs effets ; `DropItem` n'est guere mieux lotie. Elles
+  restent livrees, mais tant que rien ne les reclame, `objective_collected`, `observed`, `waited`,
+  `used`, `pushed`, `door_barricaded`, `heavy_at` et `mass_ok` sont des predicats orphelins, et
+  l'export PDDL de la spec G n'aura rien a en faire. Voir « Ce que le domaine sait faire, et ce qui y
+  dort ».
 * Une intention annoncee est un point, pas une zone : « je vais en (12,3) » ne dit rien de
   l'itineraire. Deux survivants peuvent donc encore se suivre sur la moitie du trajet avant de
   diverger.
-* Un survivant sait ramasser les medicaments et s'en servir, mais sa mort est toujours seulement
-  journalisee, sans ecran de defaite — livrable 8. Un groupe entier hors de combat non plus.
-* **Elle ne se bat jamais**, meme contre un zombie isole et meme calme. Il manque un objectif de
-  combat et une entree decrivant « peu d'adversaires » (`perceived_danger` fond tout en un scalaire) ;
-  `Zombie` n'a toujours ni points de vie ni moyen d'en perdre. La couche d'action, elle, ne bloque
-  plus : le verbe `damage(cible, quantite)` fait partie du socle et les menaces memorisees sont deja
-  des objets adressables du probleme — une action offensive sera une entree de
-  `planner_domain.json`. C'est le livrable 8 ; le detail est note dans
-  [`Specs/05-planification-gbfs.md`](Specs/05-planification-gbfs.md).
-* GBFS n'est pas optimal, et c'est la specification qui le veut (`priorite = h`). Un plan un peu plus
-  long ou un peu plus bruyant que le meilleur possible est donc normal ; les couts et le bruit
-  n'orientent la recherche qu'a travers l'heuristique.
+* Un survivant ne se bat que sur ce qui est deja sur lui : `zombie_adjacent` et `zombie_in_range` sont
+  les seules preconditions de combat, et **aucune action ne permet de rejoindre une menace**. On ne
+  planifie pas une chasse. La contrepartie est qu'un zombie isole et lent, a quatre cases, n'est
+  jamais traite — il est evite, ou il suit.
+* Le score de combat lit `pursued`, pas le nombre d'adversaires : `perceived_danger` fond tout en un
+  scalaire, et « un seul zombie » ne se distingue pas de « trois zombies deux fois plus loin ».
+* GBFS n'est pas optimal, et c'est la specification qui le veut : le cout ne s'ajoute pas a
+  l'estimation, il ne fait que departager les ex aequo. Un plan un peu plus long ou un peu plus
+  bruyant que le meilleur possible est donc normal. La ou le cout decide vraiment, c'est entre deux
+  facons d'atteindre le meme but — frapper ou repousser — parce que l'heuristique les note pareil.
+  `planner.search: "astar"` met le cout dans la cle, mais n'achete pas l'optimalite pour autant :
+  l'heuristique enrichie n'est pas admissible.
 * Ramasser et fouiller portent sur le local entier des qu'on est a l'interieur : Alice peut prendre
   les medicaments a l'autre bout de la pharmacie sans traverser la piece. C'est la contrepartie
   assumee d'un plan qui raisonne sur des lieux et non sur des cases.
@@ -1450,10 +2114,11 @@ une porte au demarrage, tout est en place — a la reserve pres notee dans les l
   zombie dans la rue. Le danger **memorise**, lui, contourne les murs — la carte de chaleur se
   propage de proche en proche. Les deux devraient s'accorder ; c'est `UtilityContext.DangerAt` qu'il
   resterait a ponderer par la ligne de vue.
-* `CreateDistraction` a desormais son action (`CreateNoiseDistraction`, un `wait` a 10 de bruit), mais
-  elle fait du bruit sur place : attirer la horde *ailleurs* demanderait de choisir ou le faire, ce que
-  le domaine ne sait pas encore exprimer. La distraction manuelle (`Espace`) reste le seul moyen de
-  viser une case.
+* La diversion n'est plus dans les mains de personne. `CreateDistraction`, `CreateNoiseDistraction` et
+  `ThrowFirecracker` ont ete retires ; le verbe `emitNoise` et `WorldPlanRuntime.ThrowNoise` restent
+  executables, et la distraction manuelle (`Espace`, sous `debug.commands`) reste le seul moyen de
+  viser une case. C'est un manque assume jusqu'au livrable 15, pas une regression : ce qui manque est
+  un demandeur, et il doit etre le joueur.
 * Les souvenirs sonores ne sont toujours pas partages par `LearnFrom` : l'erreur de localisation
   appartient a celui qui a entendu, et la transmettre reviendrait a la propager comme un fait. « J'ai
   entendu quelque chose par la » resterait pourtant utile ; il faudrait une croyance qui porte

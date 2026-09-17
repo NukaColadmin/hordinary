@@ -20,6 +20,15 @@ health: float  # 0 à 100
 
 Combats simples pour le MVP. Un zombie au contact inflige des dégâts à intervalles réguliers. Les survivants peuvent : fuir, repousser un zombie, effectuer une attaque simple, aider un allié.
 
+**Une exception, une seule : la zone d'extraction.** Un survivant qui se tient dans le van ne peut pas
+être frappé — la horde se presse contre la tôle, elle n'atteint pas ce qui est dedans. Sans cette règle,
+le premier rentré passe le reste de la mission à se faire entamer en attendant les autres, et le groupe
+est puni de la seule chose que la victoire lui demande : s'attendre. La règle est posée sur le monde
+(`EntityManager.Sheltered`) et non sur la décision du zombie, qui ne connaît pas la carte ; il décide
+d'attaquer comme avant. Une carte qui ne déclare pas de zone `Extraction` n'abrite personne. Côté
+décision, `FleeDanger` et `Hide` se ferment au van : un abri que l'IA quitte à la première silhouette
+n'est pas un abri (voir [livrable 4](./04-utility-ai.md)).
+
 ### Panique
 
 Augmente : plusieurs zombies proches, allié attaqué, survivant blessé, horde arrivant, survivant isolé.
@@ -97,7 +106,13 @@ boucle suivante doit se dérouler et rester observable depuis le mode debug :
 2. Ils explorent la carte pour localiser la pharmacie.
 3. Ils coopèrent face aux zombies rencontrés (évitement, partage d'informations, distraction, entraide).
 4. Ils atteignent la pharmacie et récupèrent la caisse de médicaments.
-5. Ils rejoignent la zone d'extraction avec la caisse.
+5. Ils rejoignent la zone d'extraction avec la caisse. La mission se termine quand le groupe entier
+   y est rentré — le retour d'un seul ne conclut rien.
+6. À défaut, le temps imparti (`mission.time_limit`) s'écoule : le van annonce le départ, tout le
+   monde est rappelé, et la partie se conclut quand chacun est rentré — avec la caisse ou sans elle.
+7. Le verdict rendu, la carte se laisse regarder `mission.debrief_seconds`, puis **l'écran de camp
+   reprend la main** : la journée est résolue, le verdict s'affiche en tête, et les missions du
+   lendemain sont proposées. Une mission finie ramène au camp, elle ne fige pas la partie.
 
 Le comportement émergent (replanification suite à un imprévu, communication d'une menace, entraide)
 doit apparaître naturellement grâce à la Utility AI, au planificateur et au partage de connaissances
@@ -114,6 +129,7 @@ déjà spécifiés dans les livrables précédents (04 à 07) — aucune séquen
 * [x] Ajouter la zone d'extraction.
 * [x] Ajouter la santé, les dégâts et la panique.
 * [x] Implémenter la condition de victoire et de défaite.
+* [x] Ajouter le temps imparti par mission et le rappel automatique au van.
 * [x] Créer le panneau d'inspection (HUD/AgentPanel/PlanPanel).
 * [x] Finaliser le mode debug (tous les éléments listés ci-dessus).
 * [x] Construire la carte permettant de jouer le scénario de démonstration de bout en bout.

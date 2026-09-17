@@ -1,8 +1,16 @@
-// Les missions proposees au joueur avant le depart.
+// Les missions ecrites a la main.
 //
 // Comme les survivants, une mission est une donnee : aucun endroit de Hordinary.Core ne nomme
 // « Ravitaillement pharmacie ». Ajouter une mission, en durcir une autre ou deplacer un objectif se
 // fait ici, sans recompilation.
+//
+// DEPUIS LE LIVRABLE 16, ce fichier n'est plus la seule source de missions. L'ecran de camp propose
+// des offres generees (bloc mission_generation de config/game_config.json) : une zone cible, un
+// objectif chiffre, une recompense annoncee et un cout d'entree en essence. Les missions ci-dessous
+// restent chargees, validees et jouables — c'est mission_generation.enabled qui decide laquelle des
+// deux listes l'ecran affiche. Les deux ne se melangent pas : une mission sans recompense ni cout au
+// milieu de trois qui en ont ne se comparerait a rien. Une mission d'ici et une offre generee
+// partagent le meme suivi de partie, le meme planificateur et les memes regles de victoire.
 //
 // Lecture d'une mission :
 //   id / name      identifiant technique et nom affiche dans l'ecran de preparation.
@@ -14,8 +22,12 @@
 //   objective_zone nom exact du lieu, quand plusieurs zones partagent le meme type — la carte livree
 //                  compte deux batiments. Absent, la premiere zone du type sert.
 //   camp           point de DEPART et de RETOUR. Les agents commencent et finissent la mission au
-//                  meme endroit : la mission est terminee quand la caisse revient au camp, et la
-//                  partie quand tout le monde y est rentre.
+//                  meme endroit : la partie est terminee quand tout le monde est rentre au van — avec
+//                  la caisse c'est une victoire, sans elle et le temps ecoule c'est une defaite. Le
+//                  retour d'un seul ne conclut rien : on ne laisse personne derriere.
+//   time_limit     temps imparti a cette mission, en secondes. Absent, c'est mission.time_limit de
+//                  config/game_config.json (cinq minutes). Ecoule, le van annonce le depart et tout
+//                  le monde est rappele. Zero desamorce le chronometre : le van attend.
 //   item           ce qu'il faut rapporter, par identifiant de config/items.json. C'est cette ligne,
 //                  et elle seule, qui dit au groupe ce qu'il va chercher : ni le code ni le domaine de
 //                  planification ne nomment d'objet. Une mission qui rapporte un jerrican se joue donc

@@ -214,6 +214,76 @@ public class PlannerTests
             $"Un plan de {found.Actions.Count} actions depasse la profondeur maximale de {Limits.MaxDepth}.");
     }
 
+    // --- Strategie de recherche -------------------------------------------------------------------
+
+    /// <summary>
+    /// Basculer de strategie est un reglage, pas une recompilation. Ce test ne lit pas le fichier
+    /// livre : il verifie le mecanisme, qui reste vrai quelle que soit la valeur du moment.
+    /// </summary>
+    [Fact]
+    public void L_autre_strategie_de_recherche_se_regle_sans_recompiler()
+    {
+        Assert.Equal(PlannerSearch.AStar, GameConfig.FromJson("""{ "planner": { "search": "astar" } }""").Planner.Search);
+        Assert.Equal(PlannerSearch.Gbfs, GameConfig.FromJson("""{ "planner": { "search": "gbfs" } }""").Planner.Search);
+
+        // Et sans la clef, c'est GBFS : un fichier de configuration anterieur a ce reglage continue
+        // de decrire le meme jeu.
+        Assert.Equal(PlannerSearch.Gbfs, GameConfig.FromJson("""{ "planner": { } }""").Planner.Search);
+    }
+
+    /// <summary>
+    /// Ce que le jeu <b>livre</b> est GBFS. Le livrable 5 le nomme et le document D en fait un critere
+    /// d'acceptation : « GBFS genere les plans ». Le test lit le fichier et non le defaut du code, les
+    /// deux pouvant diverger.
+    ///
+    /// Il est separe du test de mecanisme juste au-dessus pour une raison pratique : passer le jeu en
+    /// <c>astar</c> le temps d'une comparaison est legitime, et doit faire echouer <b>ce test-ci</b>
+    /// seul, avec un nom qui dit pourquoi — pas noyer un mecanisme qui, lui, marche toujours.
+    /// </summary>
+    [Fact]
+    public void La_recherche_livree_est_celle_du_livrable_5()
+    {
+        Assert.Equal(PlannerSearch.Gbfs, DeliveredConfig.Planner.Search);
+    }
+
+    /// <summary>
+    /// A* n'est pas un chemin de code mort : sur l'objectif de reference il rend un plan applicable
+    /// d'un bout a l'autre, et deux recherches identiques rendent le meme plan — sans quoi le journal
+    /// cesserait d'etre reproductible des qu'on bascule.
+    ///
+    /// Ce que ce test ne verifie <b>pas</b> : que le plan soit moins cher que celui de GBFS.
+    /// L'heuristique enrichie n'est pas admissible, donc <c>g + h</c> ne garantit pas l'optimalite ;
+    /// l'affirmer ici serait affirmer ce que le code ne promet pas.
+    /// </summary>
+    [Fact]
+    public void A_star_rend_un_plan_applicable_et_reproductible()
+    {
+        var problem = Problem(Alice(), "PickUpObjective");
+
+        var first = new Gbfs(problem, Limited(search: PlannerSearch.AStar)).Search();
+        var second = new Gbfs(problem, Limited(search: PlannerSearch.AStar)).Search();
+
+        Assert.True(first.Found);
+        Assert.Equal(
+            first.Actions.Select(action => action.Schema.Name),
+            second.Actions.Select(action => action.Schema.Name));
+
+        // Applicable a son tour, et pas seulement au depart : un plan dont la troisieme action tombe
+        // a faux n'est pas un plan, c'est une liste.
+        var state = problem.Initial;
+
+        foreach (var action in first.Actions)
+        {
+            Assert.True(
+                action.IsApplicable(state),
+                $"{action.Schema.Name} n'est pas applicable a son rang dans le plan A*.");
+
+            state = action.ApplyTo(state);
+        }
+
+        Assert.True(problem.IsSatisfiedBy(state));
+    }
+
     // --- Limites de recherche ---------------------------------------------------------------------
 
     [Fact]
@@ -310,8 +380,14 @@ public class PlannerTests
 
         // Faute de porte connue, rien ne s'oppose a la pharmacie : l'ignorance ne bloque pas, elle
         // rend seulement optimiste. Le livrable 6 s'occupe de la desillusion.
-        Assert.True(state.Holds("accessible(pharmacy)"));
-        Assert.True(state.Holds("known(pharmacy)"));
+        //
+        // Le lieu s'appelle « objective_zone » et non « pharmacy » : la pharmacie EST la mission ici
+        // (voir Alice), et un endroit ne porte qu'un nom — sans quoi la porte se rattacherait a l'un
+        // des deux jumeaux et l'autre passerait pour ouvert (SymbolicStateBuilder.IsMergedIntoObjective).
+        // « pharmacy » subsiste, mais comme categorie du lieu.
+        Assert.True(state.Holds("accessible(objective_zone)"));
+        Assert.True(state.Holds("known(objective_zone)"));
+        Assert.True(state.Holds("pharmacy(objective_zone)"));
         Assert.True(state.Holds("at(agent, start)"));
         Assert.False(state.Holds("objective_found"));
     }
@@ -322,8 +398,13 @@ public class PlannerTests
         var state = SymbolicStateBuilder.Observe(Context(Alice(door: 'L')), Limits).State;
 
         Assert.True(state.Holds($"door_locked(door_{DoorCell.X}_{DoorCell.Y})"));
-        Assert.True(state.Holds($"door_of(door_{DoorCell.X}_{DoorCell.Y}, pharmacy)"));
-        Assert.False(state.Holds("accessible(pharmacy)"));
+        Assert.True(state.Holds($"door_of(door_{DoorCell.X}_{DoorCell.Y}, objective_zone)"));
+        Assert.False(state.Holds("accessible(objective_zone)"));
+
+        // Le lieu doit exister pour que son inaccessibilite veuille dire quelque chose : ecrite sur
+        // « pharmacy », qui n'est plus un nom de lieu mais une categorie, l'assertion precedente
+        // passait a vide.
+        Assert.True(state.Holds("known(objective_zone)"));
 
         // La porte est rattachee au lieu qu'elle garde, pas a tout le quartier.
         Assert.True(state.Holds("accessible(start)"));
@@ -350,10 +431,13 @@ public class PlannerTests
     [Fact]
     public void Le_domaine_livre_couvre_les_actions_de_la_specification()
     {
+        // CreateNoiseDistraction et ThrowFirecracker manquent a l'appel, et c'est voulu : le livrable
+        // 15 a rendu la diversion au joueur. Faire du bruit expres pour attirer la horde ailleurs est
+        // un sacrifice calcule, pas un reflexe.
         string[] expected =
         [
             "MoveToLocation", "OpenDoor", "ForceDoor", "BreakWindow", "SearchRoom", "PickUpObjective",
-            "DropItem", "EscapeLocation", "Hide", "HelpAlly", "HealAlly", "CreateNoiseDistraction",
+            "DropItem", "EscapeLocation", "Hide", "HealSelf",
             "Wait", "ReachExtraction", "ShareKnowledge", "Explore", "Observe",
         ];
 
@@ -389,7 +473,7 @@ public class PlannerTests
                   "cost": 2, "noise_level": 4, "duration": 5
                 }
               ],
-              "goals": [ { "name": "Barricade", "conditions": [ "safe(pharmacy)" ] } ]
+              "goals": [ { "name": "Barricade", "conditions": [ "safe(objective_zone)" ] } ]
             }
             """;
 
@@ -400,7 +484,7 @@ public class PlannerTests
         var result = new Planner(domain, Limits).Solve(problem);
 
         Assert.True(result.Found, result.Reason);
-        Assert.Equal("BarricadeDoor(door_5_5, pharmacy)", result.Plan!.Actions.Single().Name);
+        Assert.Equal("BarricadeDoor(door_5_5, objective_zone)", result.Plan!.Actions.Single().Name);
         Assert.Equal(4f, result.Plan.TotalNoise, 3);
     }
 
@@ -524,8 +608,8 @@ public class PlannerTests
 
         var state = SymbolicStateBuilder.Observe(Context(alice), Limits);
 
-        Assert.True(state.State.Holds("zombie_near(pharmacy)"));
-        Assert.True(state.Danger["pharmacy"] > state.Danger["extraction"]);
+        Assert.True(state.State.Holds("zombie_near(objective_zone)"));
+        Assert.True(state.Danger["objective_zone"] > state.Danger["extraction"]);
     }
 
     // --- Execution du plan -----------------------------------------------------------------------
@@ -635,9 +719,14 @@ public class PlannerTests
     private static PlanningProblem Problem(Survivor survivor, string goal)
         => SymbolicStateBuilder.Build(Context(survivor), DeliveredDomain, DeliveredDomain.FindGoal(goal)!, Limits);
 
-    private static PlannerSettings Limited(int? maxNodes = null, int? maxDepth = null, int? maxTimeMs = null)
+    private static PlannerSettings Limited(
+        int? maxNodes = null,
+        int? maxDepth = null,
+        int? maxTimeMs = null,
+        PlannerSearch? search = null)
         => new()
         {
+            Search = search ?? Limits.Search,
             MaxNodes = maxNodes ?? Limits.MaxNodes,
             MaxDepth = maxDepth ?? Limits.MaxDepth,
             MaxTimeMs = maxTimeMs ?? Limits.MaxTimeMs,

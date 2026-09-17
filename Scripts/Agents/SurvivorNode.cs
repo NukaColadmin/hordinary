@@ -24,9 +24,17 @@ public partial class SurvivorNode : Node2D
     /// <summary>Teinte neutre du corps, en attendant le sprite. Aucun survivant ne s'en distingue.</summary>
     private static readonly Color BodyBase = new(0.86f, 0.82f, 0.74f);
 
+    /// <summary>
+    /// Couleur de la jauge de sante. Elle ne suit pas <see cref="RingColor"/> : l'anneau dit qui est
+    /// qui, la barre dit comment il va, et les confondre rendrait un survivant a l'agonie illisible
+    /// des lors que sa couleur d'identification aurait ete la meme que celle du danger.
+    /// </summary>
+    private static readonly Color Vital = new(0.36f, 0.76f, 0.38f);
+
     private SurvivorAgent _agent = null!;
     private int _tileSize = 16;
     private bool _selected;
+    private float _drawnHealth = 1f;
 
     public string SurvivorName => _agent.Survivor.Name;
 
@@ -49,6 +57,7 @@ public partial class SurvivorNode : Node2D
     {
         _agent = agent ?? throw new ArgumentNullException(nameof(agent));
         _tileSize = tileSize;
+        _drawnHealth = agent.Survivor.HealthRatio;
         Name = agent.Survivor.Name;
         Position = ToPixels(agent.Follower.Position);
     }
@@ -60,6 +69,14 @@ public partial class SurvivorNode : Node2D
         // Un survivant hors de combat s'eteint plutot que de disparaitre : la defaite complete est
         // l'affaire du livrable 8.
         Modulate = _agent.Survivor.Alive ? Colors.White : new Color(1f, 1f, 1f, 0.35f);
+
+        // Le corps est redessine quand la sante change, et seulement alors : le nom et l'anneau ne
+        // bougent jamais, et repeindre a chaque frame ce qui ne change pas coute trois fois le prix
+        // avec trois survivants a l'ecran.
+        if (_drawnHealth == _agent.Survivor.HealthRatio) return;
+
+        _drawnHealth = _agent.Survivor.HealthRatio;
+        QueueRedraw();
     }
 
     public override void _Draw()
@@ -96,6 +113,10 @@ public partial class SurvivorNode : Node2D
             _tileSize * 2f,
             16,
             RingColor);
+
+        // La barre coiffe le nom plutot que de se glisser entre lui et la tete : le nom est fixe, la
+        // barre bouge, et une jauge qui se vide sous un nom immobile se lit mieux que l'inverse.
+        HealthBar.Draw(this, _drawnHealth, _tileSize * 1.4f, radius + 26f, Vital);
     }
 
     private Vector2 ToPixels(System.Numerics.Vector2 cellPosition) => new(

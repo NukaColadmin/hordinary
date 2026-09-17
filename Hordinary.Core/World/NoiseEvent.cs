@@ -12,6 +12,13 @@ public enum NoiseAction
     ForceDoor,
     BreakWindow,
     Distraction,
+
+    /// <summary>
+    /// Ajoute apres coup, donc en fin de liste : inserer une valeur au milieu renumeroterait
+    /// <see cref="Distraction"/>, et le bareme de <see cref="NoiseSettings.LevelOf"/> se lit par nom
+    /// mais rien ne garantit qu'un futur enregistrement fera de meme.
+    /// </summary>
+    BarricadeDoor,
 }
 
 /// <summary>

@@ -187,8 +187,8 @@ Retirer toutes les instructions rend le jeu bit à bit identique à ce qu'il ét
 
 ## Prérequis
 
-Deux, tous les deux bloquants. Le premier est un contrat avec la spec G, le second une modification
-bornée du jeu.
+Deux bloquants — le premier est un contrat avec la spec G, le second une modification bornée du jeu —
+et un troisième qui ne bloque rien mais délimite ce que la grammaire peut adresser.
 
 ### 1. La spec G doit livrer une représentation, pas seulement des fichiers
 
@@ -222,44 +222,32 @@ vert, et c'est exactement pour ça qu'il est là.
 
 ### 2. Les bâtiments doivent exister pour le planificateur
 
-**Ce point bloque tout le reste, et il n'est pas coûteux.**
+**Fait.** Le domaine ne nomme aucun lieu de mission : `LocateObjective`, `SearchRoom` et
+`PickUpObjective` portent sur `objective_zone`, le lieu que `config/missions.json` désigne — une
+pharmacie, un entrepôt ou un hangar, indifféremment. Et le cas général est couvert : **tous** les
+bâtiments, rues et ruelles sont nommés, pas seulement celui qu'on vise.
 
-**Fait en partie.** Le domaine ne nomme plus aucun lieu de mission : `LocateObjective`, `SearchRoom`
-et `PickUpObjective` portent sur `objective_zone`, le lieu que `config/missions.json` désigne — une
-pharmacie, un entrepôt ou un hangar, indifféremment. `PlaceNameOf(MapZone, Survivor)` donne ce nom à
-la zone visée quelle que soit sa catégorie, et `objective_zone` est entré dans `NamedPlaces`. Un
-bâtiment est donc désormais un objet symbolique **quand il est l'objectif**, et une fouille
-infructueuse y laisse enfin `searched_in_vain(objective_zone)`.
+Trois changements, bornés :
 
-Ce qui reste à faire est le cas général : nommer **tous** les bâtiments, rues et ruelles, et pas
-seulement celui qu'on vise. Une contrainte du joueur portant sur un bâtiment quelconque n'a toujours
-rien sur quoi se poser.
+* `PerceptionSystem.RememberZones` — apercevoir un bout d'entrepôt, c'est savoir qu'il y a un
+  entrepôt là. Seules les catégories dont la carte compte plusieurs exemplaires passent par là
+  (`ZoneKinds.IsCommon`) : la pharmacie, le camp et l'extraction sont annoncés au briefing et se
+  reconnaissent au sol, et déplacer leur souvenir à chaque coup d'œil changerait un lieu que tout le
+  reste du jeu tient pour fixe. Le premier regard fait foi, sauf quand il n'avait vu qu'une façade —
+  une case praticable du même lieu la remplace, parce que c'est le moment où l'on apprend par où
+  entrer ;
+* `SymbolicStateBuilder.ObjectNameOf` — `Entrepôt ouest` → `entrepot_ouest`. Les accents tombent et
+  les espaces deviennent des soulignés : ce nom traverse le PDDL, où un symbole est un mot sans
+  ponctuation ;
+* `SymbolicStateBuilder.KindNameOf` — un prédicat de catégorie par objet : `building(entrepot_ouest)`,
+  `street(rue_principale)`, `alley(ruelle)`, et `building(objective_zone)` pour celui de la mission,
+  sans quoi l'instruction vaudrait pour tous les bâtiments sauf celui qu'on envoie fouiller.
 
-Aujourd'hui, `SymbolicStateBuilder.PlaceNameOf(ZoneKind)` ne nomme encore que trois catégories :
-
-```csharp
-ZoneKind.Pharmacy   => "pharmacy",
-ZoneKind.Extraction => "extraction",
-ZoneKind.Start      => "start",
-_                   => null,       // Building, Street, Alley : invisibles, sauf si c'est l'objectif
-```
-
-« Entrepot ouest » et « Hangar sud » sont déclarés dans
-[`config/map_locations.json`](../config/map_locations.json) avec `"kind": "Building"`. Celui que la
-mission vise devient `objective_zone` ; l'autre reste invisible au planificateur, et une contrainte
-qui le nommerait n'aurait rien sur quoi se poser.
-
-À faire, une fois :
-
-* dériver un nom d'objet de planification depuis le nom de zone (`Entrepot ouest` → `entrepot_ouest`),
-  pour les zones de type `Building`, `Street` et `Alley` ;
-* émettre un prédicat de catégorie par objet : `building(entrepot_ouest)`, `street(rue_principale)`,
-  `alley(ruelle)` ;
-* les ajouter à `NamedPlaces` pour qu'ils héritent du traitement des lieux réels (accessibilité,
-  distance A\*) plutôt que de celui des repères recalculés (`cover`, `frontier`, `group`).
-
-C'est une modification bornée de `SymbolicStateBuilder`, et elle a de la valeur **même si le reste du
-livrable est abandonné** : elle donne au joueur et au planificateur un vocabulaire de lieux commun.
+Les nouveaux lieux héritent du traitement des lieux réels — accessibilité, distance A\*, seuil d'un
+lieu fermé — plutôt que de celui des repères recalculés (`cover`, `frontier`, `group`). Une
+**exception** : une rue n'a pas de porte. Rattacher une ouverture à un lieu `IsOpenAir()` ferait
+passer un quartier entier pour une pièce verrouillée dès qu'un survivant apercevrait une porte close
+depuis le trottoir, et `Relocate` ramènerait la rue à ce pas de porte.
 
 **Pourquoi un prédicat et pas un sous-type PDDL.** La tentation est d'écrire
 `(:types building street alley - location)` et de typer directement le schéma scindé
@@ -270,10 +258,56 @@ le typage PDDL est une hiérarchie de subsomption **sans négation**, et il n'ex
 symétrie et parce qu'un seul mécanisme se teste mieux que deux. La hiérarchie de types reste celle de
 la spec G, inchangée.
 
-Effet de bord à surveiller : le nombre d'objets `location` augmente, donc le facteur de branchement de
-`MoveToLocation`. Vérifier que `planner.max_nodes: 1000` et `planner.max_time_ms: 50` tiennent encore
-sur la carte livrée, et relever les budgets dans `config/game_config.json` si nécessaire — jamais en
-dur.
+Effet de bord surveillé : le nombre d'objets `location` augmente, donc le facteur de branchement de
+`MoveToLocation`. La vérification est une **mesure**, sur un quartier généré — le cas défavorable,
+bien plus fourni que les sept zones de la carte dessinée : aucune recherche n'atteint
+`planner.max_nodes: 1000` ni `planner.max_time_ms: 50`
+(`Nommer_tous_les_lieux_ne_fait_pas_deborder_les_budgets_du_planificateur`). Un plafond atteint un
+jour se relèverait dans `config/game_config.json`, jamais en dur.
+
+### 3. Le répertoire réellement joué est plus court que le domaine
+
+**Non bloquant, mais à connaître avant d'écrire la grammaire.** Le domaine compte vingt-quatre schémas ;
+le survivant n'en joue pas vingt-quatre. Une action n'est atteignable que si une chaîne arrière la relie à
+un but de la section `goals` de [`config/planner_domain.json`](../config/planner_domain.json), **et**
+qu'un objectif de [`config/utility_goals.json`](../config/utility_goals.json) réclame ce but. Cinq
+schémas n'ont ni l'un ni l'autre :
+
+| Schéma | Ce qui manque |
+|---|---|
+| `Observe`, `Wait`, `UseItem`, `PushHeavyObject` | leurs effets — `observed`, `waited`, `used`, `pushed` — ne sont lus par aucune précondition et par aucun but. `ActionRelevance` les écarte pour **tous** les objectifs : elles ne peuvent apparaître dans aucun plan. |
+| `ShareKnowledge` | le but symbolique existe, aucun objectif d'utilité ne le demande. |
+
+`DropItem` s'y ajoute à demi : elle passe le tri de pertinence par `item_at` et `!has`, mais rien ne
+demande jamais de poser un objet, et elle ne peut apparaître que dans un cycle que GBFS ne préfère pas.
+
+`BarricadeDoor` est le cas inverse : la [spec 11](./11-objets-armes-et-economie-du-camp.md) la décrit,
+`WorldPlanRuntime.SetFlag` sait l'exécuter (branche `door_barricaded`) — mais elle n'a **aucune entrée**
+dans le domaine. Le moteur sait barricader une porte ; personne ne sait le lui demander.
+
+**La diversion est dans le même état, et c'est ce livrable qui l'y a mise.**
+`CreateNoiseDistraction`, `ThrowFirecracker`, le but `CreateDistraction` et le prédicat
+`distraction_created` ont été retirés : se faire du bruit sur soi pour dégager un allié est un sacrifice
+calculé, pas un réflexe. Le verbe `emitNoise` et `WorldPlanRuntime.ThrowNoise` restent exécutables, et
+« jette un pétard là-bas » est l'une des instructions tactiques les plus évidentes à rendre au joueur —
+elle vise une case, ce qu'aucun objectif d'utilité ne savait exprimer.
+
+Deux trous de couverture qui touchent des gestes qu'on croirait acquis :
+
+* **`PickUpItem` ne sert plus qu'à s'armer.** Le seul chemin qui y mène est `EquipWeapon` →
+  `AttackWithWeapon` → `FightZombie` ; le second, `ThrowFirecracker` → `CreateDistraction`, est parti
+  avec la diversion. Aucun but ne dit « ramasse ce qui traîne » : ramasser des vivres n'est pas
+  planifiable, et un pétard au sol ne sert plus à rien tant que le joueur ne le réclame pas.
+* **Un blessé ne peut pas planifier de ramasser un bandage qu'il voit.** `HealSelf` exige
+  `has(agent, remedy)`, et `SymbolicStateBuilder` ne déclare `remedy` que si le sac en contient **déjà**
+  un ; ce qui soigne au sol reste un `item_at(bandage, spot_x_y)` que rien ne relie au soin. L'objectif
+  d'utilité `HealSelf` a la même précondition (`has_remedy`) et ne score même pas.
+
+C'est ce livrable-ci qui doit leur donner un demandeur, et c'est cohérent avec sa règle non
+négociable : « utiliser un objet », « pousser ce meuble », « barricade cette porte », « ramasse ce qui
+traîne » sont des **stratégies**, pas des réflexes. Elles n'ont donc rien à faire dans un objectif
+d'utilité de plus — elles appartiennent à l'instruction tactique du joueur. Les schémas sont déjà
+écrits et déjà exécutables : ce qui manque est le but qui les réclame.
 
 ---
 
@@ -420,7 +454,7 @@ LangGraph — graphe a cinq noeuds
    └── 5. project     renvoie la contrainte, ou un refus motive — jamais du texte libre
    │
    ▼
-Fournisseur de modele : OpenRouter OU Ollama (voir ci-dessous)
+Fournisseur de modele : OpenRouter uniquement
 ```
 
 Le nœud 3 demande une **sortie structurée** (schéma JSON côté fournisseur quand il le supporte), et le
@@ -440,21 +474,18 @@ n'a pas à produire — il rend une contrainte de la grammaire fermée, jamais d
 
 ### Choix du fournisseur
 
-Un seul commutateur, `instructions.provider`, et deux valeurs. LangChain rend les deux interchangeables
-derrière la même interface de modèle de conversation.
+OpenRouter est l'unique fournisseur de modèles. L'inférence locale est retirée de la conception et
+des tests : la machine cible ne dispose pas de la VRAM nécessaire pour l'exécuter de façon fiable.
+LangChain fournit l'adaptateur vers l'API OpenRouter, avec accès à plusieurs familles de modèles.
 
-| | `ollama` | `openrouter` |
-|---|---|---|
-| Modèles | local (`qwen2.5:7b-instruct`, `phi4-mini`…) | catalogue distant, plusieurs familles |
-| Coût | nul | facturé au jeton |
-| Réseau | aucun | requis |
-| Déterminisme | `seed` honoré | selon le fournisseur amont, **non garanti** |
-| Sortie structurée | `format: json` / schéma | schéma JSON ou appel d'outil selon le modèle |
-| Usage visé | jouer, développer, la démo hors ligne | **comparer les modèles**, produire le tableau d'évaluation |
-
-Aucun des deux n'est le mode « normal ». Ollama est le défaut livré parce qu'il ne coûte rien et ne
-demande pas de compte ; OpenRouter existe parce que la comparaison de modèles est l'essentiel du
-travail d'évaluation, et qu'elle n'a pas de sens sur un seul modèle local.
+| | `openrouter` |
+|---|---|
+| Modèles | catalogue distant, plusieurs familles |
+| Coût | facturé au jeton |
+| Réseau | requis pour la traduction en langage naturel |
+| Déterminisme | selon le fournisseur amont, **non garanti** |
+| Sortie structurée | schéma JSON ou appel d'outil selon le modèle |
+| Usage visé | **comparer les modèles**, produire le tableau d'évaluation |
 
 **Le déterminisme du jeu ne vient jamais du modèle.** Il vient de deux choses : le cache
 `(phrase normalisée, graine, empreinte du domaine)`, et le fait qu'une contrainte acceptée est **figée**
@@ -494,10 +525,10 @@ d'utiliser un fournisseur distant sans rendre les parties irreproductibles.
     "action_class": "enter:building"
   },
   "rationale": "regroupement exige avant tout deplacement vers un lieu de type batiment",
-  "model": "qwen2.5:7b-instruct",
+  "model": "anthropic/claude-haiku-4.5",
   "latency_ms": 1240,
   "tokens": { "prompt": 890, "completion": 64 },
-  "cost_usd": 0.0
+  "cost_usd": 0.0012
 }
 
 // 200 OK — refuse par le service lui-meme (noeud 4)
@@ -505,7 +536,7 @@ d'utiliser un fournisseur distant sans rendre les parties irreproductibles.
   "status": "rejected",
   "reason": "preference_not_constraint",
   "message": "« priorite aux blesses » exprime une preference d'objectif, pas une regle de plan",
-  "model": "qwen2.5:7b-instruct"
+  "model": "anthropic/claude-haiku-4.5"
 }
 ```
 
@@ -524,9 +555,8 @@ compilateur déterministe.
 {
   "instructions": {
     "enabled": false,
-    "provider": "ollama",
+    "provider": "openrouter",
     "endpoint": "http://127.0.0.1:8001/instruction",
-    "ollama": { "model": "qwen2.5:7b-instruct", "base_url": "http://127.0.0.1:11434" },
     "openrouter": {
       "model": "anthropic/claude-haiku-4.5",
       "api_key_env": "OPENROUTER_API_KEY",
@@ -550,8 +580,8 @@ dans un fichier de configuration versionné.
 jeu. Le joueur a tapé une phrase et attend une réponse — deux secondes sont acceptables, une réplique
 de bavardage en retard ne l'est pas. C'est la même architecture, ce n'est pas le même budget.
 
-`max_cost_usd_per_session` est un plafond dur côté client : dépassé, le fournisseur bascule sur les
-instructions pré-écrites et le dit.
+`max_cost_usd_per_session` est un plafond dur côté client : dépassé, les nouvelles requêtes OpenRouter
+sont refusées et le client bascule sur les instructions pré-écrites en le signalant.
 
 ---
 
@@ -599,13 +629,13 @@ grammaire ne peut pas exprimer. Un corpus qui ne contient que des cas faciles ne
 | **Taux de faux acceptés** | **la seule qui compte vraiment** : une contrainte plausible mais fausse |
 | Exactitude de la forme | la bonne des cinq formes a-t-elle été choisie |
 | Latence p50 / p95 | |
-| Coût par instruction | nul en local, mesuré via OpenRouter |
+| Coût par instruction | mesuré via OpenRouter |
 
 Le taux de faux acceptés est le chiffre à mettre en avant, y compris s'il est mauvais : c'est ce que
 les quatre portillons existent pour rattraper, et c'est ce qui rend la démonstration honnête.
 
-**Les comparaisons** : au moins trois modèles via OpenRouter et un en local via Ollama, sur le même
-corpus, avec la même graine. Plus deux ablations — avec et sans digest de domaine, avec et sans
+**Les comparaisons** : au moins trois modèles via OpenRouter, sur le même corpus, avec la même graine.
+Plus deux ablations — avec et sans digest de domaine, avec et sans
 few-shot. Le tableau de résultats vit dans `service/evals/results.md` et **un paragraphe** en sort pour
 les README du projet.
 
@@ -635,32 +665,33 @@ pré-écrites du mode désactivé). Nouveau fichier par mission
 
 ## Étapes à créer
 
-* [ ] **Prérequis G** : sortir l'exportateur PDDL dans `Hordinary.Core`, derrière une représentation
+* [x] **Prérequis G** : sortir l'exportateur PDDL dans `Hordinary.Core`, derrière une représentation
       `PddlDomain` explicite, et écrire le rendu `PddlDomain → PlanningDomain` qui alimente GBFS.
       Vérifier que le jeu se comporte à l'identique en passant par ce chemin, **avant toute
       contrainte** : c'est un refactoring à comportement constant, et il se valide comme tel.
-* [ ] **Prérequis carte** : nommer les zones `Building`, `Street`, `Alley` comme objets de
+* [x] **Prérequis carte** : nommer les zones `Building`, `Street`, `Alley` comme objets de
       planification et émettre leurs prédicats de catégorie. Vérifier les budgets `max_nodes` /
       `max_time_ms`.
-* [ ] Définir les cinq formes de `TacticalConstraint`, chacune avec son rendu déclaratif PDDL 3 et sa
+* [x] Définir les cinq formes de `TacticalConstraint`, chacune avec son rendu déclaratif PDDL 3 et sa
       règle de compilation, et la grammaire fermée (portillon 1).
-* [ ] Écrire le compilateur `PddlDomain → PddlDomain` : scission de schéma, préconditions, retrait,
+* [x] Écrire le compilateur `PddlDomain → PddlDomain` : scission de schéma, préconditions, retrait,
       régression de `require_always`, coûts (portillon 2).
-* [ ] Écrire le vérificateur de trajectoire sur les modalités PDDL 3 (portillon 4).
-* [ ] Écrire `config/instruction_presets.json` : huit instructions pré-écrites couvrant les cinq formes.
-* [ ] Brancher les contraintes actives sur le planificateur et la sauvegarde de mission.
-* [ ] Interface : saisie, contraintes actives, refus motivés, journal.
-* [ ] **Vérifier ici que tout est jouable et démontrable sans modèle**, via les instructions
+* [x] Écrire le vérificateur de trajectoire sur les modalités PDDL 3 (portillon 4).
+* [x] Écrire `config/instruction_presets.json` : huit instructions pré-écrites couvrant les cinq formes.
+* [x] Brancher les contraintes actives sur le planificateur. **La sauvegarde de mission n'est pas faite** :
+      les contraintes ne sont pas figées, rejouer une mission demande de les reposer.
+* [x] Interface : saisie, contraintes actives, refus motivés, journal.
+* [x] **Vérifier ici que tout est jouable et démontrable sans modèle**, via les instructions
       pré-écrites. Tout ce qui suit est du supplément.
 * [ ] Brancher le portillon 3 : rendu texte du domaine compilé, problème depuis l'état courant, appel
       à Fast Downward, recherche du coupable minimal.
 * [ ] Créer l'endpoint `/instruction` dans `service/` et le graphe LangGraph à cinq nœuds.
-* [ ] Implémenter le commutateur de fournisseur `ollama` / `openrouter` et le plafond de coût.
+* [ ] Implémenter l'adaptateur OpenRouter et le plafond de coût.
 * [ ] Écrire `InstructionClient.cs` : asynchrone, timeout, cache, repli sur les instructions
       pré-écrites.
 * [ ] Écrire le corpus d'évaluation (soixante phrases) et le harnais.
 * [ ] Lancer les comparaisons de modèles et les deux ablations ; publier `service/evals/results.md`.
-* [ ] Documenter l'installation du service et les deux fournisseurs dans les README.
+* [ ] Documenter l'installation du service et la configuration OpenRouter dans les README.
 
 ## Critère de validation
 
@@ -718,7 +749,7 @@ Dans `service/tests/` :
 * le nœud `project` ne renvoie jamais autre chose qu'une contrainte de la grammaire ou un refus ;
 * une phrase exprimant une préférence est refusée avec la famille `preference_not_constraint` ;
 * le digest de domaine transmis ne contient que des prédicats et actions réellement déclarés ;
-* le commutateur de fournisseur produit le même contrat de sortie sur `ollama` et sur `openrouter` ;
+* l'adaptateur OpenRouter produit le contrat de sortie attendu, avec réponse simulée dans les tests ;
 * le plafond de coût coupe les appels et bascule sur les instructions pré-écrites.
 
 Tests d'intégration, marqués `Skip` si le binaire est absent :
@@ -735,7 +766,7 @@ Tests d'intégration, marqués `Skip` si le binaire est absent :
 
 * **Le regroupement est approximatif.** Chaque survivant planifie seul, et `group` est le barycentre des
   alliés — qui bouge quand ils bougent. « Être au barycentre » n'est pas exactement « être regroupés ».
-  C'est déjà la modélisation du but `Regroup` du livrable 4 : ce livrable n'empire rien, il hérite.
+  C'est déjà la modélisation qu'avait le but `Regroup` du livrable 4, retiré depuis : ce livrable n'empire rien, il hérite — et c'est désormais le joueur, et lui seul, qui demande le regroupement.
 * **Les contraintes sont collectives.** Une instruction s'applique aux trois survivants. Des
   instructions individuelles demanderaient un domaine compilé par agent : possible, hors périmètre.
 * **Pas de contrainte conditionnelle ni chaînée.** « Si vous êtes moins de deux, ne rentrez pas » sort

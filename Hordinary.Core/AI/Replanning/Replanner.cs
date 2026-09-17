@@ -33,6 +33,18 @@ public sealed class Replanner
     private readonly PlanExecutor _executor;
     private readonly ReplanningSettings _settings;
 
+    /// <summary>
+    /// Dernier plan dont A* a refuse une destination. Le couple objectif/actions suffit a reconnaitre
+    /// la tentative reconstruite a l'identique lors de la passe suivante.
+    /// </summary>
+    private FailedRoute? _failedRoute;
+
+    /// <summary>
+    /// Etat dans lequel une tentative identique a ete mise en attente. Tant qu'il ne change pas,
+    /// relancer GBFS ne peut produire aucune information nouvelle.
+    /// </summary>
+    private string? _parkedStateHash;
+
     /// <summary>Date de la derniere passe, pour horodater ce que les evenements racontent.</summary>
     private double _now;
 
@@ -60,6 +72,11 @@ public sealed class Replanner
             Monitor.Report(action, failure, _now);
             Journal.Add(_now, _survivor.Name, DecisionKind.Action, $"{action.Name} echoue : {failure.Reason}");
             _survivor.PlanConfidence = 0f;
+
+            _failedRoute = failure.Kind is ActionFailureKind.NoRoute or ActionFailureKind.UnknownDestination
+                && _executor.Plan is { } failed
+                    ? new FailedRoute(failed.Goal, PlanKey(failed))
+                    : null;
         };
 
         _executor.ActionStarted += action
@@ -141,6 +158,8 @@ public sealed class Replanner
         State = SymbolicState.Empty;
         LastReason = reason;
         ConsecutiveFailures = 0;
+        _failedRoute = null;
+        _parkedStateHash = null;
         _survivor.CurrentGoal = null;
     }
 
@@ -189,6 +208,18 @@ public sealed class Replanner
 
         bool sameGoal = previousGoal is not null && previousGoal.Equals(goal, StringComparison.OrdinalIgnoreCase);
 
+        // Un plan mis en attente apres un NoRoute ne se relance que si une observation a change
+        // l'etat symbolique, ou si un nouvel evenement explicite demande de revoir la situation.
+        // Sans ce verrou, une reevaluation periodique suffit a recreer la meme boucle quelques
+        // dixiemes de seconde plus tard.
+        if (trigger is null && sameGoal && _parkedStateHash == State.Hash) return;
+
+        if (_parkedStateHash is not null && _parkedStateHash != State.Hash)
+        {
+            _parkedStateHash = null;
+            _failedRoute = null;
+        }
+
         // Un plan en cours et toujours valable se laisse finir ; un objectif deja atteint ne se
         // replanifie pas en boucle pour qu'on lui reponde chaque fois « zero action ».
         if (trigger is null && sameGoal && Plan is { IsActive: true } or { StepCount: 0, Status: PlanStatus.Completed })
@@ -219,11 +250,32 @@ public sealed class Replanner
 
         var result = _planner.PlanFor(goal, context, context.Now, carried);
 
-        LastReason = result.Reason;
-        Plan = result.Plan;
-        _survivor.PlanConfidence = result.Found ? 1f : 0f;
+        bool repeatsFailedRoute = trigger is { Cause: ReplanCause.PathImpossible }
+            && result.Plan is { } candidate
+            && _failedRoute is { } failed
+            && failed.Goal.Equals(goal, StringComparison.OrdinalIgnoreCase)
+            && failed.PlanKey.Equals(PlanKey(candidate), StringComparison.Ordinal);
 
-        if (result.Plan is { } plan) _executor.Start(plan);
+        if (repeatsFailedRoute)
+        {
+            // Le plan precedent reste le dernier plan effectivement joue. Le candidat identique
+            // n'est pas confie a l'executeur et le journal dit pourquoi aucun nouveau plan ne part.
+            _parkedStateHash = State.Hash;
+            LastReason = $"{goal} suspendu : le meme plan vient d'echouer sans itineraire ; "
+                       + "attente d'une nouvelle information";
+            _survivor.PlanConfidence = 0f;
+        }
+        else
+        {
+            Plan = result.Plan;
+            LastReason = result.Reason;
+            _survivor.PlanConfidence = result.Found ? 1f : 0f;
+
+            _parkedStateHash = null;
+            _failedRoute = null;
+
+            if (result.Plan is { } plan) _executor.Start(plan);
+        }
 
         if (trigger is not { } cause)
         {
@@ -232,13 +284,20 @@ public sealed class Replanner
         }
 
         LastReplanAt = context.Now;
-        ConsecutiveFailures = result.Found ? 0 : ConsecutiveFailures + 1;
+        ConsecutiveFailures = result.Found && !repeatsFailedRoute ? 0 : ConsecutiveFailures + 1;
 
         var record = new ReplanRecord(
-            context.Now, _survivor.Name, cause, previousGoal, goal, result.Plan, result.Reason);
+            context.Now, _survivor.Name, cause, previousGoal, goal,
+            repeatsFailedRoute ? null : result.Plan,
+            LastReason);
 
         LastReplan = record;
         Journal.AddReplan(record);
         Replanned?.Invoke(record);
     }
+
+    private static string PlanKey(Plan plan)
+        => $"{plan.Goal}|{string.Join('|', plan.Actions.Select(action => action.Name))}";
+
+    private readonly record struct FailedRoute(string Goal, string PlanKey);
 }

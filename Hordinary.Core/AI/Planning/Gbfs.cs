@@ -59,11 +59,14 @@ public sealed record GbfsResult(
 }
 
 /// <summary>
-/// Greedy Best-First Search sur l'etat symbolique (specification, livrable 5).
+/// La recherche de plan sur l'etat symbolique (specification, livrable 5).
 ///
-/// La priorite d'un noeud est <b>uniquement</b> son heuristique — pas <c>g + h</c> : c'est ce qui
-/// distingue GBFS de A*. La recherche est donc rapide mais non optimale ; le cout accumule ne sert
-/// qu'a rendre compte du plan retenu, jamais a le choisir.
+/// La classe garde le nom que la specification donne au chercheur, parce que GBFS reste la strategie
+/// livree et celle sur laquelle le domaine est equilibre. Elle en sert pourtant deux : <c>gbfs</c> et
+/// <c>astar</c> (<see cref="PlannerSearch"/>, reglable par <c>planner.search</c>). Une seule boucle
+/// pour les deux, et non deux chercheurs : la frontiere, la table des etats fermes, les garde-fous et
+/// la reconstruction du plan sont identiques mot pour mot ; seule la facon d'ordonner la file change.
+/// Deux copies auraient surtout garanti qu'une correction n'en toucherait qu'une.
 ///
 /// Trois garde-fous, tous configurables (section <c>planner</c> de <c>config/game_config.json</c>) :
 /// un plafond de noeuds, une profondeur maximale et un budget de temps. Un agent ne doit jamais
@@ -90,14 +93,17 @@ public sealed class Gbfs
         if (_problem.IsSatisfiedBy(_problem.Initial))
             return GbfsResult.Success([], 0f, 0, 0, stopwatch.Elapsed.TotalMilliseconds);
 
-        var open = new PriorityQueue<Node, (float Estimate, int Order)>();
+        // Voir Priority : la cle depend de la strategie, les deux departages qui la suivent non.
+        var open = new PriorityQueue<Node, (float Key, float Tie, int Order)>();
         var closed = new HashSet<string>(StringComparer.Ordinal);
 
         int explored = 0;
         int generated = 1;
         bool depthLimited = false;
 
-        open.Enqueue(new Node(_problem.Initial, null, null, 0, 0f, 0f), (_heuristic.Estimate(_problem.Initial, 0f), 0));
+        open.Enqueue(
+            new Node(_problem.Initial, null, null, 0, 0f, 0f),
+            Priority(_heuristic.Estimate(_problem.Initial, 0f), 0f, 0));
 
         while (open.TryDequeue(out var current, out _))
         {
@@ -145,7 +151,7 @@ public sealed class Gbfs
                     current.Cost + _problem.TransitionCost(current.State, action),
                     noise);
 
-                open.Enqueue(node, (_heuristic.Estimate(successor, noise), generated));
+                open.Enqueue(node, Priority(_heuristic.Estimate(successor, noise), node.Cost, generated));
                 generated++;
             }
         }
@@ -153,6 +159,29 @@ public sealed class Gbfs
         var failure = depthLimited ? PlanningFailure.DepthLimitReached : PlanningFailure.NoPlanFound;
         return GbfsResult.Fail(failure, explored, generated, stopwatch.Elapsed.TotalMilliseconds);
     }
+
+    /// <summary>
+    /// Ce qui ordonne la file, en trois termes lus dans l'ordre.
+    ///
+    /// Le premier est le seul que la strategie change : <c>h</c> pour GBFS — le cout ne s'ajoute
+    /// jamais a l'estimation, c'est exactement ce qui le distingue de A* — et <c>g + h</c> pour A*.
+    ///
+    /// Les deux suivants departagent, et ils ne sont pas decoratifs. Un etat qui satisfait le but
+    /// recoit h = 0 <b>exactement</b> (voir <see cref="Heuristic.Explain"/>) : sous GBFS, toutes les
+    /// actions qui concluent le plan se valent alors, et sans second terme c'est l'ordre de
+    /// declaration dans <c>config/planner_domain.json</c> qui tranchait — autant dire le hasard.
+    /// Repousser un zombie l'emportait ainsi sur le frapper quoi qu'il arrive, et les coefficients de
+    /// cout que les armes appliquent (<c>config/weapons.json</c>) ne changeaient rien a rien. Le cout
+    /// en second fait de « moins cher » une preference reelle sans rendre la recherche moins gloutonne.
+    ///
+    /// Sous A*, le cout est deja dans la cle : le second terme y devient <c>h</c>, qui a somme egale
+    /// prefere le noeud le plus proche du but plutot que le plus avance dans un detour. L'ordre de
+    /// generation clot les deux, pour que deux planifications sur la meme memoire rendent le meme plan.
+    /// </summary>
+    private (float Key, float Tie, int Order) Priority(float estimate, float cost, int order)
+        => _settings.Search == PlannerSearch.AStar
+            ? (cost + estimate, estimate, order)
+            : (estimate, cost, order);
 
     private static List<PlanningAction> Reconstruct(Node node)
     {

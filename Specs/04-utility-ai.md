@@ -16,16 +16,26 @@ La Utility AI choisit l'objectif actuel d'un survivant. Elle ne choisit pas dire
 CompletePlayerMission
 ExploreUnknownArea
 FleeDanger
-HelpAlly
 HealSelf
-HealAlly
 SearchForObjective
 PickUpObjective
 ReachExtraction
 Hide
-Regroup
-CreateDistraction
 ```
+
+Le catalogue livré comptait aussi `HelpAlly`, `HealAlly`, `CalmAlly`, `Regroup` et `CreateDistraction`.
+Ils ont été retirés au [livrable 15](./15-instructions-tactiques.md) : porter secours à quelqu'un n'est
+pas un réflexe, c'est une **stratégie**, et les stratégies viennent désormais du joueur — par un ordre
+direct (« Regroupez-vous », toujours là) ou par une instruction tactique. La diversion part avec eux, en
+un peu plus tranché : faire du bruit exprès pour attirer la horde sur soi et dégager un allié est un
+sacrifice calculé, décidé en sachant qui est où et ce qu'on protège. Personne ne fait cela sans qu'on le
+lui demande. Ce qui reste ici est ce qu'un survivant décide seul quand personne ne lui dit rien : fuir,
+se cacher, se soigner, se battre, fouiller, rapporter.
+
+`FleeDanger` et `Hide` portent une précondition `at_extraction` : on ne fuit pas le van. C'est le seul
+endroit de la carte où aucun coup ne porte (voir [livrable 8](./08-interface-et-boucle-complete.md)),
+donc le seul d'où fuir revient à courir vers le danger. Tenir la position **ailleurs** reste une
+décision tactique, et donc au joueur.
 
 ## Calcul des scores
 
@@ -40,10 +50,10 @@ flee_score = (
 ```
 
 ```python
-help_ally_score = (
+distraction_score = (
     ally_danger
+    * safety_factor
     * distance_factor
-    * personal_safety_factor
 )
 ```
 
@@ -79,7 +89,7 @@ Fréquence recommandée en régime de croisière : 1 à 2 fois par seconde (voir
 
 Comme les actions du planificateur ([05-planification-gbfs.md](./05-planification-gbfs.md)), les
 objectifs ci-dessus ne doivent **pas** devenir une méthode de score par objectif dans le code
-(`ComputeFleeScore()`, `ComputeHelpAllyScore()`, …). Le code ne connaît qu'un petit socle de
+(`ComputeFleeScore()`, `ComputeHideScore()`, …). Le code ne connaît qu'un petit socle de
 **considérations primitives réutilisables** — `perceived_danger`, `health_ratio`, `panic`,
 `distance_to(cible)`, `ally_danger`, … — chacune une
 fonction pure d'entrée (une valeur du monde ou de la mémoire) vers `[0, 1]` via une courbe de réponse
@@ -87,7 +97,7 @@ fonction pure d'entrée (une valeur du monde ou de la mémoire) vers `[0, 1]` vi
 
 Un objectif est alors une **donnée** : un nom, une liste de considérations pondérées à combiner (par
 exemple par multiplication, pour qu'une seule considération à 0 annule le score), et éventuellement
-des préconditions. `flee_score`, `help_ally_score` et `mission_score` de ce document sont ainsi trois
+des préconditions. `flee_score`, `distraction_score` et `mission_score` de ce document sont ainsi trois
 *instances* d'un seul mécanisme de composition, pas trois formules différentes. Ajouter un objectif
 (ou en retirer un pour un test) doit rester une modification de configuration — voir
 [B-configuration.md](./B-configuration.md) — jamais une recompilation.

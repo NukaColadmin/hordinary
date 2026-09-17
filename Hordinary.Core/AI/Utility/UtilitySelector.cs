@@ -71,6 +71,26 @@ public sealed class UtilitySelector
     /// </summary>
     public void Request(string reason) => PendingTrigger ??= reason;
 
+    /// <summary>
+    /// Remet la decision a plat : l'objectif courant cesse de tenir la place, et la prochaine
+    /// occasion de reflechir devient immediate.
+    ///
+    /// <see cref="Request"/> ne court-circuite que le cooldown, et cela ne suffit pas a un ordre qui
+    /// ne se discute plus. Un survivant terre dans la pharmacie scorait <c>Hide</c> a 0,25 et le
+    /// rappel du van a 0,37 : le rappel est le meilleur score, mais l'ecart reste sous l'hysteresis
+    /// de 0,15 — et il ne le franchira jamais, puisque se terrer entretient exactement le danger qui
+    /// fait se terrer. Le van partait, le survivant restait, la mission ne se concluait pas.
+    ///
+    /// Ce n'est toujours pas du pilotage : la decision est refaite, pas imposee. Celui qu'une horde
+    /// poursuit rescore la fuite en tete et fuit d'abord.
+    /// </summary>
+    public void Reconsider(string reason)
+    {
+        CurrentGoal = null;
+        CurrentScore = 0f;
+        PendingTrigger ??= reason;
+    }
+
     /// <summary>Vrai si le cooldown est ecoule ou si un evenement important attend d'etre pris en compte.</summary>
     public bool ShouldEvaluate(double now)
         => PendingTrigger is not null || now - LastEvaluationAt >= Settings.EvaluationInterval;

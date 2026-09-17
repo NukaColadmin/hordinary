@@ -138,8 +138,11 @@ public sealed class ReplanMonitor
 
     /// <summary>
     /// « Un allie est attaque » : faute de croyance portant la sante d'un allie — elle arrive au
-    /// livrable 7 — c'est le danger pesant sur sa position supposee qui en tient lieu, exactement
-    /// comme pour le fait symbolique <c>ally_in_danger</c>.
+    /// livrable 7 — c'est le danger pesant sur sa position supposee qui en tient lieu.
+    ///
+    /// Depuis le livrable 15 le survivant n'a plus d'objectif de secours a declencher ; le
+    /// declencheur survit quand meme, parce qu'il rouvre la decision. Ce qui en sort peut etre une
+    /// distraction pour detourner la horde, une fuite, ou rien — mais le survivant aura regarde.
     /// </summary>
     private ReplanTrigger? EndangeredAlly(UtilityContext context)
     {

@@ -24,7 +24,7 @@ Actions spéciales : forcer une porte, ouvrir une porte verrouillée, barricader
 
 Caractéristiques : vitesse moyenne, bonne capacité de soutien, faible efficacité au combat.
 
-Actions spéciales : soigner un survivant, stabiliser un survivant, réduire la panique, transporter les médicaments plus efficacement.
+Actions spéciales : se soigner, transporter les médicaments plus efficacement. Soigner *un autre* survivant et réduire sa panique figuraient ici jusqu'au [livrable 15](./15-instructions-tactiques.md), qui a retiré l'entraide autonome ; l'efficacité de soin de Claire reste sur sa fiche, elle ne joue plus que sur elle-même.
 
 ## Caractéristiques des survivants (modèle)
 
@@ -100,7 +100,7 @@ Fréquence recommandée : partage des connaissances 1 fois par seconde.
 * [x] Ajouter la pénalité de duplication d'exploration entre survivants.
 * [x] Implémenter le partage de croyances à portée de communication.
 * [x] Implémenter `merge_belief` (fusion des croyances).
-* [x] Permettre l'aide entre alliés (`HelpAlly`, `HealAlly`).
+* [x] ~~Permettre l'aide entre alliés (`HelpAlly`, `HealAlly`).~~ Retiré au [livrable 15](./15-instructions-tactiques.md) : porter secours est une stratégie, et les stratégies viennent du joueur. Le partage de connaissances, lui, reste — c'est le sujet de ce livrable.
 
 ## Critère de validation
 

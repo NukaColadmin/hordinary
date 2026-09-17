@@ -23,6 +23,14 @@
 //
 // « loot » nomme des identifiants de config/items.json et config/weapons.json. Un intervalle s'ecrit
 // [min, max].
+//
+// « mission_types » (livrable 16) est facultatif : il dit quels types de mission generee cette zone
+// accepte, parmi KillZombies, CollectObjects et CollectPriorityResources. Absent ou vide, les regles
+// generales s'appliquent — une zone avec des zombies peut recevoir une elimination, une zone avec un
+// butin une recuperation, une zone contenant nourriture, eau ou essence un ravitaillement. Le champ
+// existe pour les exceptions, pas pour la norme : declarer les trois types sur les cinq zones
+// ci-dessous ne dirait rien de plus que le silence, et ferait mentir la premiere zone qu'on
+// ajouterait en oubliant la ligne. Aucune des cinq n'en declare, et c'est delibere.
 {
   "zones": [
     {

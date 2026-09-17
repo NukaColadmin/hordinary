@@ -79,6 +79,12 @@ public sealed class Zombie : IPerceivingAgent
 
     public bool Alive => Health > 0f;
 
+    /// <summary>
+    /// Sante restante, de 0 a 1 — le meme rapport que <see cref="Survivor.HealthRatio"/>, pour que
+    /// la barre qui surmonte un zombie se lise comme celle qui surmonte un survivant.
+    /// </summary>
+    public float HealthRatio => MaxHealth <= 0f ? 0f : Math.Clamp(Health / MaxHealth, 0f, 1f);
+
     /// <summary>Encaisse un coup. Renvoie vrai s'il vient d'etre mis a terre.</summary>
     public bool TakeDamage(float amount)
     {

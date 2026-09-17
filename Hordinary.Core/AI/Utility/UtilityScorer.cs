@@ -42,7 +42,7 @@ public sealed record GoalScore(
 
 /// <summary>
 /// Moteur de score : il applique le meme mecanisme de composition a tous les objectifs
-/// (specification section 11.3). <c>flee_score</c>, <c>help_ally_score</c> et <c>mission_score</c>
+/// (specification section 11.3). <c>flee_score</c>, <c>hide_score</c> et <c>mission_score</c>
 /// n'en sont que trois jeux de donnees.
 /// </summary>
 public sealed class UtilityScorer(UtilityGoalSet goals)

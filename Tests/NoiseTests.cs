@@ -24,6 +24,9 @@ public class NoiseTests
         Assert.Equal(6f, settings.LevelOf(NoiseAction.ForceDoor), 3);
         Assert.Equal(8f, settings.LevelOf(NoiseAction.BreakWindow), 3);
         Assert.Equal(10f, settings.LevelOf(NoiseAction.Distraction), 3);
+
+        // Barricader fait le bruit de forcer : meme bois, meme outil.
+        Assert.Equal(6f, settings.LevelOf(NoiseAction.BarricadeDoor), 3);
     }
 
     // --- Propagation (section 18.2) -------------------------------------------------------

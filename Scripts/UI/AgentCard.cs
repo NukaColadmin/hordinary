@@ -24,10 +24,10 @@ namespace Hordinary.UI;
 /// </summary>
 public partial class AgentCard : PanelContainer
 {
-    public const int CardWidth = 260;
+    public const int CardWidth = 130;
 
     /// <summary>Cote du portrait, en pixels. C'est la taille native de l'image : un entier, ou rien.</summary>
-    private const int PortraitSize = 64;
+    private const int PortraitSize = 32;
 
     private static readonly Color HealthColor = new(0.44f, 0.75f, 0.35f);
     private static readonly Color PanicColor = new(0.24f, 0.35f, 0.42f);
@@ -108,16 +108,16 @@ public partial class AgentCard : PanelContainer
 
         var margin = new MarginContainer();
         foreach (var side in new[] { "left", "right", "top", "bottom" })
-            margin.AddThemeConstantOverride($"margin_{side}", 6);
+            margin.AddThemeConstantOverride($"margin_{side}", 3);
 
         AddChild(margin);
 
         var column = new VBoxContainer();
-        column.AddThemeConstantOverride("separation", 4);
+        column.AddThemeConstantOverride("separation", 2);
         margin.AddChild(column);
 
         var top = new HBoxContainer();
-        top.AddThemeConstantOverride("separation", 8);
+        top.AddThemeConstantOverride("separation", 4);
         column.AddChild(top);
 
         top.AddChild(BuildPortrait());
@@ -126,13 +126,13 @@ public partial class AgentCard : PanelContainer
         details.AddThemeConstantOverride("separation", 2);
         top.AddChild(details);
 
-        _name = Caption(details, 15, new Color(0.18f, 0.13f, 0.08f));
+        _name = Caption(details, 10, new Color(0.18f, 0.13f, 0.08f));
         _name.ClipText = true;
 
         _healthBar = Gauge(details, HealthColor);
         _panicBar = Gauge(details, PanicColor);
 
-        _state = Caption(details, 11, new Color(0.55f, 0.32f, 0.12f));
+        _state = Caption(details, 8, new Color(0.55f, 0.32f, 0.12f));
         _state.Visible = false;
 
         // Un objectif porte un nom long (« ExploreUnknownArea ») : il se coupe plutot que d'elargir la
@@ -153,7 +153,7 @@ public partial class AgentCard : PanelContainer
     {
         _ring = new Panel
         {
-            CustomMinimumSize = new Vector2(PortraitSize + 6, PortraitSize + 6),
+            CustomMinimumSize = new Vector2(PortraitSize + 3, PortraitSize + 3),
             MouseFilter = MouseFilterEnum.Ignore,
         };
 
@@ -165,10 +165,10 @@ public partial class AgentCard : PanelContainer
         };
 
         _portrait.SetAnchorsPreset(LayoutPreset.FullRect);
-        _portrait.OffsetLeft = 3;
-        _portrait.OffsetTop = 3;
-        _portrait.OffsetRight = -3;
-        _portrait.OffsetBottom = -3;
+        _portrait.OffsetLeft = 1.5f;
+        _portrait.OffsetTop = 1.5f;
+        _portrait.OffsetRight = -1.5f;
+        _portrait.OffsetBottom = -1.5f;
 
         _ring.AddChild(_portrait);
         RestyleRing();
@@ -179,14 +179,14 @@ public partial class AgentCard : PanelContainer
     private Control BuildStatusRow()
     {
         var row = new HBoxContainer();
-        row.AddThemeConstantOverride("separation", 3);
+        row.AddThemeConstantOverride("separation", 2);
 
         foreach (string state in States)
         {
             var icon = new TextureRect
             {
                 Texture = UiSkin.Status(state),
-                CustomMinimumSize = new Vector2(24, 24),
+                CustomMinimumSize = new Vector2(12, 12),
                 ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
                 StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
                 MouseFilter = MouseFilterEnum.Ignore,
@@ -295,7 +295,7 @@ public partial class AgentCard : PanelContainer
         var bar = new ProgressBar
         {
             ShowPercentage = false,
-            CustomMinimumSize = new Vector2(0, 8),
+            CustomMinimumSize = new Vector2(0, 4),
         };
 
         bar.AddThemeStyleboxOverride("background", Bar(TrackColor));
@@ -308,7 +308,7 @@ public partial class AgentCard : PanelContainer
     private static StyleBoxFlat Bar(Color color)
     {
         var box = new StyleBoxFlat { BgColor = color };
-        box.SetCornerRadiusAll(2);
+        box.SetCornerRadiusAll(1);
         return box;
     }
 
@@ -321,7 +321,7 @@ public partial class AgentCard : PanelContainer
     private void RestyleRing()
     {
         var box = new StyleBoxFlat { BgColor = _ringColor };
-        box.SetCornerRadiusAll(4);
+        box.SetCornerRadiusAll(2);
 
         _ring.AddThemeStyleboxOverride("panel", box);
     }
@@ -337,6 +337,13 @@ public partial class AgentCard : PanelContainer
         {
             var box = (StyleBoxTexture)frame.Duplicate();
 
+            // La texture garde ses bords 9-slice, mais ses marges de contenu suivent la nouvelle
+            // echelle. Les 31 px du cadre original annuleraient sinon la reduction de la fiche.
+            box.ContentMarginLeft = 3f;
+            box.ContentMarginRight = 3f;
+            box.ContentMarginTop = 3f;
+            box.ContentMarginBottom = 3f;
+
             // La fiche selectionnee garde sa couleur pleine ; les autres reculent d'un cran. C'est
             // l'inverse d'un lisere ajoute : le point de vue courant est ce qui est <b>normal</b>, et
             // le reste de l'equipe ce qui attend — la barre entiere reste lisible dans les deux cas.
@@ -351,7 +358,7 @@ public partial class AgentCard : PanelContainer
                 BorderColor = _selected ? new Color(0.85f, 0.72f, 0.45f) : new Color(0.32f, 0.28f, 0.24f),
             };
 
-            box.SetCornerRadiusAll(4);
+            box.SetCornerRadiusAll(2);
             box.SetBorderWidthAll(_selected ? 2 : 1);
             AddThemeStyleboxOverride("panel", box);
         }

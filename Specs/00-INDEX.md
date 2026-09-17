@@ -43,9 +43,11 @@ Ces exclusions valent pour le **MVP**, c'est-à-dire les livrables 1 à 8. Les l
 
 ## 6. Conditions de victoire et de défaite
 
-**Victoire** : au moins un survivant atteint la zone d'extraction en transportant (ou avec un membre du groupe transportant) les médicaments.
+**Temps imparti** : une mission dure au plus `mission.time_limit` (cinq minutes dans le fichier livré, redéfinissable mission par mission dans `missions.json`). Le délai écoulé, le van annonce le départ et **tout le groupe est rappelé** : chaque survivant reçoit un ordre de retour, qui entre dans les scores de la Utility AI comme un ordre du joueur — plus lourd, mais négociable face à un danger immédiat.
 
-**Défaite** : tous les survivants sont morts, ou tous incapables d'agir, ou les médicaments deviennent définitivement inaccessibles.
+**Victoire** : tous les survivants encore capables d'agir sont revenus au van, et l'un d'eux transporte les médicaments. Le retour d'un seul ne termine pas la mission : on ne laisse personne derrière.
+
+**Défaite** : tous les survivants sont morts, ou tous incapables d'agir, ou les médicaments deviennent définitivement inaccessibles, ou le temps est écoulé et le groupe rentre les mains vides.
 
 ---
 
@@ -86,13 +88,15 @@ continuer à se jouer et à passer ses tests si l'un d'eux est abandonné en cou
 spécifié ; la priorité dit quand il se fait :
 
 ```text
-11  →  12  →  G  →  15  →  13  →  14
+11  →  12  →  16  →  G  →  15  →  13
 ```
 
 Le document transverse [G-export-pddl.md](./G-export-pddl.md) s'intercale parce qu'il est un
-**prérequis dur du livrable 15**. Le livrable 15 passe devant le 13 et le 14 parce qu'il ne dépend
-d'aucun des deux et qu'il porte davantage la démonstration. Les livrables 13 et 14 restent
-spécifiés et restent en fin de file.
+**prérequis dur du livrable 15**. Le livrable 15 passe devant le 13 parce qu'il n'en dépend pas et
+qu'il porte davantage la démonstration. Le livrable 16 passe avant les deux parce qu'il ne coûte
+rien au reste : il produit des `MissionDefinition` comme le fichier en produisait, et tout ce qui
+est en aval — planificateur, suivi de partie, écran de camp — ne sait pas d'où elles viennent. Le
+livrable 13 reste spécifié et reste en fin de file ; le livrable 14 est retiré.
 
 | # | Priorité | Livrable | Fichier | Critère de validation |
 |---|----------|----------|---------|------------------------|
@@ -101,6 +105,7 @@ spécifiés et restent en fin de file.
 | 13 | **P3 — Moyenne** | Génération de quartiers | [13-generation-de-cartes.md](./13-generation-de-cartes.md) | Trois missions d'affilée sur trois quartiers différents, reproductibles par leur graine, sans mur invisible ni limite non expliquée. |
 | 14 | *retiré* | Recrutement et dialogues | — | Spécification retirée ; la personnalité des survivants n'est plus un concept du projet. |
 | 15 | **P2 — Haute** | Instructions tactiques en langage naturel | [15-instructions-tactiques.md](./15-instructions-tactiques.md) | « Avant d'entrer dans un bâtiment, regroupez-vous » change le domaine de planification ; et là où elle rend la mission impossible, elle est refusée avant application, avec sa raison. |
+| 16 | **P2 — Haute** | Missions aléatoires et récompenses | [16-missions-aleatoires-et-recompenses.md](./16-missions-aleatoires-et-recompenses.md) | Trois offres déterministes proposent des objectifs de zombies, de récupération ou de ressources, avec leurs récompenses exactes affichées avant le départ. |
 
 ### Justification des priorités
 

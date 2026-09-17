@@ -574,6 +574,33 @@ public sealed class AgentKnowledge
         return learned;
     }
 
+    /// <summary>
+    /// La seule annonce d'un survivant : « je m'occupe du nord », et rien d'autre de ce qu'il sait.
+    ///
+    /// <para>
+    /// C'est <see cref="LearnFrom"/> reduit a une croyance, avec les memes regles — la source devient
+    /// du temoignage, la confiance baisse d'un cran, <see cref="BeliefMerge"/> arbitre. La raison
+    /// d'exister de cette version etroite est une question de <b>cadence</b>, pas de contenu : dire
+    /// ou l'on va a quelqu'un qui se tient a cote de soi est instantane, alors que le reste de ce
+    /// qu'on se raconte attend la passe de partage. Tant que l'annonce attendait elle aussi, trois
+    /// survivants partis du meme point calculaient la meme meilleure frontiere au meme instant depuis
+    /// les memes intentions perimees : la penalite de duplication les repoussait tous les trois
+    /// ensemble d'un coin a l'autre au lieu de les separer.
+    /// </para>
+    /// </summary>
+    public bool LearnIntentFrom(AgentKnowledge other, string agentId)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+
+        if (ReferenceEquals(other, this)) return false;
+        if (other.GetIntent(agentId) is not { } belief) return false;
+
+        float trust = 1f - Clamp(Settings.SharedConfidencePenalty);
+
+        return DeclareIntent(
+            belief.Id, belief.Goal, belief.Value, belief.LastObservedAt, Hearsay, belief.Confidence * trust);
+    }
+
     /// <summary>Ce que devient la source d'une croyance qui a change de bouche.</summary>
     private const KnowledgeSource Hearsay = KnowledgeSource.AllyCommunication;
 

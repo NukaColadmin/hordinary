@@ -84,6 +84,21 @@ public sealed record ZoneProfile
     /// <summary>Nombre de fouilles a mener pour tout trouver. Deux et plus : il faut chercher partout.</summary>
     public RollRange SearchRooms { get; init; } = new(1f, 1f);
 
+    /// <summary>
+    /// Les types de mission que cette zone accepte (livrable 16). Liste vide ou absente : les regles
+    /// generales s'appliquent — une zone avec des zombies peut recevoir une elimination, une zone
+    /// avec un butin une recuperation, une zone avec une ressource vitale un ravitaillement.
+    ///
+    /// Le champ existe pour les exceptions, pas pour la norme : declarer les trois types sur les
+    /// cinq zones livrees ne dirait rien de plus que le silence, et ferait mentir la premiere zone
+    /// qu'on ajouterait en oubliant la ligne.
+    /// </summary>
+    public List<Game.MissionObjectiveKind> MissionTypes { get; init; } = [];
+
+    /// <summary>Cette zone accepte-t-elle explicitement ce type ? <c>null</c> : elle ne dit rien.</summary>
+    public bool? Accepts(Game.MissionObjectiveKind kind)
+        => MissionTypes.Count == 0 ? null : MissionTypes.Contains(kind);
+
     public MapZone? ZoneIn(GridMap map)
     {
         ArgumentNullException.ThrowIfNull(map);

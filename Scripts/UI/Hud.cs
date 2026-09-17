@@ -25,6 +25,14 @@ public partial class Hud : InfoPanel
     /// <summary>Deplie les intentions connues et les frontieres candidates (touche F7).</summary>
     public bool ShowBandDetail { get; set; }
 
+    /// <summary>
+    /// Ce que la victoire a rapporte (livrable 16), une fois le verdict rendu. Le jeu n'a pas d'ecran
+    /// de resultat separe : le verdict s'affiche la ou il s'est toujours affiche, et ce qui a ete
+    /// verse s'affiche avec lui. Un ecran de plus pour trois lignes ferait une transition a
+    /// traverser, pas une information de plus.
+    /// </summary>
+    public IReadOnlyList<MissionReward> Awarded { get; set; } = [];
+
     public void Refresh(
         GridMap map,
         WorldState world,
@@ -36,9 +44,10 @@ public partial class Hud : InfoPanel
     {
         Write($"""
             Hordinary — {mission.Mission.Name}
-            Carte {map.Width} x {map.Height}, origine {map.Origin} — t = {world.Time:0.0} s
+            Carte {map.Width} x {map.Height}, origine {map.Origin} — t = {world.Time:0.0} s{ClockLine(mission, world.Time)}
             {OutcomeLine(mission)}
             {BandLine(band, commands)}
+            {InstructionLine(band)}
             {ObjectiveLine(mission)}
             {HordeLine(horde)}
             {ExplorationLine(commands.Selected)}
@@ -48,13 +57,70 @@ public partial class Hud : InfoPanel
     }
 
     /// <summary>
-    /// L'issue de la partie. Tant qu'elle court, la ligne rappelle ce qu'on attend du joueur : le
-    /// joueur ne devrait jamais avoir a ouvrir la specification pour savoir ce qu'il fait la.
+    /// Le temps qui reste avant que le van ne parte. C'est le seul chiffre du HUD sur lequel le
+    /// joueur a une decision a prendre — aller voir un batiment de plus, ou rentrer —, alors il tient
+    /// sur la ligne de l'horloge et pas ailleurs. Une mission sans limite n'affiche rien : un
+    /// compteur immobile ferait croire a un chronometre en panne.
     /// </summary>
-    private static string OutcomeLine(MissionTracker mission)
-        => mission.IsOver
-            ? $"*** {mission.Verdict} ***"
-            : $"Mission : rapporter {mission.Mission.Item} au camp — depart et retour au meme endroit";
+    private static string ClockLine(MissionTracker mission, double now)
+    {
+        if (mission.TimeLeft(now) is not { } left) return string.Empty;
+        if (mission.Recalled) return " — temps ecoule, retour au van";
+
+        return $" — depart du van dans {(int)(left / 60)}:{left % 60:00}";
+    }
+
+    /// <summary>
+    /// L'issue de la partie. Tant qu'elle court, la ligne rappelle ce qu'on attend du joueur : le
+    /// joueur ne devrait jamais avoir a ouvrir la specification pour savoir ce qu'il fait la — y
+    /// compris qu'on ne laisse personne derriere, puisque c'est le groupe au complet qui conclut.
+    /// </summary>
+    private string OutcomeLine(MissionTracker mission)
+    {
+        if (mission.IsOver)
+        {
+            string spoils = Awarded.Count == 0
+                ? mission.Mission.Rewards.Count > 0 && mission.Outcome != MissionOutcome.Victory
+                    ? "\nAucune recompense : la mission n'a pas ete remplie."
+                    : string.Empty
+                : $"\nRecompenses versees au camp : {string.Join(", ", Awarded)}";
+
+            return $"*** {mission.Verdict} ***{spoils}";
+        }
+
+        int home = mission.Home.Count();
+        string tally = home == 0 ? string.Empty : $" (rentres : {home})";
+
+        // Une mission generee (livrable 16) annonce son type et sa zone plutot que l'objet unique
+        // du MVP : « rapporter medikit » ne dit rien d'une mission d'elimination.
+        if (mission.Objectives is { } objectives)
+        {
+            string where = mission.Mission.ObjectiveZone ?? mission.Mission.Objective.ToString();
+
+            return $"Mission : {MissionObjectiveNames.Of(objectives.Kind)} — {where}, "
+                 + $"puis rentrer au complet{tally}";
+        }
+
+        return $"Mission : rapporter {mission.Mission.Item} au van, et y rentrer au complet{tally}";
+    }
+
+    /// <summary>
+    /// Les instructions tactiques actives (livrable 15). Le joueur doit pouvoir relire ce qu'il a
+    /// demande pendant qu'il regarde ce que ca donne : une contrainte n'est visible nulle part
+    /// ailleurs sur la carte — elle n'ajoute aucun ordre, elle retire des plans — et un comportement
+    /// qu'on ne sait plus avoir demande passe pour un defaut.
+    ///
+    /// Sans instruction, la ligne n'existe pas : annoncer « aucune consigne » a chaque frame d'une
+    /// partie qui n'en utilise pas ferait du livrable un bruit permanent.
+    /// </summary>
+    private static string InstructionLine(SurvivorBand band)
+    {
+        if (band.Instructions is not { Active.Count: > 0 } instructions) return string.Empty;
+
+        var lines = instructions.Active.Select(constraint => $"  • {constraint.Utterance ?? constraint.Text}");
+
+        return $"Consignes ({instructions.Active.Count}) :\n{string.Join("\n", lines)}";
+    }
 
     private static string BandLine(SurvivorBand band, CommandManager commands)
     {
@@ -93,12 +159,37 @@ public partial class Hud : InfoPanel
     /// </summary>
     private static string ObjectiveLine(MissionTracker mission)
     {
+        if (mission.Objectives is { } objectives) return ProgressLine(mission, objectives);
+
         var carriers = mission.Carriers.ToList();
         string what = mission.Mission.Item;
 
         return carriers.Count == 0
             ? $"{what} : pas encore ramasse"
             : $"{what} : porte par {string.Join(", ", carriers.Select(survivor => survivor.Name))}";
+    }
+
+    /// <summary>
+    /// La progression d'une mission generee : chaque exigence avec son compteur, les recompenses
+    /// promises, et l'etat de livraison au camp.
+    ///
+    /// « Livre » ne veut pas dire « pose au camp » : les objets restent dans les sacs, et c'est le
+    /// retour du groupe qui les rentre. La ligne dit donc ou en est le <b>retour</b>, qui est la
+    /// seconde moitie de toute mission et celle que le joueur oublie.
+    /// </summary>
+    private static string ProgressLine(MissionTracker mission, MissionObjectiveTracker objectives)
+    {
+        string counters = string.Join("   ", objectives.Progress().Select(line => line.ToString()));
+
+        string rewards = mission.Mission.Rewards.Count == 0
+            ? string.Empty
+            : $"   Recompenses : {string.Join(", ", mission.Mission.Rewards)}";
+
+        string delivery = objectives.Fulfilled
+            ? mission.Home.Any() ? "au camp" : "reste a rentrer au camp"
+            : "objectif inacheve";
+
+        return $"Objectif : {counters}   [{delivery}]{rewards}";
     }
 
     private static string HordeLine(IReadOnlyList<Zombie> horde)

@@ -1,0 +1,58 @@
+// Instructions tactiques pre-ecrites (livrable 15).
+//
+// Elles existent pour que le livrable soit jouable et demontrable SANS modele de langage : avec
+// instructions.enabled a false, aucune requete n'est emise et ces huit-la restent proposees. Ce qui
+// est desactive dans ce cas, c'est la traduction d'une phrase libre en contrainte — pas les
+// contraintes elles-memes. Les quatre portillons, le compilateur et le verificateur de trajectoire
+// tournent exactement pareil dans les deux cas.
+//
+// Le champ "constraint" est ecrit dans la grammaire fermee, et il est valide comme le serait la
+// sortie d'un modele : ConstraintGrammar refuse ici aussi un predicat ou un schema inconnu. Une
+// action retiree du domaine doit donc faire echouer le test qui charge ce fichier — c'est l'interet.
+//
+// Les cinq formes sont couvertes : require_before (1, 2), require_after (3), forbid (4, 5),
+// require_always (6), penalize (7, 8).
+{
+  "presets": [
+    {
+      "id": "regroupement_avant_entree",
+      "label": "Avant d'entrer dans un batiment, regroupez-vous.",
+      "constraint": "require_before(at(agent, group), enter:building)"
+    },
+    {
+      "id": "fouiller_avant_de_repartir",
+      "label": "Ne repartez pas sans avoir fouille.",
+      "constraint": "require_before(searched(objective_zone), ReachExtraction)"
+    },
+    {
+      "id": "regler_la_menace_avant_de_fuir",
+      "label": "Ne prenez la fuite qu'une fois la menace reglee.",
+      "constraint": "require_after(threat_handled, EscapeLocation)"
+    },
+    {
+      "id": "aucune_vitre_cassee",
+      "label": "Ne cassez aucune vitre.",
+      "constraint": "forbid(BreakWindow)"
+    },
+    {
+      "id": "pas_de_ruelle",
+      "label": "N'entrez dans aucune ruelle.",
+      "constraint": "forbid(enter:alley)"
+    },
+    {
+      "id": "garder_le_retour",
+      "label": "Ne bougez jamais sans savoir ou est le van.",
+      "constraint": "require_always(extraction_known)"
+    },
+    {
+      "id": "eviter_de_forcer",
+      "label": "Evitez de forcer les portes.",
+      "constraint": "penalize(ForceDoor, 3)"
+    },
+    {
+      "id": "eviter_les_rues",
+      "label": "Passez par les rues le moins possible.",
+      "constraint": "penalize(move:street, 2)"
+    }
+  ]
+}

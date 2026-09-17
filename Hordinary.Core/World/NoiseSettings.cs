@@ -15,6 +15,12 @@ public sealed class NoiseSettings
     public float BreakWindow { get; init; } = 8f;
     public float Distraction { get; init; } = 10f;
 
+    /// <summary>
+    /// Barricader : le meme vacarme que forcer une porte, et pour cause — c'est le meme bois et le
+    /// meme outil. On n'entend pas la difference entre entrer de force et condamner derriere soi.
+    /// </summary>
+    public float BarricadeDoor { get; init; } = 6f;
+
     // --- Propagation ----------------------------------------------------------------------
 
     /// <summary>Intensite perdue par cellule opaque traversee, en plus de la distance.</summary>
@@ -48,6 +54,7 @@ public sealed class NoiseSettings
         NoiseAction.ForceDoor => ForceDoor,
         NoiseAction.BreakWindow => BreakWindow,
         NoiseAction.Distraction => Distraction,
+        NoiseAction.BarricadeDoor => BarricadeDoor,
         _ => 0f,
     };
 }

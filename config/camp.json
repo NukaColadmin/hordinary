@@ -30,6 +30,27 @@
     // Les trois etats d'une reserve, en part de la capacite de depart ci-dessus. Ils sont lus ici et
     // nulle part ailleurs : l'ecran ne redecide pas ce que la configuration a deja decide.
     "empty_threshold": 0.1,
-    "full_threshold": 0.6
+    "full_threshold": 0.6,
+
+    // L'entrepot qui recoit les recompenses de mission (livrable 16), distinct des quatre reserves
+    // ci-dessus : celles-la se comptent, celui-ci s'empile. Il est fini pour que « le stock est
+    // plein » soit une situation reelle — c'est elle qui fait exister la file d'attente des
+    // recompenses, et la promesse qu'une recompense annoncee ne disparait jamais en silence.
+    "storage_slots": 24,
+
+    // Ce que l'entrepot contient avant la premiere sortie. C'est ce que le joueur distribue au
+    // depart, sur l'ecran de camp : sans cette liste, l'entrepot n'existerait qu'apres une premiere
+    // victoire, et le paquetage n'aurait rien a repartir le premier jour.
+    //
+    // Ce qui est prete revient avec celui qui rentre — une arme confiee n'est pas une arme donnee —
+    // et le camp est ouvert de ce qu'il ramasse ensuite. Les identifiants sont ceux de
+    // config/items.json et config/weapons.json ; un camp qui ouvre demuni s'ecrit avec une liste vide.
+    "storage": [
+      { "item": "medikit", "quantity": 2 },
+      { "item": "bandage", "quantity": 3 },
+      { "item": "baseball_bat", "quantity": 1 },
+      { "item": "revolver", "quantity": 1 },
+      { "item": "flashlight", "quantity": 1 }
+    ]
   }
 }

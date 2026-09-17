@@ -52,13 +52,10 @@ public sealed class SurvivorSettings
 
     /// <summary>
     /// Sante rendue par une boite de medicaments, sur l'echelle de <see cref="MaxHealth"/>. Un soin
-    /// ne remet pas d'aplomb : c'est ce qui rend l'efficacite de Claire (competence <c>HealAlly</c>)
+    /// ne remet pas d'aplomb : c'est ce qui rend l'efficacite de Claire (competence de soin)
     /// reellement utile plutot que decorative.
     /// </summary>
     public float HealAmount { get; init; } = 45f;
-
-    /// <summary>Panique retiree par un survivant qui en rassure un autre (action <c>CalmAlly</c>).</summary>
-    public float CalmAmount { get; init; } = 0.4f;
 
     // --- Combat (livrable 8) -----------------------------------------------------------------
 

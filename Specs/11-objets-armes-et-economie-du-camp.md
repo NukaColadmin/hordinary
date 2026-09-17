@@ -370,6 +370,11 @@ Aucun nouveau verbe primitif n'est nécessaire pour l'essentiel ; deux le sont p
 `AttackWithWeapon` ne remplace pas `AttackZombie` : les deux coexistent, et GBFS arbitre par le coût.
 Un survivant sans arme garde exactement le comportement du MVP.
 
+`ThrowFirecracker` a depuis été retirée du domaine par le
+[livrable 15](./15-instructions-tactiques.md), avec `CreateNoiseDistraction` et le prédicat
+`distraction_created` : une diversion est un sacrifice calculé, pas un réflexe. Le verbe `emit_noise`
+reste, ainsi que l'effet du pétard ci-dessus — c'est le demandeur qui doit devenir le joueur.
+
 Ces sept actions portent le domaine de **23 à 30 schémas**, et c'est la dernière fois qu'il bouge :
 [G-export-pddl.md](./G-export-pddl.md) est explicitement placé après ce livrable pour cette raison, et
 le [livrable 15](./15-instructions-tactiques.md) compile ses contraintes sur le domaine ainsi obtenu.
@@ -405,6 +410,38 @@ Résolution en fin de journée (une journée = une mission) :
 
 Le stock du camp est visible dans l'écran de préparation de mission
 ([CampScreen.cs](../Scripts/UI/CampScreen.cs)) et détaillé par le livrable 12.
+
+### L'entrepôt et le paquetage
+
+À côté des quatre réserves, qui se comptent, le camp tient un **entrepôt** d'objets, qui s'empile :
+`storage_slots` emplacements, remplis au départ par `storage` et alimentés ensuite par les
+récompenses de mission (livrable 16) et par ce que le groupe rapporte.
+
+```json
+{
+  "camp": {
+    "storage_slots": 24,
+    "storage": [
+      { "item": "medikit", "quantity": 2 },
+      { "item": "baseball_bat", "quantity": 1 }
+    ]
+  }
+}
+```
+
+Avant de partir, le joueur **confie** à chaque survivant enrôlé ce qu'il emportera, pris dans cet
+entrepôt ([CampLoadout.cs](../Hordinary.Core/Game/CampLoadout.cs),
+[LoadoutPanel.cs](../Scripts/UI/LoadoutPanel.cs)). Quatre règles, et rien de plus :
+
+* composer un paquetage ne débite rien — seul le départ débite, comme le coût d'entrée d'une offre ;
+* un exemplaire n'est jamais promis deux fois, et les limites du sac sont celles de `inventory` : le
+  paquetage **est** un `Inventory` ;
+* une arme confiée part en main ;
+* prêter n'est pas donner : ce que le camp a confié revient à l'entrepôt avec celui qui rentre,
+  mission gagnée ou perdue. Ce que le groupe a ramassé en chemin, lui, dépend du verdict.
+
+C'est une décision de joueur au sens du livrable 15, et non un réflexe : un survivant ramasse ce
+qu'il trouve sur place, il ne décide pas la veille lequel des trois emporte l'unique fusil.
 
 ## Catalogue de zones (5)
 

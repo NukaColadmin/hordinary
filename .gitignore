@@ -26,3 +26,6 @@ obj/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Domaines compiles par mission (livrable 15) : generes a chaque depart, jamais relus par le jeu.
+/missions/

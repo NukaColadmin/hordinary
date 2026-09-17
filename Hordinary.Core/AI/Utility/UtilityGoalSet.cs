@@ -7,7 +7,7 @@ namespace Hordinary.AI.Utility;
 /// Catalogue des objectifs, charge depuis <c>config/utility_goals.json</c>.
 ///
 /// C'est la seule definition des objectifs du jeu : le code n'en connait aucun par son nom. Ajouter
-/// « CreateDistraction », retirer « Hide » le temps d'un test ou repondérer « FleeDanger » est une
+/// « BarricadeDoor », retirer « Hide » le temps d'un test ou repondérer « FleeDanger » est une
 /// modification de ce fichier, jamais une recompilation.
 /// </summary>
 public sealed class UtilityGoalSet

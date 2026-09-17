@@ -47,11 +47,12 @@ primitives** réutilisables (`perceived_danger`, `health_ratio`, `panic`, `dista
       "combine": "multiply"
     },
     {
-      "name": "HelpAlly",
+      "name": "Hide",
+      "preconditions": [ { "input": "at_extraction", "max": 0.5 } ],
       "considerations": [
-        { "input": "ally_danger", "curve": "linear" },
-        { "input": "distance_to(ally)", "curve": "inverse" },
-        { "input": "personal_safety", "curve": "linear" }
+        { "input": "perceived_danger", "curve": "linear" },
+        { "input": "distance_to(cover)", "curve": "inverse" },
+        { "input": "pursued", "curve": "inverse", "min": 0.3 }
       ],
       "combine": "multiply"
     }
@@ -107,16 +108,16 @@ sache où chercher, et pour qu'aucun réglage ne soit ajouté deux fois à deux 
 
 | Fichier | Contenu | Introduit par |
 |---------|---------|---------------|
-| `game_config.json` | Réglages de simulation, et les sections ajoutées ensuite : `inventory` (11), `van` (12), `dialogue` (14), `instructions` (15) | MVP |
-| `planner_domain.json` | Actions et objectifs du planificateur — 23 schémas, 30 après le livrable 11 | Livrable 5 |
+| `game_config.json` | Réglages de simulation, `mission` (temps imparti, rappel du van, tolérance de retour), et les sections ajoutées ensuite : `inventory` (11), `van` (12), `dialogue` (14), `instructions` (15), `mission_generation` (16) | MVP |
+| `planner_domain.json` | Actions et objectifs du planificateur — 23 schémas, 29 après le livrable 11, 24 après le retrait de la diversion et de l'entraide autonome au livrable 15 | Livrable 5 |
 | `utility_goals.json` | Objectifs et considérations de la Utility AI | Livrable 4 |
 | `survivors.json` | Roster écrit à la main, et référence des tests | Livrable 7 |
 | `map_locations.json` | Zones de la carte de démonstration | Livrable 1 |
-| `missions.json` | Missions, leur `objective` et leur `map_profile` | Livrable 8 |
+| `missions.json` | Missions écrites à la main, leur `objective`, leur `map_profile` et leur `time_limit`. Toujours chargées et jouables ; `mission_generation.enabled` décide si l'écran de camp les propose ou propose des offres générées | Livrable 8 |
 | `tile_legend.json` | `tile_size` et la table `source:x,y → tuile` | Livrable 1 |
 | `items.json`, `weapons.json` | Catalogues d'objets et d'armes | Livrable 11 |
 | `camp.json` | Stock du camp et résolution de fin de journée | Livrable 11 |
-| `zones.json` | Profils de zone (`layout`, accès, densité, butin) | Livrable 11 |
+| `zones.json` | Profils de zone (`layout`, accès, densité, butin, et `mission_types` au livrable 16) | Livrable 11 |
 | `survivor_generation.json` | Graine, noms, archétypes, traits, `appearance` | Livrable 12 |
 | `mapgen.json` | Profils de quartier et réglages de bordure | Livrable 13 |
 | `encounters.json` | Types de rencontres et seuils de recrutement | Livrable 14 |

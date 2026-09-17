@@ -60,11 +60,11 @@ public partial class AgentRoster : CanvasLayer
         AddChild(anchor);
 
         var row = new HBoxContainer();
-        row.AddThemeConstantOverride("separation", 16);
+        row.AddThemeConstantOverride("separation", 8);
         anchor.AddChild(row);
 
         _grid = new HBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-        _grid.AddThemeConstantOverride("separation", 14);
+        _grid.AddThemeConstantOverride("separation", 7);
         row.AddChild(_grid);
 
         for (int index = 0; index < _agents.Count; index++)
