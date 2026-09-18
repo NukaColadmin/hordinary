@@ -511,6 +511,13 @@ d'utiliser un fournisseur distant sans rendre les parties irreproductibles.
     ],
     "actions": ["MoveToLocation", "OpenDoor", "ForceDoor", "BreakWindow", "..."],
     "location_kinds": ["building", "street", "alley", "pharmacy", "extraction", "start"],
+    // constantes et reperes : ce qu'un fait a le droit de nommer, et a quelle position
+    "objects": [
+      { "name": "agent",   "type": "object" },
+      { "name": "group",   "type": "location" },
+      { "name": "cover",   "type": "location" },
+      { "name": "toolbox", "type": "item" }
+    ],
     "active_constraints": []
   },
   "max_chars": 200
@@ -522,7 +529,8 @@ d'utiliser un fournisseur distant sans rendre les parties irreproductibles.
   "constraint": {
     "form": "require_before",
     "predicate": "at(agent, group)",
-    "action_class": "enter:building"
+    "action_class": "enter:building",
+    "factor": null
   },
   "rationale": "regroupement exige avant tout deplacement vers un lieu de type batiment",
   "model": "anthropic/claude-haiku-4.5",
@@ -548,6 +556,25 @@ compilateur déterministe.
 
 `status: "constraint"` ne veut pas dire « appliquée ». Les quatre portillons tournent ensuite, côté
 `Hordinary.Core`, et peuvent encore refuser.
+
+#### Deux champs que l'implémentation a dû ajouter
+
+Ils ne figuraient pas au contrat ci-dessus tel qu'il a été écrit, et sans eux le livrable ne
+fonctionnait pas. Les deux sont documentés là où ils vivent (`DomainDigest`, `ServiceConstraint`) :
+
+* **`domain_digest.objects`.** Le portillon 1 refuse tout objet qu'il ne connaît pas, et l'exemple
+  canonique de ce document — `require_before(at(agent, group), enter:building)` — cite `group`, qui
+  est un **repère** déclaré dans `config/planner_domain.json` et non un type ni une catégorie de lieu.
+  Un digest qui ne le montre pas demande au modèle de deviner un vocabulaire dont la grammaire exige
+  pourtant l'exactitude ; le symptôme aurait été une série de refus imputés au modèle alors qu'ils
+  venaient du contexte qu'on lui donne.
+
+  Le champ **porte le type de chaque symbole**, et pas seulement son nom. Ce second ajout a été fait
+  après coup, pour la raison exposée plus bas : sans le type, le portillon 1 comme le nœud
+  `self_check` acceptaient `equipped(agent)` ;
+* **`constraint.factor`.** Sans lui, `penalize(A, k)` était intraduisible : « évitez de forcer les
+  portes » n'a pas de sens sans un `k`. Les bornes restent celles de la configuration
+  (`instructions.min_penalty` / `max_penalty`), donc le laisser libre ici ne libère rien.
 
 ### Configuration
 
@@ -683,15 +710,24 @@ pré-écrites du mode désactivé). Nouveau fichier par mission
 * [x] Interface : saisie, contraintes actives, refus motivés, journal.
 * [x] **Vérifier ici que tout est jouable et démontrable sans modèle**, via les instructions
       pré-écrites. Tout ce qui suit est du supplément.
-* [ ] Brancher le portillon 3 : rendu texte du domaine compilé, problème depuis l'état courant, appel
-      à Fast Downward, recherche du coupable minimal.
-* [ ] Créer l'endpoint `/instruction` dans `service/` et le graphe LangGraph à cinq nœuds.
-* [ ] Implémenter l'adaptateur OpenRouter et le plafond de coût.
-* [ ] Écrire `InstructionClient.cs` : asynchrone, timeout, cache, repli sur les instructions
+* [~] Brancher le portillon 3. **Fait** : le rendu texte du domaine compilé, le problème depuis l'état
+      courant (`PddlProblemBuilder`, spec G), la recherche du coupable minimal
+      (`AI/Instructions/SatisfiabilityGate`, réduction gloutonne en `n + 2` appels, minimale au sens de
+      l'inclusion, et qui n'accuse personne quand la mission est impossible d'elle-même) et le lanceur
+      (`Tests/SatisfiabilityTests`, `FastDownward.Locate`). **Pas fait** : Fast Downward n'a jamais été
+      exécuté — il n'est installé sur aucune machine du projet. L'oracle est donc un délégué que seuls
+      les tests remplissent, et le refus par preuve d'insatisfiabilité n'existe pas encore en jeu.
+* [x] Créer l’endpoint `/instruction` dans `service/` et le graphe LangGraph à cinq nœuds.
+* [x] Implémenter l’adaptateur OpenRouter et le plafond de coût.
+* [x] Écrire `InstructionClient.cs` : asynchrone, timeout, cache, repli sur les instructions
       pré-écrites.
-* [ ] Écrire le corpus d'évaluation (soixante phrases) et le harnais.
+* [x] Écrire le corpus d’évaluation (soixante-six phrases) et le harnais. Le harnais **tourne** :
+      `python -m evals.run --dry-run` traverse les soixante-six cas et produit le rapport. Les 50 tests
+      Python du service passent également (CPython 3.12.10).
 * [ ] Lancer les comparaisons de modèles et les deux ablations ; publier `service/evals/results.md`.
-* [ ] Documenter l'installation du service et la configuration OpenRouter dans les README.
+      C'est le seul point du livrable qui demande encore une clé OpenRouter et des appels facturés. Le
+      `--dry-run` n'y supplée pas : il éprouve le harnais, pas les modèles.
+* [x] Documenter l’installation du service et la configuration OpenRouter dans les README.
 
 ## Critère de validation
 

@@ -1,6 +1,7 @@
 using Godot;
 using Hordinary.AI.Instructions;
 using Hordinary.AI.Planning.Pddl;
+using Hordinary.Instructions;
 
 namespace Hordinary.UI;
 
@@ -16,11 +17,17 @@ namespace Hordinary.UI;
 /// </para>
 ///
 /// <para>
-/// La saisie libre ici est celle de la <b>grammaire fermee</b>, pas du francais. Traduire une phrase
-/// de joueur est le travail du service de langage, et lui seul ; <c>instructions.enabled</c> est
-/// livre a <c>false</c>. Ce que ce panneau demontre est ce qui reste quand le modele est absent —
-/// c'est-a-dire toute la mecanique : les instructions pre-ecrites portent exactement les memes
-/// contraintes, et passent exactement les memes portillons.
+/// La saisie accepte deux choses selon <c>instructions.enabled</c>, et une seule ligne de code les
+/// distingue. Service coupe, elle attend une contrainte de la <b>grammaire fermee</b> — les cinq
+/// formes, et rien d'autre. Service actif, elle attend du <b>francais</b>, que le service traduit en
+/// contrainte de cette meme grammaire. Dans les deux cas c'est le portillon 1 qui tranche, sur le
+/// meme texte : traduire ne donne aucun droit supplementaire, et la phrase d'un joueur n'a pas plus
+/// de credit que celle d'un modele.
+/// </para>
+///
+/// <para>
+/// Ce que ce panneau demontre sans modele est donc toute la mecanique : les instructions pre-ecrites
+/// portent exactement les memes contraintes, et passent exactement les memes portillons.
 /// </para>
 /// </summary>
 public partial class InstructionPanel : VBoxContainer
@@ -35,6 +42,10 @@ public partial class InstructionPanel : VBoxContainer
     private TacticalInstructions _instructions = null!;
     private InstructionPresetCatalogue _presets = InstructionPresetCatalogue.Empty;
     private InstructionSettings _settings = new();
+    private InstructionClient? _client;
+    private PddlDomain _domain = null!;
+    private Func<int> _seed = () => 0;
+    private bool _waiting;
 
     private readonly Dictionary<string, Button> _toggles = new(StringComparer.OrdinalIgnoreCase);
 
@@ -60,12 +71,28 @@ public partial class InstructionPanel : VBoxContainer
         AddThemeConstantOverride("separation", 5);
     }
 
-    public void Configure(PddlDomain domain, InstructionPresetCatalogue? presets, InstructionSettings? settings)
+    /// <param name="client">
+    /// Le service de langage, quand il y en a un. Absent — c'est le cas livre — la saisie reste celle
+    /// de la grammaire fermee et rien n'est emis sur le reseau.
+    /// </param>
+    /// <param name="seed">
+    /// La graine de la mission, lue au moment de la traduction et non a la construction : le joueur
+    /// peut la changer apres avoir ouvert le panneau, et le cache du courtier en depend.
+    /// </param>
+    public void Configure(
+        PddlDomain domain,
+        InstructionPresetCatalogue? presets,
+        InstructionSettings? settings,
+        InstructionClient? client = null,
+        Func<int>? seed = null)
     {
         ArgumentNullException.ThrowIfNull(domain);
 
+        _domain = domain;
         _presets = presets ?? InstructionPresetCatalogue.Empty;
         _settings = settings ?? new InstructionSettings();
+        _client = client;
+        _seed = seed ?? (() => 0);
         _instructions = new TacticalInstructions(domain, _settings);
 
         var heading = new Label { Text = "INSTRUCTIONS TACTIQUES (OPTIONNELLES)" };
@@ -143,11 +170,16 @@ public partial class InstructionPanel : VBoxContainer
     }
 
     /// <summary>
-    /// La saisie. Elle attend une contrainte de la grammaire fermee — les cinq formes, et rien
-    /// d'autre — parce que c'est tout ce que le jeu sait appliquer sans modele. Un symbole invente y
-    /// est refuse par le portillon 1, et c'est la meme ligne de code qui refuserait la sortie d'un
+    /// La saisie. Service coupe, elle attend une contrainte de la grammaire fermee — les cinq formes,
+    /// et rien d'autre — parce que c'est tout ce que le jeu sait appliquer sans modele. Service
+    /// actif, elle attend du francais et le fait traduire.
+    ///
+    /// <para>
+    /// Dans les deux cas la contrainte finit dans <see cref="ConstraintGrammar"/>, et c'est la meme
+    /// ligne de code qui refuserait un symbole invente par un joueur et un symbole invente par un
     /// modele : rien n'est verifie parce qu'on se mefie des modeles, tout est verifie parce que c'est
     /// une contrainte.
+    /// </para>
     /// </summary>
     private void BuildEntry()
     {
@@ -157,7 +189,9 @@ public partial class InstructionPanel : VBoxContainer
 
         _entry = new LineEdit
         {
-            PlaceholderText = ConstraintGrammar.Forms(),
+            PlaceholderText = Translating
+                ? "Avant d'entrer dans un batiment, regroupez-vous."
+                : ConstraintGrammar.Forms(),
             MaxLength = _settings.MaxChars,
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
         };
@@ -202,13 +236,53 @@ public partial class InstructionPanel : VBoxContainer
         Report(entry);
     }
 
-    private void Submit()
+    /// <summary>Vrai quand une phrase libre doit passer par le service avant d'etre une contrainte.</summary>
+    private bool Translating => _settings.Enabled && _client is not null;
+
+    private async void Submit()
     {
         string text = _entry.Text.Trim();
-        if (text.Length == 0) return;
+        if (text.Length == 0 || _waiting) return;
 
-        var entry = _instructions.Add(text);
+        if (!Translating)
+        {
+            Apply(_instructions.Add(text));
+            return;
+        }
 
+        // Le panneau se verrouille pendant l'appel plutot que d'accepter une seconde phrase : deux
+        // traductions concurrentes rendraient dans un ordre que personne ne controle, et le journal
+        // ne dirait plus laquelle des deux a produit quel refus.
+        _waiting = true;
+        _entry.Editable = false;
+        _verdict.Text = "Traduction en cours…";
+        _verdict.AddThemeColorOverride("font_color", Faint);
+
+        var outcome = await _client!.TranslateAsync(text, _seed(), _domain, _instructions.Active);
+
+        _waiting = false;
+        _entry.Editable = true;
+
+        if (!outcome.Accepted)
+        {
+            // Un refus du service n'est pas un refus de portillon : il n'a pas de numero, et lui en
+            // inventer un ferait croire a une verification qui n'a pas eu lieu.
+            _verdict.Text = outcome.Fallback
+                ? $"{outcome.Reason} Les instructions pre-ecrites restent disponibles."
+                : outcome.Reason;
+
+            _verdict.AddThemeColorOverride("font_color", outcome.Fallback ? Warn : Bad);
+            Changed?.Invoke();
+            return;
+        }
+
+        // La phrase du joueur et la contrainte partent ensemble : le journal garde les deux, et la
+        // contrainte passe les portillons exactement comme si elle avait ete tapee a la main.
+        Apply(_instructions.Add(outcome.Constraint!, utterance: text));
+    }
+
+    private void Apply(InstructionEntry entry)
+    {
         if (entry.Accepted) _entry.Text = string.Empty;
 
         UpdateCounter();

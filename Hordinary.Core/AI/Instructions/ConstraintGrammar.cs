@@ -20,9 +20,20 @@ public readonly record struct GrammarResult(bool Accepted, TacticalConstraint? C
 ///
 /// <para>
 /// La contrainte se lit dans l'une des cinq formes ; chaque predicat cite figure dans les predicats
-/// du domaine exporte, avec la bonne arite ; chaque schema d'action ou classe de schemas citee existe
-/// dans ce meme domaine ; le multiplicateur de <c>penalize</c> est dans les bornes de la
-/// configuration.
+/// du domaine exporte, avec la bonne arite et des arguments <b>du bon type</b> ; chaque schema
+/// d'action ou classe de schemas citee existe dans ce meme domaine ; le multiplicateur de
+/// <c>penalize</c> est dans les bornes de la configuration.
+/// </para>
+///
+/// <para>
+/// Le controle de type n'etait pas la, et son absence a ete trouvee par un modele faible plutot que
+/// par une relecture : <c>require_before(equipped(agent), AttackWithWeapon)</c> passait, parce que
+/// <c>agent</c> est bien un symbole du domaine et que <c>equipped</c> a bien un argument. Il est
+/// pourtant de type <c>object</c> la ou le predicat attend un <c>item</c>. La consequence n'etait pas
+/// cosmetique : le portillon 2 compile le fait en precondition, donc la faute partait dans le
+/// <c>domain.constrained.pddl</c> qu'on donne a Fast Downward — un domaine mal type, refuse par le
+/// validateur, pour une faute de grammaire du joueur. Un portillon ne doit pas accepter ce que le
+/// validateur exterieur refuse.
 /// </para>
 ///
 /// <para>
@@ -147,29 +158,49 @@ public static class ConstraintGrammar
         if (declared.Arity != atom.Arity)
             return $"Le predicat « {atom.Predicate} » prend {declared.Arity} argument(s), pas {atom.Arity}.";
 
-        foreach (string argument in atom.Arguments)
+        for (int position = 0; position < atom.Arity; position++)
         {
+            string argument = atom.Arguments[position];
+
             if (argument.StartsWith('?'))
             {
                 return $"« {atom.AsFact} » contient la variable « {argument} » : une contrainte nomme des objets, "
                     + "jamais des variables — personne ne saurait par quoi les lier.";
             }
 
-            if (Known(argument, domain)) continue;
+            if (domain.TypeOfObject(argument) is not { } actual)
+            {
+                return $"L'objet « {argument} » n'existe pas dans le domaine. "
+                    + $"Objets connus : {string.Join(", ", Vocabulary(domain))}.";
+            }
 
-            return $"L'objet « {argument} » n'existe pas dans le domaine. "
-                + $"Objets connus : {string.Join(", ", Vocabulary(domain))}.";
+            string expected = declared.ParameterTypes[position];
+
+            if (PddlDomain.TypeFits(actual, expected)) continue;
+
+            string candidates = string.Join(", ", OfType(domain, expected));
+
+            return $"« {atom.AsFact} » donne « {argument} », qui est de type {actual}, a une position que "
+                + $"« {declared.Name} » type {expected}. Objets de type {expected} : "
+                + (candidates.Length > 0 ? candidates : "aucun") + ".";
         }
 
         return null;
     }
 
-    private static bool Known(string argument, PddlDomain domain)
-        => domain.Constants.Any(constant => constant.Name.Equals(argument, StringComparison.OrdinalIgnoreCase))
-            || domain.Landmarks.Any(landmark => landmark.Equals(argument, StringComparison.OrdinalIgnoreCase));
+    /// <summary>
+    /// Les symboles du domaine qui ont le type demande. Ils vont dans la phrase de refus parce qu'un
+    /// « mauvais type » sans la liste des bons n'apprend rien au joueur — ni au modele, a qui la
+    /// reprise du noeud <c>self_check</c> renvoie cette meme phrase.
+    /// </summary>
+    private static IEnumerable<string> OfType(PddlDomain domain, string type)
+        => domain.Vocabulary
+            .Where(entry => PddlDomain.TypeFits(entry.Type, type))
+            .Select(entry => entry.Name)
+            .Order(StringComparer.Ordinal);
 
     private static IEnumerable<string> Vocabulary(PddlDomain domain)
-        => domain.Constants.Select(constant => constant.Name).Concat(domain.Landmarks).Order(StringComparer.Ordinal);
+        => domain.Vocabulary.Select(entry => entry.Name).Order(StringComparer.Ordinal);
 
     private static ActionTarget? Target(string text, PddlDomain domain)
     {

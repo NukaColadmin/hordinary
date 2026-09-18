@@ -1,0 +1,18 @@
+# Service d'instructions tactiques (livrable 15).
+#
+# Rien ici n'est une dependance du jeu : Hordinary tourne sans ce service, et la suite de tests .NET
+# passe avec lui arrete. Les versions sont bornees par le bas seulement — le service est un outil de
+# demonstration et non un binaire livre, et le figer completement l'aurait rendu ininstallable un an
+# plus tard.
+
+fastapi>=0.115
+uvicorn[standard]>=0.32
+pydantic>=2.9
+
+langgraph>=0.2.40
+langchain-core>=0.3.15
+langchain-openai>=0.2.8
+
+# Tests et evaluation. httpx sert au client de test de FastAPI, pas au service lui-meme.
+pytest>=8.3
+httpx>=0.27

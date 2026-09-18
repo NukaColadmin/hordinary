@@ -1,0 +1,364 @@
+{
+  "domain_hash": "sha256:40da5cbdc8f88e5dd000b5a0cbe9c5076ff6515a94c20493deeb71623392577b",
+  "types": [
+    "ally",
+    "door",
+    "heavy",
+    "item",
+    "location",
+    "threat",
+    "window"
+  ],
+  "predicates": [
+    {
+      "name": "accessible",
+      "params": [
+        "location"
+      ]
+    },
+    {
+      "name": "alley",
+      "params": [
+        "location"
+      ]
+    },
+    {
+      "name": "at",
+      "params": [
+        "object",
+        "location"
+      ]
+    },
+    {
+      "name": "building",
+      "params": [
+        "location"
+      ]
+    },
+    {
+      "name": "door_barricaded",
+      "params": [
+        "door"
+      ]
+    },
+    {
+      "name": "door_closed",
+      "params": [
+        "door"
+      ]
+    },
+    {
+      "name": "door_locked",
+      "params": [
+        "door"
+      ]
+    },
+    {
+      "name": "door_of",
+      "params": [
+        "door",
+        "location"
+      ]
+    },
+    {
+      "name": "door_open",
+      "params": [
+        "door"
+      ]
+    },
+    {
+      "name": "equipped",
+      "params": [
+        "item"
+      ]
+    },
+    {
+      "name": "escaped",
+      "params": []
+    },
+    {
+      "name": "explored",
+      "params": []
+    },
+    {
+      "name": "extracted",
+      "params": []
+    },
+    {
+      "name": "extraction",
+      "params": [
+        "location"
+      ]
+    },
+    {
+      "name": "extraction_known",
+      "params": []
+    },
+    {
+      "name": "has",
+      "params": [
+        "object",
+        "item"
+      ]
+    },
+    {
+      "name": "healed",
+      "params": [
+        "object"
+      ]
+    },
+    {
+      "name": "heavy_at",
+      "params": [
+        "heavy",
+        "location"
+      ]
+    },
+    {
+      "name": "hidden",
+      "params": []
+    },
+    {
+      "name": "inventory_full",
+      "params": []
+    },
+    {
+      "name": "item_at",
+      "params": [
+        "item",
+        "location"
+      ]
+    },
+    {
+      "name": "knowledge_shared",
+      "params": []
+    },
+    {
+      "name": "known",
+      "params": [
+        "location"
+      ]
+    },
+    {
+      "name": "mass_ok",
+      "params": [
+        "heavy"
+      ]
+    },
+    {
+      "name": "objective_collected",
+      "params": []
+    },
+    {
+      "name": "objective_found",
+      "params": []
+    },
+    {
+      "name": "observed",
+      "params": [
+        "location"
+      ]
+    },
+    {
+      "name": "pharmacy",
+      "params": [
+        "location"
+      ]
+    },
+    {
+      "name": "pushed",
+      "params": [
+        "heavy"
+      ]
+    },
+    {
+      "name": "pushed_back",
+      "params": [
+        "threat"
+      ]
+    },
+    {
+      "name": "searched",
+      "params": [
+        "location"
+      ]
+    },
+    {
+      "name": "searched_in_vain",
+      "params": [
+        "object"
+      ]
+    },
+    {
+      "name": "shared_with",
+      "params": [
+        "ally"
+      ]
+    },
+    {
+      "name": "start",
+      "params": [
+        "location"
+      ]
+    },
+    {
+      "name": "street",
+      "params": [
+        "location"
+      ]
+    },
+    {
+      "name": "threat_down",
+      "params": [
+        "threat"
+      ]
+    },
+    {
+      "name": "threat_handled",
+      "params": []
+    },
+    {
+      "name": "usable",
+      "params": [
+        "item"
+      ]
+    },
+    {
+      "name": "used",
+      "params": [
+        "item"
+      ]
+    },
+    {
+      "name": "waited",
+      "params": []
+    },
+    {
+      "name": "window_broken",
+      "params": [
+        "window"
+      ]
+    },
+    {
+      "name": "window_intact",
+      "params": [
+        "window"
+      ]
+    },
+    {
+      "name": "window_of",
+      "params": [
+        "window",
+        "location"
+      ]
+    },
+    {
+      "name": "zombie_adjacent",
+      "params": [
+        "threat"
+      ]
+    },
+    {
+      "name": "zombie_in_range",
+      "params": [
+        "threat"
+      ]
+    },
+    {
+      "name": "zombie_near",
+      "params": [
+        "location"
+      ]
+    }
+  ],
+  "actions": [
+    "MoveToLocation",
+    "OpenDoor",
+    "ForceDoor",
+    "BreakWindow",
+    "SearchRoom",
+    "LocateObjective",
+    "PickUpObjective",
+    "PickUpSpottedObjective",
+    "DropItem",
+    "ReachExtraction",
+    "EscapeLocation",
+    "Hide",
+    "Explore",
+    "Observe",
+    "PushBackZombie",
+    "AttackZombie",
+    "HealSelf",
+    "ShareKnowledge",
+    "Wait",
+    "PickUpItem",
+    "UseItem",
+    "EquipWeapon",
+    "AttackWithWeapon",
+    "PushHeavyObject",
+    "BarricadeDoor"
+  ],
+  "location_kinds": [
+    "building",
+    "street",
+    "alley",
+    "pharmacy",
+    "extraction",
+    "start"
+  ],
+  "objects": [
+    {
+      "name": "agent",
+      "type": "object"
+    },
+    {
+      "name": "ally",
+      "type": "location"
+    },
+    {
+      "name": "away_from_danger",
+      "type": "location"
+    },
+    {
+      "name": "cover",
+      "type": "location"
+    },
+    {
+      "name": "extraction",
+      "type": "location"
+    },
+    {
+      "name": "frontier",
+      "type": "location"
+    },
+    {
+      "name": "group",
+      "type": "location"
+    },
+    {
+      "name": "mission",
+      "type": "location"
+    },
+    {
+      "name": "objective",
+      "type": "item"
+    },
+    {
+      "name": "objective_spot",
+      "type": "location"
+    },
+    {
+      "name": "objective_zone",
+      "type": "location"
+    },
+    {
+      "name": "remedy",
+      "type": "item"
+    },
+    {
+      "name": "toolbox",
+      "type": "item"
+    }
+  ],
+  "active_constraints": []
+}

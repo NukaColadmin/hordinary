@@ -59,4 +59,11 @@ quand le binaire manque : ceux qui appellent **Fast Downward** ou **VAL**
 [livrable 15](./15-instructions-tactiques.md)). Aucun test ne dépend d'un **modèle de langage** : les
 livrables 14 et 15 passent leur suite entière, service arrêté.
 
+Un test déroge autrement, et c'est le seul : `Le_jeu_seme_son_generateur_de_bruit_et_le_passe_a_la_perception`
+**lit le texte source de `Scripts/Game/GameRoot.cs`** au lieu d'exécuter du code. La raison est
+structurelle — le câblage qu'il protège vit dans la couche moteur, que la suite ne compile pas, ce qui
+est précisément son intérêt — et le choix était donc entre lire le fichier et ne rien verrouiller.
+C'est l'invariant « à graine égale, résultat égal » qui en dépend : un générateur de bruit non transmis
+retombe sur `Random.Shared` sans rien casser d'autre.
+
 Les tests côté service vivent dans `service/tests/` et ne font pas partie de la solution .NET.

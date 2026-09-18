@@ -1,3 +1,4 @@
+using Hordinary.AI.Instructions;
 using Hordinary.AI.Planning;
 using Hordinary.AI.Planning.Pddl;
 using Hordinary.Config;
@@ -58,6 +59,24 @@ public class PddlArtifactsTests
         => Check(Path.Combine(ToolsDirectory, "domain.pddl"), PddlWriter.Render(Exported));
 
     /// <summary>
+    /// Le digest que le service de langage recoit, versionne sous <c>service/tests/</c>.
+    ///
+    /// <para>
+    /// Il est ici pour une raison qui n'est pas la commodite : les tests Python du service ont besoin
+    /// d'un vocabulaire, et le leur faire ecrire a la main aurait recree exactement ce que le digest
+    /// existe pour supprimer — une seconde liste de symboles, qui prend du retard sur le domaine sans
+    /// que rien ne le signale. Le fichier est rendu <b>par le jeu</b> et compare ici ; le service ne
+    /// fait que le lire. Changer le domaine sans regenerer casse cette assertion avant de casser une
+    /// demonstration.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Le_digest_du_service_est_a_jour()
+        => Check(
+            Path.Combine(DemoMap.RepositoryRoot, "service", "tests", "domain.digest.json"),
+            DomainDigest.From(Exported).ToJson(indented: true));
+
+    /// <summary>
     /// Les dix instantanes sont preleves dans une partie reelle, jouee du depart au verdict avec trois
     /// survivants aux croyances divergentes. Ce ne sont pas des situations ecrites a la main : un
     /// probleme fabrique prouverait que l'export fonctionne sur ce qu'on a bien voulu lui donner.
@@ -97,6 +116,39 @@ public class PddlArtifactsTests
         var snapshots = Capture();
 
         Assert.Equal(SnapshotCount, snapshots.Select(snapshot => snapshot.Text).Distinct(StringComparer.Ordinal).Count());
+    }
+
+    /// <summary>
+    /// Le dossier des instantanes ne contient rien d'autre que les dix fichiers de la capture.
+    ///
+    /// <para>
+    /// Les tests de non-derive comparent ce que le code rend au fichier <b>portant le meme nom</b> :
+    /// un instantane devenu orphelin ne leur apparait jamais. Il en reste un des qu'un but change de
+    /// nom — <c>09-searchforobjective.pddl</c> devient autre chose et l'ancien survit — ou qu'une
+    /// capture passee prelevait ailleurs. Le depot garde alors un PDDL que plus rien ne produit, et
+    /// c'est celui-la qu'on donnerait a Fast Downward en croyant eprouver le jeu d'aujourd'hui.
+    /// Enumerer le dossier est la seule facon de le voir : regenerer ne l'efface pas non plus, la
+    /// regeneration ecrit les dix noms attendus et ignore le reste.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Le_dossier_des_instantanes_ne_contient_rien_d_autre()
+    {
+        var expected = Capture()
+            .Select(snapshot => snapshot.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var orphans = Directory
+            .EnumerateFiles(SnapshotDirectory)
+            .Select(path => Path.GetFileName(path))
+            .Where(name => !expected.Contains(name))
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(
+            orphans.Count == 0,
+            $"tools/pddl/snapshots/ garde {orphans.Count} fichier(s) que la capture ne produit plus : "
+          + $"{string.Join(", ", orphans)}. Les supprimer a la main — la regeneration ne les efface pas.");
     }
 
     // --- Capture ------------------------------------------------------------------------------------

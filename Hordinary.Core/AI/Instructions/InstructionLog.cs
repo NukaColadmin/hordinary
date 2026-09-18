@@ -159,4 +159,30 @@ public sealed class TacticalInstructions
     /// demande, et non ce que la compilation en a fait ?
     /// </summary>
     public TrajectoryVerdict Verify(TrajectoryTrace trace) => TrajectoryChecker.Check(Compiled, _active, trace);
+
+    /// <summary>
+    /// Portillon 3 sur les contraintes actives : reste-t-il un plan, et sinon laquelle accuser ?
+    ///
+    /// <para>
+    /// L'oracle est fourni par l'appelant parce que c'est un planificateur tiers, hors ligne. Cette
+    /// methode n'est donc <b>jamais appelee pendant une partie</b> : elle existe pour l'outillage et
+    /// les tests. La laisser ici plutot que dans <c>tools/</c> a une raison — le portillon doit voir
+    /// exactement les contraintes actives et le domaine qu'elles ont produit, et les recopier
+    /// ailleurs aurait cree une seconde verite sur ce qui est en vigueur.
+    /// </para>
+    /// </summary>
+    public SatisfiabilityVerdict CheckSatisfiability(SatisfiabilityOracle oracle)
+        => SatisfiabilityGate.Check(_active, oracle);
+
+    /// <summary>
+    /// Le domaine qu'un sous-ensemble de contraintes produirait, sans toucher a l'etat courant.
+    ///
+    /// <para>
+    /// C'est ce dont la recherche du coupable minimal a besoin : elle eprouve des sous-ensembles, et
+    /// chacun demande son domaine. Recompiler depuis <see cref="Source"/> a chaque fois est ce qui
+    /// garantit qu'un essai n'en contamine pas un autre.
+    /// </para>
+    /// </summary>
+    public CompiledDomain Hypothetical(IReadOnlyList<TacticalConstraint> constraints, CompilationContext context = default)
+        => DomainCompiler.Compile(Source, constraints, context);
 }

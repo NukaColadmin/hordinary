@@ -13,6 +13,11 @@ Le risque habituel d'un fichier généré versionné — qu'il dérive de sa sou
 couvert par `Tests/PddlArtifactsTests.cs`, qui rend à nouveau et compare. **Changer une action du
 domaine sans régénérer fait échouer la suite de tests.**
 
+La comparaison se fait par nom de fichier, donc un instantané devenu orphelin — le but a changé de
+nom, l'ancien fichier est resté — lui échapperait. Le dossier est pour cela **énuméré** : tout `.pddl`
+que la capture ne produit plus fait échouer la suite, et il faut le supprimer à la main. Régénérer
+écrit les dix noms attendus et n'efface rien d'autre.
+
 ## Ce qu'il y a ici
 
 | | |

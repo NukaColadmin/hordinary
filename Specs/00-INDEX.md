@@ -98,6 +98,13 @@ rien au reste : il produit des `MissionDefinition` comme le fichier en produisai
 est en aval — planificateur, suivi de partie, écran de camp — ne sait pas d'où elles viennent. Le
 livrable 13 reste spécifié et reste en fin de file ; le livrable 14 est retiré.
 
+Tous sont faits **sauf une moitié du 12** : son interface est livrée, son générateur de survivants ne
+l'est pas, et le roster reste celui, fixe, de [`config/survivors.json`](../config/survivors.json). Le
+critère de validation du 12 est néanmoins tenu — une partie se joue de bout en bout sans mode debug —
+ce qui est précisément pourquoi le trou a pu passer inaperçu : il ne se voit pas en jouant, seulement
+en cherchant les tests qui devraient exister. Le détail est case par case dans
+[12-interface-survivants-et-van.md](./12-interface-survivants-et-van.md).
+
 | # | Priorité | Livrable | Fichier | Critère de validation |
 |---|----------|----------|---------|------------------------|
 | 11 | **P1 — Haute** | Objets, armes et économie du camp | [11-objets-armes-et-economie-du-camp.md](./11-objets-armes-et-economie-du-camp.md) | Un survivant équipe un outil qui change le coût de ses actions, pousse une caisse, et rapporte de quoi nourrir le camp une journée de plus. |

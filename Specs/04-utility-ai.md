@@ -21,6 +21,7 @@ SearchForObjective
 PickUpObjective
 ReachExtraction
 Hide
+FightZombie
 ```
 
 Le catalogue livré comptait aussi `HelpAlly`, `HealAlly`, `CalmAlly`, `Regroup` et `CreateDistraction`.
@@ -108,12 +109,18 @@ des préconditions. `flee_score`, `distraction_score` et `mission_score` de ce d
 
 ## Étapes à créer
 
-* [ ] Créer les objectifs (liste ci-dessus).
-* [ ] Créer les considérations (danger perçu, santé, panique, distance, etc.).
-* [ ] Calculer les scores par objectif.
-* [ ] Afficher les scores (préparation du mode debug, livrable 8).
-* [ ] Ajouter un cooldown de décision.
-* [ ] Gérer les changements d'objectif avec hystérésis.
+Toutes faites. Les neuf buts vivent dans [`config/utility_goals.json`](../config/utility_goals.json) et
+se composent à partir de **douze** considérations primitives — `perceived_danger`, `health_ratio`,
+`panic`, `plan_confidence`, `player_priority`, `pursued`, `armed`, `threat_pressure`,
+`personal_safety`, `unexplored_ratio`, `distance_to(objective)`, `distance_to(cover)`. Aucune méthode
+de score par objectif n'existe dans le code, ce qui était l'exigence de la section précédente.
+
+* [x] Créer les objectifs (liste ci-dessus).
+* [x] Créer les considérations (danger perçu, santé, panique, distance, etc.).
+* [x] Calculer les scores par objectif.
+* [x] Afficher les scores (préparation du mode debug, livrable 8) — overlay `F3`.
+* [x] Ajouter un cooldown de décision — `utility_ai.evaluation_interval`, à 0,75 s.
+* [x] Gérer les changements d'objectif avec hystérésis — `utility_ai.switch_threshold`, à 0,15.
 
 ## Critère de validation
 

@@ -71,6 +71,53 @@ public sealed class PddlDomain
     /// </summary>
     public IReadOnlyList<string> Landmarks { get; init; } = [];
 
+    /// <summary>
+    /// Les symboles qu'un fait peut nommer, avec leur type : les constantes declarees et les reperes.
+    ///
+    /// <para>
+    /// Les reperes sont des lieux par construction — <see cref="PddlDomainBuilder"/> ne verse dans
+    /// <see cref="Landmarks"/> que des symboles dont le typage deduit dit <c>location</c>, plus ceux
+    /// que <c>places.landmarks</c> declare, qui sont des lieux par definition.
+    /// </para>
+    ///
+    /// <para>
+    /// C'est le vocabulaire du portillon 1 <b>et</b> celui du digest envoye au service : les deux le
+    /// lisent ici, ils ne le recopient pas. Une liste tenue a deux endroits aurait fini par accepter
+    /// d'un cote ce qu'elle ne montre pas de l'autre, et le symptome aurait ete un refus
+    /// incomprehensible pour le joueur.
+    /// </para>
+    /// </summary>
+    public IEnumerable<PddlParameter> Vocabulary
+        => Constants
+            .Concat(Landmarks.Select(landmark => new PddlParameter(landmark, PlanningObjectTypes.Location)))
+            .DistinctBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(entry => entry.Name, StringComparer.Ordinal);
+
+    /// <summary>Le type declare d'un symbole nommable, ou <c>null</c> s'il n'appartient pas au domaine.</summary>
+    public string? TypeOfObject(string? name)
+        => name is null
+            ? null
+            : Vocabulary.FirstOrDefault(entry => entry.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) is { Name: not null } found
+                ? found.Type
+                : null;
+
+    /// <summary>
+    /// Le type <paramref name="actual"/> est-il recevable la ou le domaine attend
+    /// <paramref name="expected"/> ?
+    ///
+    /// <para>
+    /// La hierarchie de types du domaine est plate — <c>(:types ally door heavy item location threat
+    /// window - object)</c> — donc la reponse tient en deux cas : une position typee <c>object</c>
+    /// accepte tout, une position typee autrement n'accepte que son type exact. Rien de plus n'est
+    /// necessaire ici, et rien de moins ne suffirait : <c>agent</c> est de type <c>object</c>, donc
+    /// <c>equipped(agent)</c> — dont la position est typee <c>item</c> — est mal type, alors que
+    /// <c>agent</c> est bien un symbole du domaine.
+    /// </para>
+    /// </summary>
+    public static bool TypeFits(string actual, string expected)
+        => expected.Equals(PddlDomainBuilder.RootType, StringComparison.OrdinalIgnoreCase)
+            || actual.Equals(expected, StringComparison.OrdinalIgnoreCase);
+
     public PddlAction? FindAction(string? name)
         => name is null ? null : Actions.FirstOrDefault(action => action.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
 

@@ -19,7 +19,7 @@ La specification complete est dans [`Specs/`](Specs/00-INDEX.md), decoupee en hu
 | 7 — Survivants et partage | fait |
 | 8 — Interface et boucle complete | fait |
 | 11 — Objets, armes et economie du camp | fait (code, tests et tuiles ; rendu a verifier dans l'editeur) |
-| 15 — Instructions tactiques | fait, sauf le service de langage (portillon 3 hors ligne) |
+| 15 — Instructions tactiques | fait ; service de langage ecrit mais jamais execute ici, portillon 3 hors ligne |
 | 16 — Missions aleatoires et recompenses | fait |
 | G — Export PDDL | fait |
 
@@ -424,7 +424,7 @@ personne, il ne renonce pas tout de suite : il fouille les environs pendant `sea
 Aucune planification — la specification l'exclut pour les zombies — et la meme regle anti-coupe-de-
 coin que la navigation, pour qu'un zombie ne rase pas l'angle d'un mur.
 
-C'est le seul endroit qui recoit la carte reelle, et c'est deliberé : decider **ou aller** passe par
+C'est le seul endroit qui recoit la carte reelle, et c'est delibere : decider **ou aller** passe par
 la memoire, savoir **si le corps passe** passe par la geometrie. Un zombie qui ignore ou est sa proie
 ne traverse pas les murs pour autant.
 
@@ -1718,7 +1718,11 @@ Les sorties versionnees vivent dans [`tools/pddl/`](../tools/pddl/README.md) : `
 `snapshots/` preleves dans une partie jouee du depart au verdict. Des fichiers generes **et**
 versionnes, ce qui est normalement une mauvaise idee — ils le sont parce que ce sont eux qu'on donne
 aux outils hors ligne, et le risque de derive est couvert par `PddlArtifactsTests`, qui rend a nouveau
-et compare.
+et compare. La comparaison se faisant **par nom de fichier**, elle a un angle mort : un instantane que
+la capture ne produit plus reste au depot sans qu'aucun test le regarde, et c'est celui-la qu'on
+donnerait a Fast Downward en croyant eprouver le jeu d'aujourd'hui. `Le_dossier_des_instantanes_ne_contient_rien_d_autre`
+enumere donc le dossier — la regeneration ecrit les dix noms attendus et ignore le reste, donc elle
+n'efface aucun orphelin.
 
 Comparer le premier instantane et le dernier donne la mesure de ce qu'une mission apprend : 12 objets
 et 1 action instanciee au depart, 25 objets et 105 actions a l'arrivee — avec `entrepot_ouest`,
@@ -1733,10 +1737,32 @@ Deux ecueils que cette capture a mis au jour, et qui depassent l'export :
   porte sur les **noeuds** — le facteur de branchement dit quelque chose du domaine, l'horloge dit
   surtout que la machine etait occupee.
 * **`NoiseSystem.Localize` retombe sur `Random.Shared`** quand personne ne lui passe de generateur.
-  Une mission rejouee n'est donc pas identique des qu'un bruit est entendu de loin.
-  `SurvivorBand.Advance(delta, rng)` et `MissionRun(noiseSeed:)` permettent d'en passer un ; le jeu
-  n'en passe toujours pas. C'est un accroc connu a l'invariant « a graine egale, resultat egal », et il
-  est anterieur au livrable 15.
+  Une mission rejouee ne serait alors pas identique des qu'un bruit est entendu de loin.
+  `SurvivorBand.Advance(delta, rng)`, `SurvivorBand.Perceive(elapsed, rng)` et
+  `MissionRun(noiseSeed:)` permettent d'en passer un, et **le jeu en passe un** : `GameRoot` seme
+  `_noiseRng` sur `zombies.seed` et le donne a chaque passe de perception. L'accroc a l'invariant
+  « a graine egale, resultat egal » est ferme.
+
+  Le defaut `rng ??= Random.Shared` rend pourtant le manque silencieux : il a ete choisi pour que les
+  tests qui se moquent du bruit n'aient rien a passer, et le prix de ce confort est qu'un maillon qui
+  oublie de transmettre le generateur compile et se tait. Deux tests le verrouillent donc, et ils
+  n'ont pas la meme nature. Le premier,
+  `Le_generateur_donne_au_groupe_situe_reellement_les_bruits`, fait entendre a un groupe un bruit emis
+  a l'autre bout d'une rue — assez loin pour etre mal situe, assez fort pour etre entendu — et exige
+  que douze graines donnent douze localisations : c'est la chaine entiere (`SurvivorBand.Perceive`,
+  `SurvivorAgent.Perceive`, `PerceptionSystem.Listen`, `Localize`) qui est eprouvee, la ou chacun des
+  quatre maillons declare le parametre optionnel. Le second,
+  `Le_jeu_seme_son_generateur_de_bruit_et_le_passe_a_la_perception`, **lit le texte source de
+  `Scripts/Game/GameRoot.cs`** et refuse toute passe de perception du groupe qui ne porterait pas de
+  generateur.
+
+  Ce second test est le seul du depot a lire du source plutot qu'a executer du code, et c'est un
+  pis-aller assume : le cablage vit dans `Scripts/`, que la suite ne compile pas contre le moteur — ce
+  qui est tout son interet — donc le choix etait entre lire le fichier et ne rien verrouiller. Ce
+  qu'il attrape est ce qui est deja arrive : le parametre retire, le jeu qui compile, la partie qui
+  cesse d'etre rejouable, et pas une ligne rouge. Ce qu'il n'attrape pas : un cablage qui compile et
+  se trompe — un generateur reseme a chaque frame, par exemple. Seule une mission rejouee le
+  montrerait.
 
 ### Les cinq formes, et ce qu'elles deviennent
 
@@ -1775,6 +1801,28 @@ Le portillon 1 ne tient aucune liste de symboles a la main : le vocabulaire est 
 Il n'y a donc nulle part ou oublier de le mettre a jour quand le domaine bouge — un modele qui
 proposerait `require_before(barricaded(?door), enter:building)` est refuse parce que `barricaded`
 n'existe pas, et il le reste sans que personne y pense.
+
+Ce raisonnement etait vrai pour les **noms** et faux pour les **types**, et c'est un passage
+d'evaluation facturee qui l'a montre plutot qu'une relecture. `nvidia/nemotron-3-super-120b-a12b` a
+produit `require_before(equipped(agent), AttackWithWeapon)` : le portillon l'acceptait, parce que
+`agent` est bien un symbole declare et que `equipped` prend bien un argument. Il est de type `object`
+la ou `equipped` attend un `item`. La consequence n'etait pas cosmetique — le portillon 2 compile le
+fait en precondition, donc la faute partait dans le `domain.constrained.pddl` qu'on donne a Fast
+Downward, qui l'aurait refuse pour type invalide. **Un portillon ne doit pas accepter ce que le
+validateur exterieur refuse.**
+
+La reparation tient en trois endroits, et l'ordre compte. `PddlDomain.Vocabulary` rend desormais les
+symboles nommables **avec leur type**, et c'est le seul endroit ou cette liste existe : le portillon 1
+et le digest la lisent, ils ne la recopient plus — le commentaire qui l'affirmait deja est devenu
+vrai. `ConstraintGrammar` compare le type de chaque argument a celui que le predicat declare a cette
+position (hierarchie plate : `object` accepte tout, un autre type n'accepte que lui-meme). Et
+`domain_digest.objects` transporte le type jusqu'au modele — sans quoi on aurait durci le refus sans
+donner de quoi l'eviter, ce qui deplace un echec au lieu de le fermer.
+
+Cote methode, l'anecdote vaut d'etre gardee : **c'est le modele le plus faible du tableau qui a trouve
+le trou.** Un modele fort n'aurait jamais ecrit cette contrainte, donc ne l'aurait jamais revelee. Une
+evaluation de modeles a produit un defaut de code — l'argument pour lancer plutot que relire, une
+fois de plus.
 
 Le portillon 4 va dans l'autre sens que le 3 : le 3 verifie le domaine compile, le 4 verifie **la
 compilation elle-meme**. Une compilation fausse produit un plan valide au regard du domaine reecrit
@@ -1917,11 +1965,46 @@ le refus **avec le portillon qui l'a produit et sa raison**. Les refus s'affiche
 que les acceptations : un systeme qui ne montre que ses succes ne prouve rien.
 
 Les instructions pre-ecrites sont des cases a cocher, chacune montrant a cote la contrainte qu'elle
-vaut — c'est elle qui est appliquee, il n'y a rien a cacher. La saisie libre attend une contrainte de
-la **grammaire fermee**, pas du francais : traduire une phrase est le travail du service de langage,
-et lui seul. Pendant la mission, le HUD rappelle les consignes actives : une contrainte n'est visible
-nulle part ailleurs sur la carte — elle n'ajoute aucun ordre, elle retire des plans — et un
-comportement qu'on ne sait plus avoir demande passe pour un defaut.
+vaut — c'est elle qui est appliquee, il n'y a rien a cacher. Pendant la mission, le HUD rappelle les
+consignes actives : une contrainte n'est visible nulle part ailleurs sur la carte — elle n'ajoute
+aucun ordre, elle retire des plans — et un comportement qu'on ne sait plus avoir demande passe pour
+un defaut.
+
+La saisie accepte deux choses selon `instructions.enabled`, et **une seule ligne de code les
+distingue**. Service coupe — le cas livre — elle attend une contrainte de la grammaire fermee.
+Service actif, elle attend du francais et le fait traduire. Dans les deux cas c'est le portillon 1
+qui tranche, sur le meme texte : traduire ne donne aucun droit supplementaire, et la phrase d'un
+joueur n'a pas plus de credit que celle d'un modele.
+
+### Le service de langage
+
+`service/` — projet Python separe, hors solution .NET : FastAPI, un graphe LangGraph a cinq noeuds
+(`normalize → context → generate → self_check → project`), OpenRouter pour fournisseur. Detail
+d'installation et d'evaluation dans [`service/README.md`](../service/README.md).
+
+Le decoupage cote jeu est le point qui merite d'etre retenu :
+
+| | |
+|---|---|
+| `Hordinary.Core/AI/Instructions/InstructionBroker` | **toutes** les decisions : cache, plafond de depense, delai, reprise, portillon 1 sur la reponse, repli sur les instructions pre-ecrites |
+| `Scripts/Instructions/InstructionClient.cs` | le transport HTTP, et rien d'autre — une vingtaine de lignes qu'aucune logique n'habite |
+
+Le transport est un **delegue** (`InstructionTransport`), ce qui est ce qui permet au courtier de
+vivre dans le coeur. L'invariant « `Hordinary.Core` ne reference aucun client HTTP » cesse donc d'etre
+une discipline : il n'y a pas d'endroit ou en mettre un. En retour, chaque decision est testable sans
+reseau — `Tests/InstructionServiceTests` eprouve un service muet, un service bavard, un service qui
+invente un predicat, un plafond atteint, un cache qui resserre, sans ouvrir une connexion.
+
+Le **digest** de domaine est le second point. Il est derive du `PddlDomain` par le jeu et envoye a
+chaque requete ; le service ne fait que le lire. Service et portillon 1 lisent donc la meme source de
+verite sur ce qui est nommable, et un symbole que le modele a vu dans son contexte ne peut pas etre
+un symbole que la grammaire refuse ensuite. `service/tests/domain.digest.json` est genere par
+`Tests/PddlArtifactsTests` et versionne, pour que les tests Python n'aient pas a se reecrire un
+vocabulaire — c'est-a-dire exactement ce que le digest existe pour supprimer.
+
+Le determinisme du jeu ne vient jamais du modele. Il vient de deux choses : le cache
+`(phrase normalisee, graine, empreinte du domaine)`, et le fait qu'une contrainte acceptee est figee
+dans la mission. Rejouer ne reinterroge aucun modele.
 
 ### Limites assumees
 
@@ -1937,9 +2020,24 @@ comportement qu'on ne sait plus avoir demande passe pour un defaut.
   `SymbolicStateBuilder.LocationAliases` renomme `objective` en `objective_spot` pour exactement cette
   raison — mais le faire change le vocabulaire du domaine livre, alors on attend de savoir si c'est
   necessaire plutot que de le changer a l'aveugle.
-* La traduction d'une phrase libre en contrainte (service FastAPI/LangGraph/OpenRouter, et le
-  `InstructionClient.cs` qui l'appellerait) n'est pas faite. `instructions.enabled` est livre a
-  `false`, et tout le reste du livrable fonctionne sans.
+* Le service de langage **tourne** : 50 tests Python passent (CPython 3.12.10), `uvicorn` sert
+  `/health` et `/instruction`, et le harnais d'evaluation se deroule de bout en bout en `--dry-run`.
+  Trois defauts n'ont ete vus qu'en l'executant, et ils valent d'etre nommes parce qu'ils sont
+  typiques de ce qu'une relecture laisse passer : un temoin negatif portant sur `barricaded`, symbole
+  **present** au domaine depuis l'entree de `BarricadeDoor` — l'assertion passait pour une raison qui
+  n'etait pas la sienne ; un `UnicodeEncodeError` sur le dernier `print` du harnais, la console
+  Windows etant en cp1252 et le rapport contenant des fleches, qui detruisait un passage entierement
+  reussi ; et une ligne de tableau sans barres encadrantes, que GitHub rend en paragraphe. Le rapport
+  s'ecrit desormais avant d'etre affiche.
+* Les versions installees depassent les planchers de `requirements.txt` — `langgraph 1.2.11` et
+  `langchain-core 1.6.3` contre `>=0.2.40` et `>=0.3.15`. Tout fonctionne, mais les bornes ne
+  decrivent plus ce qui a ete eprouve : c'est le defaut d'une borne basse seule, et il reste ouvert.
+* `service/evals/results.md` — le tableau des modeles, des deux ablations et du **taux de faux
+  acceptes** — n'existe pas encore : il demande une cle OpenRouter et des appels factures. Le
+  `--dry-run` eprouve **le harnais, pas les modeles** ; son « 0 % de faux acceptes » vient d'un
+  bouchon qui refuse tout, et le lire autrement serait se tromper soi-meme. Le corpus, lui, est ecrit
+  et attache au domaine livre (`Tests/InstructionServiceTests` verifie que chaque contrainte attendue
+  passe le portillon 1).
 * Les contraintes sont **collectives** et ne sont pas figees dans une sauvegarde de mission : rejouer
   une mission demande de reposer les memes instructions.
 * La compilation reste **correcte et non complete** : la lecture « immediatement avant » est plus

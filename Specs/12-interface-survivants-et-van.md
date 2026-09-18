@@ -231,20 +231,38 @@ Nouveau fichier de configuration : `config/survivor_generation.json`.
 
 ## Étapes à créer
 
+**Ce livrable est le seul qui reste partiel.** L'interface est refondue et jouable ; le *générateur*
+de survivants, qui en était la moitié testable sans moteur, n'est pas écrit. Le roster est donc
+toujours celui, fixe, de [`config/survivors.json`](../config/survivors.json).
+
 * [ ] **(humain)** Livrer les 22 images de la planche d'interface — les portraits et le skin du van
-      sont déjà livrés.
+      sont déjà livrés. **13 sur 22** sont dans [`Assets/UI/`](../Assets/UI/).
 * [ ] Écrire `config/survivor_generation.json` avec `appearance` aligné sur les portraits réellement
       livrés, et faire échouer le chargement quand un compteur les dépasse ou quand `ring_colors` est
-      trop court.
-* [ ] Refondre le HUD en trois zones (carte, panneau latéral, grille du bas).
+      trop court. **Le fichier n'existe pas.**
+* [x] Refondre le HUD en trois zones (carte, panneau latéral, grille du bas) — `Hud`, `SurvivorPanel`,
+      `AgentRoster`.
 * [ ] Construire la grille des survivants (vignettes, jauges, icônes d'état, sélection multiple).
-* [ ] Construire le panneau latéral complet (identité, jauges, caractéristiques, inventaire,
-      décision).
-* [ ] Rendre les informations du livrable 8 visibles hors mode debug, sans supprimer le mode debug.
-* [ ] Écrire le générateur de survivants (noms, apparence), déterministe.
-* [ ] Permettre l'export d'un roster généré au format `config/survivors.json`.
-* [ ] Refondre l'écran de préparation de mission et ajouter l'écran de camp.
-* [ ] Ajouter l'écran titre et l'écran de fin de partie.
+      La grille existe (`AgentRoster`, `AgentCard`), la **sélection multiple** non : `AgentRoster`
+      n'entretient qu'un sélectionné à la fois.
+* [x] Construire le panneau latéral complet (identité, jauges, caractéristiques, inventaire,
+      décision) — `SurvivorPanel`.
+* [x] Rendre les informations du livrable 8 visibles hors mode debug, sans supprimer le mode debug.
+      Le panneau et la grille sont toujours là ; les trois overlays (navigation, carte mentale, bruit)
+      restent derrière `debug`, ce qui est leur place — ce sont des outils d'inspection, pas de
+      l'information de jeu.
+* [ ] Écrire le générateur de survivants (noms, apparence), déterministe. **Pas écrit.** C'est le
+      point de vigilance annoncé plus haut : la partie de ce livrable qui vivrait dans
+      `Hordinary.Core` et se testerait sans Godot est précisément celle qui manque, et les deux tests
+      demandés ci-dessous n'ont donc pas de sujet.
+* [ ] Permettre l'export d'un roster généré au format `config/survivors.json`. **Pas écrit**, et sans
+      objet tant que le générateur manque.
+* [x] Refondre l'écran de préparation de mission et ajouter l'écran de camp — `CampScreen`, complété
+      par `LoadoutPanel` pour le paquetage.
+* [ ] Ajouter l'écran titre et l'écran de fin de partie. L'écran titre manque. **L'écran de fin de
+      partie a été écarté**, et la raison est dans `Scripts/UI/Hud.cs` : le verdict s'affiche là où il
+      s'est toujours affiché, avec ce que la victoire a rapporté ; un écran de plus pour trois lignes
+      ferait une transition à traverser, pas une information de plus.
 
 ## Critère de validation
 

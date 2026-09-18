@@ -91,6 +91,7 @@ public partial class CampScreen : CanvasLayer
 
     private LoadoutPanel _packs = null!;
     private InstructionPanel? _instructions;
+    private Hordinary.Instructions.InstructionClient? _instructionClient;
     private VBoxContainer _missionList = null!;
     private Label _title = null!;
     private Label _steps = null!;
@@ -136,7 +137,8 @@ public partial class CampScreen : CanvasLayer
         string? debrief = null,
         PddlDomain? domain = null,
         InstructionPresetCatalogue? presets = null,
-        InstructionSettings? instructions = null)
+        InstructionSettings? instructions = null,
+        Hordinary.Instructions.InstructionClient? client = null)
     {
         ArgumentNullException.ThrowIfNull(profiles);
         ArgumentNullException.ThrowIfNull(missions);
@@ -157,6 +159,7 @@ public partial class CampScreen : CanvasLayer
         _domain = domain;
         _presets = presets;
         _instructionSettings = instructions;
+        _instructionClient = client;
 
         _loadout = new CampLoadout(_camp, _items, _inventory);
 
@@ -384,7 +387,7 @@ public partial class CampScreen : CanvasLayer
         if (_domain is null) return;
 
         _instructions = new InstructionPanel { Name = "TacticalInstructions" };
-        _instructions.Configure(_domain, _presets, _instructionSettings);
+        _instructions.Configure(_domain, _presets, _instructionSettings, _instructionClient, () => MapSeed);
         _instructions.Changed += Refresh;
         parent.AddChild(_instructions);
     }

@@ -211,13 +211,24 @@
     }
   },
 
-  "//instructions": "Instructions tactiques en langage naturel (livrable 15). enabled ne commande QUE la traduction d'une phrase libre par un modele de langage : les contraintes, les quatre portillons et le compilateur de domaine tournent sans lui, sur les instructions pre-ecrites de config/instruction_presets.json. Livre a false, comme le reste de ce qui demande le reseau. max_active_constraints borne le nombre de contraintes simultanees — chacune reecrit le domaine, et au-dela d'une poignee plus personne ne sait ce qu'il autorise encore. min_penalty et max_penalty bornent le multiplicateur de penalize ; hors bornes, le portillon 1 refuse. Rappel : penalize n'agit que si planner.search ordonne sur g, donc sous astar et non sous gbfs — sous gbfs la contrainte est acceptee avec un avertissement 'sans effet sur ce moteur de recherche'.",
+  "//instructions": "Instructions tactiques en langage naturel (livrable 15). enabled ne commande QUE la traduction d'une phrase libre par un modele de langage : les contraintes, les quatre portillons et le compilateur de domaine tournent sans lui, sur les instructions pre-ecrites de config/instruction_presets.json. Livre a false, comme le reste de ce qui demande le reseau. max_active_constraints borne le nombre de contraintes simultanees — chacune reecrit le domaine, et au-dela d'une poignee plus personne ne sait ce qu'il autorise encore. min_penalty et max_penalty bornent le multiplicateur de penalize ; hors bornes, le portillon 1 refuse. Rappel : penalize n'agit que si planner.search ordonne sur g, donc sous astar et non sous gbfs — sous gbfs la contrainte est acceptee avec un avertissement 'sans effet sur ce moteur de recherche'. endpoint est le service FastAPI de service/, qui parle a OpenRouter a notre place : le jeu ne connait ni cle d'API ni fournisseur. timeout_ms vaut 8000 contre 800 pour un dialogue, parce que compiler une instruction n'est pas dans la boucle de jeu. cache_enabled est l'une des deux choses qui rendent une partie reproductible malgre un fournisseur distant non deterministe, l'autre etant qu'une contrainte acceptee est figee. openrouter.api_key_env est le NOM de la variable d'environnement qui porte la cle, jamais la cle : ce fichier est versionne.",
   "instructions": {
     "enabled": false,
+    "provider": "openrouter",
+    "endpoint": "http://127.0.0.1:8001/instruction",
+    "openrouter": {
+      "model": "qwen/qwen3.7-flash",
+      "api_key_env": "OPENROUTER_API_KEY",
+      "base_url": "https://openrouter.ai/api/v1",
+      "max_cost_usd_per_session": 0.50
+    },
+    "timeout_ms": 8000,
+    "retries": 1,
     "max_chars": 200,
     "max_active_constraints": 5,
     "min_penalty": 0.1,
     "max_penalty": 10,
+    "cache_enabled": true,
     "presets_when_disabled": true
   },
 

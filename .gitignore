@@ -29,3 +29,14 @@ desktop.ini
 
 # Domaines compiles par mission (livrable 15) : generes a chaque depart, jamais relus par le jeu.
 /missions/
+
+# Service d'instructions tactiques (livrable 15) : environnement Python et sorties d'evaluation.
+# results.md est un resultat de mesure, pas une source — il se regenere par `python -m evals.run`.
+__pycache__/
+*.pyc
+service/.venv/
+service/evals/results.md
+
+# Outillage jetable : mesures ponctuelles, journaux de passages d'evaluation, PDDL de travail.
+# CLAUDE.md le declare deja hors du build ; il n'a pas non plus a entrer dans l'historique.
+/_work/

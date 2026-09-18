@@ -16,6 +16,16 @@ dotnet test Tests/Hordinary.Tests.csproj --filter "FullyQualifiedName~MemoryTest
 dotnet test Tests/Hordinary.Tests.csproj --filter "FullyQualifiedName~PlannerTests"
 ```
 
+Le service de langage a sa propre suite, en Python, qui ne demande ni reseau ni cle (eprouvee sur
+CPython 3.12.10). Elle ne fait pas partie de `dotnet test` et se lance a part :
+
+```bash
+cd service
+python -m venv .venv && ./.venv/Scripts/python.exe -m pip install -r requirements.txt
+./.venv/Scripts/python.exe -m pytest tests/ -q          # 58 tests
+./.venv/Scripts/python.exe -m evals.run --dry-run       # le harnais d'evaluation, sans reseau
+```
+
 Le jeu s'ouvre dans **Godot 4.7** sur `Scenes/Main.tscn`. Sans éditeur, un smoke test headless :
 
 ```powershell
@@ -147,7 +157,7 @@ retiré, le 16 est fait.
 ## État actuel
 
 Branche `epuration-spec-15`, travail en cours d'épuration du projet autour du livrable 15. Sur l'arbre
-de travail actuel, `dotnet test` donne **513 passés sur 513**. **Toute ligne rouge est donc une
+de travail actuel, `dotnet test` donne **548 passés sur 548**. **Toute ligne rouge est donc une
 régression** — il n'y a plus de liste d'exceptions à consulter avant de conclure, et c'est le principal
 acquis de cette passe : une suite qui se lit avec une table d'exceptions en prose ne détecte plus rien.
 
@@ -274,7 +284,10 @@ que GBFS résout — donc un instantané de ce qu'**un** survivant croyait, jama
 sorties versionnées vivent dans `tools/pddl/` : `domain.pddl` et dix `snapshots/` prélevés dans une
 partie jouée jusqu'au verdict. Ce sont des fichiers générés **et** versionnés, parce que ce sont eux
 qu'on donne à Fast Downward hors ligne ; `Tests/PddlArtifactsTests.cs` les rend à nouveau et compare,
-donc changer le domaine sans régénérer casse la suite :
+donc changer le domaine sans régénérer casse la suite. Il **énumère aussi le dossier** : un instantané
+qu'aucune capture ne produit plus — renommé parce qu'un but a changé de nom, l'ancien survivant — ne
+se verrait pas autrement, puisque les comparaisons se font par nom de fichier. Le régénérer ne l'efface
+pas non plus ; c'est une suppression à la main :
 
 ```bash
 HORDINARY_PDDL_REGEN=1 dotnet test Tests/Hordinary.Tests.csproj --filter "FullyQualifiedName~PddlArtifactsTests"
@@ -295,15 +308,106 @@ Deux pièges que cette capture a révélés, et qui valent au-delà d'elle. **`p
 horloge** : la suite des plans d'une mission dépend de la charge machine, donc un test qui compare deux
 déroulés doit desserrer ce plafond (`MissionRun(planner:)`) — et un test de budget doit porter sur les
 nœuds, pas sur le temps. **`NoiseSystem.Localize` retombe sur `Random.Shared`** quand personne ne lui
-passe de générateur : une mission rejouée n'est donc pas identique dès qu'un bruit est entendu de loin.
-`SurvivorBand.Advance(delta, rng)` et `MissionRun(noiseSeed:)` permettent de la graine ; le jeu, lui,
-n'en passe toujours pas — c'est un accroc connu à l'invariant « à graine égale, résultat égal ».
+passe de générateur : une mission rejouée ne serait alors pas identique dès qu'un bruit est entendu de
+loin. `SurvivorBand.Advance(delta, rng)`, `SurvivorBand.Perceive(elapsed, rng)` et
+`MissionRun(noiseSeed:)` permettent d'en passer un, et **le jeu en passe un** — `GameRoot` sème
+`_noiseRng` sur `zombies.seed` et le donne à chaque passe de perception. L'accroc à l'invariant « à
+graine égale, résultat égal » est donc fermé, et **deux tests le verrouillent**
+(`Tests/NoiseTests.cs`) : l'un fait entendre un bruit lointain à un groupe et vérifie que douze
+graines donnent douze localisations, donc que le générateur traverse bien les quatre maillons qui le
+déclarent optionnel ; l'autre **lit le texte de `Scripts/Game/GameRoot.cs`** et exige qu'aucune passe
+de perception ne se fasse sans générateur. Le second est un pis-aller assumé — le câblage vit dans
+`Scripts/`, hors de portée d'une suite qui ne lance pas le moteur, et le choix était entre lire le
+fichier et ne rien verrouiller du tout. Il attrape le retrait du paramètre, pas un câblage qui compile
+et se trompe.
 
-Ce qui reste à faire : la traduction d'une phrase libre en contrainte (service
-FastAPI/LangGraph/OpenRouter et `InstructionClient.cs` ; `instructions.enabled` est livré à `false`) et
-le portillon 3 — Fast Downward et VAL restent des outils **hors ligne** et ne sont pas installés ici,
-aucun planificateur tiers ne tourne pendant une partie. `tools/pddl/results.md`, qui doit porter le
-tableau des dix (plan FD, plan GBFS, écart), attend donc de les avoir lancés.
+**Le service de langage est écrit** (`service/` — FastAPI, graphe LangGraph à cinq nœuds, OpenRouter),
+avec son corpus d'évaluation de 66 phrases et son harnais. Le découpage est le point : *toutes* les
+décisions — cache, plafond de dépense, délai, reprise, portillon 1 sur la réponse, repli sur les
+instructions pré-écrites — sont dans `Hordinary.Core/AI/Instructions/InstructionBroker`, et
+`Scripts/Instructions/InstructionClient.cs` ne fait que poster du JSON. Le transport est un **délégué**,
+ce qui rend l'invariant « le cœur ne référence aucun client HTTP » structurel plutôt que disciplinaire :
+il n'y a pas d'endroit où en mettre un. En retour, un service muet, bavard ou hors grammaire se teste
+sans réseau.
+
+Le **digest** de domaine (`DomainDigest`) est dérivé du `PddlDomain` et envoyé à chaque requête : le
+service et le portillon 1 lisent la même source de vérité sur ce qui est nommable.
+`service/tests/domain.digest.json` est généré par `PddlArtifactsTests` et versionné — sans quoi les
+tests Python se seraient réécrit un vocabulaire, c'est-à-dire exactement ce que le digest existe pour
+supprimer.
+
+Deux champs ont dû être ajoutés au contrat d'API de la spec, et les deux sont documentés là où ils
+vivent : `domain_digest.objects` (sans lui l'exemple canonique du livrable, qui cite le repère `group`,
+demandait au modèle de deviner un vocabulaire dont la grammaire exige l'exactitude) et
+`constraint.factor` (sans lui `penalize(A, k)` était intraduisible).
+
+**Les deux portillons ne vérifiaient pas le type des arguments**, et c'est une évaluation facturée qui
+l'a trouvé, pas une relecture : `nvidia/nemotron-3-super-120b-a12b` a produit
+`require_before(equipped(agent), AttackWithWeapon)`, que les deux acceptaient — `agent` est déclaré,
+`equipped` prend bien un argument, mais il est de type `object` là où `equipped` attend un `item`.
+Accepté, le fait partait en précondition dans le `domain.constrained.pddl` donné à Fast Downward, qui
+l'aurait refusé pour type invalide : **un portillon ne doit pas accepter ce que le validateur
+extérieur refuse.** La réparation a trois pièces, et les trois comptent — `PddlDomain.Vocabulary`
+porte le type et devient le seul endroit où cette liste existe (le portillon 1 et le digest la lisent
+au lieu de la recopier, ce que le commentaire affirmait déjà à tort) ; `ConstraintGrammar` compare le
+type de chaque argument à celui que le prédicat déclare ; et `domain_digest.objects` transporte le
+type jusqu'au modèle, sans quoi on aurait durci le refus sans donner de quoi l'éviter. Détail dans
+`docs/architecture.md`, « Quatre portillons ».
+
+C'est **le modèle le plus faible du tableau** qui a trouvé le trou : un modèle fort n'aurait jamais
+écrit cette contrainte, donc ne l'aurait jamais révélée.
+
+Deux artefacts de mesure ont été fermés en même temps, et ils sont de nature différente. Le service
+rendait `knowledge_shared()` là où le jeu écrit `knowledge_shared` (`PddlAtom.AsFact`) : c'était le
+**produit** qui divergeait entre les deux langages, `grammar.to_text` canonise désormais le fait. Le
+mot de classe de schémas — `enter:alley` contre `move:alley` — n'a en revanche aucune conséquence
+mécanique (`ActionFamilies.Members` rend le même ensemble, le compilateur pose la même précondition) :
+c'est la **mesure** qui était fausse, donc `evals/run.py` normalise pour comparer et le rendu montré
+au joueur garde le mot qu'il a employé.
+
+**Ce qui reste, et une réserve à dire franchement :**
+
+* **le livrable 12 est le seul antérieur qui soit resté partiel**, et c'est sa moitié testable qui
+  manque. L'interface est refondue et jouable — HUD en trois zones, panneau latéral, grille,
+  écran de camp — mais le **générateur de survivants** n'est pas écrit, ni
+  `config/survivor_generation.json`, ni l'export d'un roster. Le groupe est donc toujours celui, fixe,
+  de `config/survivors.json`. Manquent aussi la sélection multiple dans la grille, l'écran titre, et
+  9 des 22 images de la planche d'interface. L'écran de fin de partie, lui, a été **écarté** et non
+  oublié : le verdict s'affiche dans le HUD avec ce que la victoire a rapporté. Détail case par case
+  dans `Specs/12-interface-survivants-et-van.md`. C'est le seul endroit du projet où une spec promet
+  des tests (« deux générations avec la même graine produisent des rosters identiques ») qui n'ont pas
+  de sujet ;
+* **le service Python tourne, et ses tests passent** : **58 sur 58** (`service/`, pytest, ~0,5 s), à
+  côté des 548 du .NET — soit **606 au total**. Le harnais d'évaluation se déroule de bout en bout
+  (`python -m evals.run --dry-run`) et `uvicorn` sert `/health` et `/instruction`, qui refuse
+  proprement avec `provider_unavailable` tant qu'aucune clé n'est configurée. L'exécution a levé
+  **trois défauts qu'aucune relecture n'aurait donnés**, et c'est l'argument pour lancer plutôt que
+  relire : un témoin négatif qui visait `barricaded`, symbole pourtant *présent* au domaine depuis
+  l'entrée de `BarricadeDoor` ; un `UnicodeEncodeError` en toute fin de harnais — console Windows en
+  cp1252, flèches dans le rapport — qui tuait un passage entièrement réussi ; et un tableau markdown
+  sans barres encadrantes, que GitHub aurait rendu en paragraphe. Le rapport s'écrit désormais
+  **avant** d'être affiché : un passage réel coûte des appels facturés et ne doit pas se perdre sur
+  un caractère que le terminal ignore ;
+* **les versions installées dépassent les planchers de `requirements.txt`** — `langgraph 1.2.11` et
+  `langchain-core 1.6.3` contre `>=0.2.40` et `>=0.3.15`, deux majeures d'écart. Le code s'est trouvé
+  compatible, mais les bornes ne décrivent plus ce qui a été éprouvé : consigner les versions qui
+  marchent reste à faire ;
+* `service/evals/results.md` — le tableau des modèles, des deux ablations et du **taux de faux
+  acceptés** — demande une clé OpenRouter et des appels facturés. Le `--dry-run` valide **le harnais,
+  pas les modèles** : son « 0 % de faux acceptés » vient d'un bouchon qui refuse tout.
+
+  Quatre modèles ouverts ont été mesurés (`results.ouverts.md`, `results.qwen38.md`), **sans aucune
+  ablation** : les deux colonnes que la spec exige n'ont donc encore aucun chiffre, et
+  `anthropic/claude-haiku-4.5`, qui est le défaut livré, reste la ligne manquante. Ce qui est déjà
+  acquis : ces passages ont servi de *fuzzer* à la grammaire et ont produit un défaut de code — voir
+  ci-dessous ;
+* le portillon 3 est à moitié fait, et la moitié qui manque est le binaire. La recherche du coupable
+  minimal existe et est testée (`AI/Instructions/SatisfiabilityGate` : réduction gloutonne en `n + 2`
+  appels, minimale au sens de l'inclusion, et qui n'accuse personne quand la mission est impossible
+  d'elle-même — l'erreur judiciaire à éviter). Mais l'oracle est un **délégué** que seuls les tests
+  remplissent : Fast Downward et VAL restent des outils hors ligne, ne sont installés ici sur aucune
+  machine, et aucun planificateur tiers ne tourne pendant une partie. `tools/pddl/results.md` attend
+  donc de les avoir lancés.
 
 Le domaine compte **25 actions, 8 verbes** — mais toutes ne sont pas jouables. Une action n'est
 atteignable que si une chaîne arrière la relie à un but de `planner_domain.json`, **et** qu'un

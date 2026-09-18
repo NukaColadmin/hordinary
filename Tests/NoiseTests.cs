@@ -1,4 +1,6 @@
+using System.Text.RegularExpressions;
 using Hordinary.Agents;
+using Hordinary.Config;
 using Hordinary.World;
 
 namespace Hordinary.Tests;
@@ -231,5 +233,94 @@ public class NoiseTests
         // eternellement « recent » et figerait les zombies dessus.
         Assert.Empty(perception.Listen(bob, world, new Random(1), 2d));
         Assert.Equal(0d, Assert.Single(bob.Knowledge.KnownNoises.Values).LastObservedAt, 3);
+    }
+
+    // --- La graine du bruit ---------------------------------------------------------------
+
+    private static GameConfig Config => MissionRun.Config;
+
+    /// <summary>
+    /// Une rue droite, sans obstacle, et un bruit emis a l'autre bout : il arrive trop affaibli pour
+    /// etre bien situe — <c>10 - 9 = 1</c>, soit un rayon d'erreur de trois cases — mais assez fort
+    /// pour etre entendu, ce qui est exactement la fenetre ou la graine se voit. De pres,
+    /// <c>Localize</c> rend la position exacte et tous les generateurs se valent ; un mur de plus et
+    /// le bruit n'est plus audible du tout.
+    /// </summary>
+    private static GridMap Rue() => TestMaps.Parse(
+        "..........",
+        "..........",
+        "..........");
+
+    /// <summary>Ou un survivant place le bruit qu'il vient d'entendre, avec ce generateur-la.</summary>
+    private static GridPosition Believed(int seed)
+    {
+        var world = new WorldState(Rue());
+        var band = new SurvivorBand(world, Config);
+
+        var agent = band.Enlist(
+            MissionRun.Roster.Survivors[0], new GridPosition(0, 1), MissionRun.Goals, MissionRun.Domain);
+
+        world.Noises.Emit(NoiseAction.Distraction, new GridPosition(9, 1), 0d, "quelqu_un_d_autre");
+
+        band.Perceive(0d, new Random(seed));
+
+        return Assert.Single(agent.Survivor.Knowledge.KnownNoises.Values).Value;
+    }
+
+    /// <summary>
+    /// Le generateur donne au groupe arrive bien jusqu'a <see cref="NoiseSystem.Localize"/>.
+    ///
+    /// <para>
+    /// Le test porte sur la chaine entiere — <c>SurvivorBand.Perceive</c>, <c>SurvivorAgent.Perceive</c>,
+    /// <c>PerceptionSystem.Listen</c>, <c>Localize</c> — parce que c'est la ou le parametre peut se
+    /// perdre : chacun de ces maillons le declare optionnel, et un maillon qui oublie de le
+    /// transmettre retombe sur <see cref="Random.Shared"/> sans rien casser. Douze graines qui
+    /// donnent douze fois le meme endroit voudraient dire que le generateur n'est pas lu ; deux
+    /// passages sur la meme graine qui different voudraient dire qu'il ne sert a rien.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Le_generateur_donne_au_groupe_situe_reellement_les_bruits()
+    {
+        Assert.Equal(Believed(4), Believed(4));
+
+        var places = Enumerable.Range(1, 12).Select(Believed).Distinct().ToList();
+
+        Assert.True(
+            places.Count > 1,
+            "Douze graines donnent la meme position : le generateur passe au groupe n'atteint plus Localize.");
+    }
+
+    /// <summary>
+    /// Le jeu, lui, en passe un — et c'est ce qui ferme l'invariant « a graine egale, resultat egal »
+    /// du cote de la partie jouee, pas seulement du cote des tests.
+    ///
+    /// <para>
+    /// Ce test lit du <b>texte source</b>, ce qu'aucun autre ne fait ici, et c'est un pis-aller
+    /// assume : le cablage vit dans <c>Scripts/</c>, que cette suite ne compile pas — elle ne
+    /// reference pas Godot, c'est tout son interet. Le choix est donc entre lire le fichier et ne
+    /// rien verrouiller du tout. Ce qu'il attrape est precisement ce qui est arrive une fois :
+    /// quelqu'un retire le parametre, le jeu compile, la partie cesse d'etre rejouable, et aucune
+    /// ligne rouge ne le dit. Ce qu'il n'attrape pas : un cablage qui compile et se trompe — le
+    /// generateur reseme a chaque frame, par exemple. Seule une partie rejouee le montrerait.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Le_jeu_seme_son_generateur_de_bruit_et_le_passe_a_la_perception()
+    {
+        string path = Path.Combine(DemoMap.RepositoryRoot, "Scripts", "Game", "GameRoot.cs");
+        string source = File.ReadAllText(path);
+
+        Assert.True(
+            source.Contains("_noiseRng = new Random(", StringComparison.Ordinal),
+            "GameRoot ne seme plus son generateur de bruit : une mission rejouee ne sera plus identique.");
+
+        var calls = Regex.Matches(source, @"_band\.(?:Perceive|Advance)\(([^;]*)\);");
+
+        Assert.True(calls.Count > 0, "Aucune passe de perception du groupe dans GameRoot : le motif a change, ce test aussi.");
+
+        Assert.All(calls, call => Assert.True(
+            call.Groups[1].Value.Contains("_noiseRng", StringComparison.Ordinal),
+            $"« {call.Value.Trim()} » ne passe aucun generateur : NoiseSystem.Localize retombera sur Random.Shared."));
     }
 }

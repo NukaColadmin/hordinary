@@ -1,0 +1,38 @@
+| Modele | Ablation | Compilation | Forme | Exacte | Refus correct | Faux acceptes | Latence p50/p95 | Cout/instr. |
+|---|---|---|---|---|---|---|---|---|
+| `qwen/qwen3.8-flash` | aucune | 40 % | 35 % | 30 % | 85 % | **0 %** | 1897 / 21928 ms | 0.00007 $ |
+
+### `qwen/qwen3.8-flash` — aucune
+
+- non traduite `grp-batiment` — « Avant d'entrer dans un bâtiment, regroupez-vous. » → refus `not_expressible` (attendu : `require_before(at(agent, group), enter:building)`)
+- non traduite `grp-rue` — « Regroupez-vous avant de traverser une rue. » → refus `conditional_not_supported` (attendu : `require_before(at(agent, group), move:street)`)
+- non traduite `grp-toujours` — « Restez toujours groupés. » → refus `not_expressible` (attendu : `require_always(at(agent, group))`)
+- non traduite `grp-familier` — « Personne n'entre seul dans un bâtiment. » → refus `not_expressible` (attendu : `require_before(at(agent, group), enter:building)`)
+- non traduite `couvert-toujours` — « Restez toujours à couvert. » → refus `not_expressible` (attendu : `require_always(at(agent, cover))`)
+- traduction differente `porte-evitee` — `forbid(ForceDoor)` (attendu : `penalize(ForceDoor, k)`)
+- non traduite `porte-ouvrir` — « Ouvrez les portes plutôt que de les enfoncer. » → refus `preference_not_constraint` (attendu : `penalize(ForceDoor, k)`)
+- non traduite `ruelle-evitee` — « Évitez les ruelles autant que possible. » → refus `preference_not_constraint` (attendu : `penalize(move:alley, k)`)
+- non traduite `rue-interdite` — « Ne traversez pas les rues à découvert. » → refus `not_expressible` (attendu : `forbid(move:street)`)
+- traduction differente `cache-avant-ruelle` — `require_before(hidden(), enter:alley)` (attendu : `require_before(hidden, move:alley)`)
+- non traduite `combat-evite` — « Évitez le corps à corps. » → refus `preference_not_constraint` (attendu : `penalize(AttackZombie, k)`)
+- non traduite `repousser-evite` — « Ne perdez pas de temps à repousser les zombies. » → refus `preference_not_constraint` (attendu : `penalize(PushBackZombie, k)`)
+- traduction differente `outil-barricade` — `require_before(has(agent, toolbox), BarricadeDoor)` (attendu : `require_before(equipped(toolbox), BarricadeDoor)`)
+- non traduite `partage-avant-van` — « Dites ce que vous avez vu avant de rejoindre le van. » → refus `preference_not_constraint` (attendu : `require_before(knowledge_shared, ReachExtraction)`)
+- non traduite `partage-avant-explo` — « Partagez vos informations avant de repartir explorer. » → refus `conditional_not_supported` (attendu : `require_before(knowledge_shared, Explore)`)
+- non traduite `caisse-avant-retour` — « On ne rentre pas sans avoir trouvé la caisse. » → refus `conditional_not_supported` (attendu : `require_before(objective_found, ReachExtraction)`)
+- non traduite `fouille-avant-retour` — « Fouillez la zone avant de repartir. » → refus `conditional_not_supported` (attendu : `require_before(searched(objective_zone), ReachExtraction)`)
+- non traduite `observe-avant-entree` — « Observez la zone objectif avant d'y entrer. » → refus `conditional_not_supported` (attendu : `require_before(observed(objective_zone), enter:building)`)
+- non traduite `connu-avant-pharmacie` — « N'allez à la pharmacie que si vous savez où elle est. » → refus `not_expressible` (attendu : `require_before(known(objective_zone), move:pharmacy)`)
+- non traduite `objet-interdit` — « Ne ramassez rien d'autre que la caisse. » → refus `not_expressible` (attendu : `forbid(PickUpItem)`)
+- non traduite `attente-interdite` — « Ne restez jamais sans rien faire. » → refus `not_expressible` (attendu : `forbid(Wait)`)
+- non traduite `extraction-toujours` — « Ne quittez jamais la zone d'extraction. » → refus `conditional_not_supported` (attendu : `require_always(at(agent, extraction))`)
+- non traduite `explore-evite` — « Explorez le moins possible. » → refus `preference_not_constraint` (attendu : `penalize(Explore, k)`)
+- non traduite `fouille-evitee` — « Ne vous attardez pas à fouiller les pièces. » → refus `preference_not_constraint` (attendu : `penalize(SearchRoom, k)`)
+- traduction differente `batiment-evite` — `forbid(enter:building)` (attendu : `penalize(enter:building, k)`)
+- non traduite `caisse-puis-van` — « Une fois la caisse ramassée, rentrez. » → refus `conditional_not_supported` (attendu : `require_after(extracted, PickUpObjective)`)
+- non traduite `pharmacie-evitee` — « Évitez la pharmacie tant que possible. » → refus `preference_not_constraint` (attendu : `penalize(move:pharmacy, k)`)
+- non traduite `arme-interdite` — « Ne vous servez d'aucune arme. » → refus `not_expressible` (attendu : `forbid(AttackWithWeapon)`)
+- famille de refus `sym-diversion` — `not_expressible` (attendu : `unknown_symbol`)
+- famille de refus `sym-porte-fond` — `preference_not_constraint` (attendu : `unknown_symbol`)
+- famille de refus `exp-individuel` — `preference_not_constraint` (attendu : `not_expressible`)
+- famille de refus `exp-tuer-tout` — `preference_not_constraint` (attendu : `not_expressible`)

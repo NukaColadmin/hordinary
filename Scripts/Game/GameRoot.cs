@@ -10,6 +10,7 @@ using Hordinary.AI.Zombies;
 using Hordinary.Commands;
 using Hordinary.Config;
 using Hordinary.Game;
+using Hordinary.Instructions;
 using Hordinary.UI;
 using Hordinary.World;
 using Hordinary.World.MapGeneration;
@@ -107,6 +108,18 @@ public partial class GameRoot : Node2D
 
     /// <summary>Ce que le joueur a retenu au camp, en attente de la carte sur laquelle le compiler.</summary>
     private IReadOnlyList<string> _pendingInstructions = [];
+
+    /// <summary>
+    /// Le client du service de langage, cree une seule fois pour la partie.
+    ///
+    /// <para>
+    /// Une seule fois, parce qu'il porte le cache des traductions et le compteur de depense : un
+    /// client par ouverture de l'ecran de camp aurait paye deux fois la meme phrase et n'aurait
+    /// jamais atteint le plafond de session. Absent tant que <c>instructions.enabled</c> est a
+    /// <c>false</c> — c'est le cas livre, et rien n'est alors emis sur le reseau.
+    /// </para>
+    /// </summary>
+    private InstructionClient? _translator;
     private SurvivorRoster _roster = SurvivorRoster.Empty;
     private MissionCatalogue _catalogue = MissionCatalogue.Empty;
 
@@ -367,7 +380,8 @@ public partial class GameRoot : Node2D
             debrief,
             _pddl,
             _presets,
-            _config.Instructions);
+            _config.Instructions,
+            Translator());
 
         _campScreen.Paint(RingColors);
 
@@ -1016,6 +1030,27 @@ public partial class GameRoot : Node2D
     /// personne ne poursuit encore. Le portillon 3, hors ligne, est celui qui pose cette question-la.
     /// </para>
     /// </summary>
+    /// <summary>
+    /// Le client du service de langage, ou <c>null</c> si la traduction est coupee.
+    ///
+    /// <para>
+    /// C'est le seul endroit du jeu qui decide qu'une requete est possible, et il le decide sur une
+    /// ligne de configuration. Le reste de la chaine — panneau, courtier, portillons — se comporte
+    /// exactement pareil dans les deux cas : ce qui disparait avec le service, c'est la
+    /// <b>traduction</b> d'une phrase libre, pas les contraintes.
+    /// </para>
+    /// </summary>
+    private InstructionClient? Translator()
+    {
+        if (!_config.Instructions.Enabled) return null;
+
+        _translator ??= new InstructionClient(_config.Instructions);
+
+        Trace.Print($"[Instruction] service de langage sur {_config.Instructions.Endpoint}.");
+
+        return _translator;
+    }
+
     private void Instruct(MissionDefinition mission)
     {
         _instructions = null;

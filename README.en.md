@@ -17,8 +17,8 @@ or AI library**:
 
 | Layer | What it solves |
 |---|---|
-| **Utility AI** | Goal selection: 13 goals scored through response curves, with hysteresis to prevent oscillation |
-| **Symbolic planning** | State-space task planning with a **PDDL**-inspired representation (predicates, preconditions, effects), **GBFS** search with relevance-based action filtering |
+| **Utility AI** | Goal selection: 9 goals composed from 12 reusable primitive considerations, each passed through a response curve; hysteresis to prevent oscillation. A goal is **data** — adding one recompiles nothing |
+| **Symbolic planning** | State-space task planning. The domain is exported as valid, versioned **PDDL** ([`tools/pddl/`](tools/pddl/)) — a single compiler emits both the text a third-party planner reads *and* the domain the game executes. **GBFS** search with relevance-based action filtering |
 | **Replanning** | Execution monitored at 2 Hz across 10 triggers; plan repair rather than full replanning; traceable decision journal |
 | **Partial observability** | An agent cannot reason about what it has not observed. Field of view, line of sight, auditory perception |
 | **Belief states** | Per-agent world model: a position ages, a trajectory is extrapolated, a memory decays, a hypothesis is invalidated |
@@ -29,14 +29,23 @@ The central architectural point: **the decision logic never references the game 
 `Hordinary.Core` is a pure .NET project, testable without Godot; the engine layer is only a
 renderer and a perception provider.
 
-**382 tests** (`xUnit`, ~0.5 s), run without the engine, against the shipped map and the actual
-`config/` files — not fixtures.
+**606 tests**: 548 in C# (`xUnit`, ~26 s) run without the engine, against the shipped map and the
+actual `config/` files — not fixtures — plus 50 in Python covering the language service, with no
+network and no API key.
 
 ## Getting started
 
 ```bash
 dotnet build Hordinary.sln
-dotnet test Tests/Hordinary.Tests.csproj   # 382 tests, no Godot required
+dotnet test Tests/Hordinary.Tests.csproj   # 548 tests, no Godot required
+```
+
+The language service is optional and ships its own suite (Python 3.12):
+
+```bash
+cd service
+python -m venv .venv && ./.venv/Scripts/python.exe -m pip install -r requirements.txt
+./.venv/Scripts/python.exe -m pytest tests/ -q          # 58 tests, offline
 ```
 
 Then open the folder in **Godot 4.7** and run `Scenes/Main.tscn`.

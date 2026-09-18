@@ -634,34 +634,47 @@ Section `inventory` ajoutée à `config/game_config.json`.
 
 ## Étapes à créer
 
-* [ ] **Passage à 32 px, avant tout le reste** : `"tile_size": 32` dans `config/tile_legend.json`,
-      `tile_size = Vector2i(32, 32)` déclaré explicitement dans `Assets/poc.tres` (il tombe aujourd'hui
-      sur le défaut 16 de Godot), `separation` remise à `Vector2i(0, 0)`, et `MinZoom` de
-      [CameraController.cs](../Scripts/Game/CameraController.cs) abaissé de `0.4f` à `0.2f`.
-* [ ] Doubler les constantes en **pixels monde** des dessins par code, qui ne passent pas par
+Toutes faites. Deux d'entre elles ne le sont pas tout à fait sous la forme écrite ici, et c'est dit
+en regard plutôt que corrigé en silence — la formulation d'origine date d'avant le livrable 13 et
+d'avant l'épuration du 15.
+
+* [x] **Passage à 32 px, avant tout le reste** : `"tile_size": 32` dans `config/tile_legend.json`, et
+      `MinZoom` de [CameraController.cs](../Scripts/Game/CameraController.cs) abaissé à `0.2f`.
+      `Assets/poc.tres` n'existe plus : le tileset n'est plus une ressource Godot éditée à la main mais
+      se construit au chargement depuis `tile_legend.json`, ce qui a supprimé du même coup le défaut
+      16 de Godot et le champ `separation`.
+* [x] Doubler les constantes en **pixels monde** des dessins par code, qui ne passent pas par
       `tile_size` : rayons de halo et largeurs d'arc de [SurvivorNode.cs](../Scripts/Agents/SurvivorNode.cs)
       et [ZombieNode.cs](../Scripts/Agents/ZombieNode.cs), tailles de police (8 → 16, 7 → 14) et
-      largeurs de trait des trois overlays de `Scripts/UI/`. Les rayons proportionnels
-      (`_tileSize * 0.34f`, `* 0.30f`, `* 0.18f`) suivent seuls.
-* [ ] **(humain)** Livrer les 57 images du catalogue de tuiles — dont les 8 déjà livrées, refaites en
-      32 × 32. Rien de plus : les emplacements d'inventaire montrent ces mêmes tuiles.
-* [ ] Déclarer chaque tuile produite dans `config/tile_legend.json`.
-* [ ] Ajouter le modèle `Item`, les catégories et les verbes d'effet primitifs.
-* [ ] Ajouter `config/items.json` et son chargeur, avec les 10 objets.
-* [ ] Ajouter `config/weapons.json` et son chargeur, avec les 5 armes.
-* [ ] Contraindre l'inventaire (slots, poids, pénalité de surcharge, chute à la mort).
-* [ ] Ajouter les actions `PickUpItem`, `UseItem`, `EquipWeapon`, `AttackWithWeapon`, `ThrowFirecracker`.
-* [ ] Appliquer les modificateurs d'arme et d'outil aux coûts/bruits des actions du domaine.
-* [ ] Ajouter les objets lourds, le blocage de vue et le verbe `push`.
-* [ ] Ajouter `PushHeavyObject` et `BarricadeDoor`, avec la règle des deux survivants.
-* [ ] Propager le déplacement d'un objet lourd aux seules carte mentales des témoins.
-* [ ] Ajouter le stock du camp et la résolution de fin de journée (faim, soif, essence, munitions).
-* [ ] Ajouter le champ `profile` à `MapZone` et le fichier `config/zones.json`.
-* [ ] Implémenter les quatre agencements primitifs (`aisles`, `open`, `cells`, `forecourt`).
-* [ ] Décrire les cinq zones du catalogue et leurs tables de butin.
-* [ ] Rendre `BreakWindow` indisponible sur `WindowBarred` et `ForceDoor` indisponible sur `ShutterHalf`.
-* [ ] Accepter un `id` de profil de zone comme `objective` dans `config/missions.json`.
-* [ ] Afficher le stock du camp dans l'écran de préparation de mission.
+      largeurs de trait des trois overlays de `Scripts/UI/`.
+* [x] **(humain)** Livrer les images du catalogue de tuiles, en 32 × 32.
+* [x] Déclarer chaque tuile produite dans `config/tile_legend.json` — **63** y sont déclarées, le
+      livrable 13 en ayant ajouté au-delà des 57 prévues ici (brouillard, bords de quartier).
+* [x] Ajouter le modèle `Item`, les catégories et les verbes d'effet primitifs.
+* [x] Ajouter `config/items.json` et son chargeur, avec les 10 objets.
+* [x] Ajouter `config/weapons.json` et son chargeur, avec les 5 armes.
+* [x] Contraindre l'inventaire (slots, poids, pénalité de surcharge, chute à la mort).
+* [x] Ajouter les actions `PickUpItem`, `UseItem`, `EquipWeapon`, `AttackWithWeapon`, `ThrowFirecracker`.
+      **`ThrowFirecracker` a depuis été retirée du domaine** par le [livrable 15](./15-instructions-tactiques.md) :
+      faire du bruit exprès est une stratégie, pas un réflexe. Le verbe `emitNoise` et
+      `WorldPlanRuntime.ThrowNoise` restent exécutables, en attente d'un demandeur côté joueur.
+* [x] Appliquer les modificateurs d'arme et d'outil aux coûts/bruits des actions du domaine.
+* [x] Ajouter les objets lourds, le blocage de vue et le verbe `push`.
+* [x] Ajouter `PushHeavyObject` et `BarricadeDoor`, avec la règle des deux survivants.
+* [x] Propager le déplacement d'un objet lourd aux seules carte mentales des témoins.
+* [x] Ajouter le stock du camp et la résolution de fin de journée (faim, soif, essence, munitions).
+* [x] Ajouter le champ `profile` à `MapZone` et le fichier `config/zones.json`.
+* [x] Implémenter les quatre agencements primitifs (`aisles`, `open`, `cells`, `forecourt`).
+* [x] Décrire les cinq zones du catalogue et leurs tables de butin.
+* [x] Rendre `BreakWindow` indisponible sur `WindowBarred` et `ForceDoor` indisponible sur `ShutterHalf`.
+* [x] Accepter un `id` de profil de zone comme `objective` dans `config/missions.json`.
+* [x] Afficher le stock du camp dans l'écran de préparation de mission.
+
+Une réserve qui ne relève pas de la livraison mais de l'usage : `PushHeavyObject` et `BarricadeDoor`
+sont exécutables et déclarées au domaine, mais **aucun but ne les réclame** — `ActionRelevance` les
+écarte pour tous les objectifs. C'est la forme normale d'un geste en attente du livrable 15, et le
+tableau de [docs/architecture.md](../docs/architecture.md) § « Ce que le domaine sait faire, et ce qui
+y dort » en tient le compte.
 
 ## Critère de validation
 
