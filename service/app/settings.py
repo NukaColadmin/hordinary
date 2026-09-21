@@ -33,7 +33,7 @@ class Settings:
     """Ce dont le service a besoin pour tourner. Immuable : relu au demarrage, jamais en cours."""
 
     api_key: str = ""
-    model: str = "anthropic/claude-haiku-4.5"
+    model: str = "qwen/qwen3.8-flash"
     base_url: str = "https://openrouter.ai/api/v1"
 
     #: Plafond dur de depense, en dollars, pour la duree du processus. Atteint, le service refuse

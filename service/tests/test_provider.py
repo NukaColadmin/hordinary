@@ -36,7 +36,7 @@ def test_l_adaptateur_rend_le_contrat_attendu():
     response = FakeResponse(
         '{"status":"constraint"}',
         {
-            "model_name": "anthropic/claude-haiku-4.5",
+            "model_name": "qwen/qwen3.8-flash",
             "token_usage": {"prompt_tokens": 890, "completion_tokens": 64},
             "cost": 0.0012,
         },
@@ -47,7 +47,7 @@ def test_l_adaptateur_rend_le_contrat_attendu():
 
     assert isinstance(completion, Completion)
     assert completion.text == '{"status":"constraint"}'
-    assert completion.model == "anthropic/claude-haiku-4.5"
+    assert completion.model == "qwen/qwen3.8-flash"
     assert completion.prompt_tokens == 890
     assert completion.completion_tokens == 64
     assert completion.cost_usd == pytest.approx(0.0012)

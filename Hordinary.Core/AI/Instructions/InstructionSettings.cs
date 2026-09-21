@@ -81,7 +81,7 @@ public sealed class InstructionSettings
 /// </summary>
 public sealed class OpenRouterSettings
 {
-    public string Model { get; init; } = "anthropic/claude-haiku-4.5";
+    public string Model { get; init; } = "qwen/qwen3.8-flash";
 
     /// <summary>
     /// Le <b>nom de la variable d'environnement</b> qui porte la cle, jamais la cle. Un fichier de

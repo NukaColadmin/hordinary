@@ -63,7 +63,7 @@ Tous par variable d'environnement, tous avec un défaut utilisable :
 | Variable | Défaut | |
 |---|---|---|
 | `OPENROUTER_API_KEY` | — | sans elle, le service refuse tout appel |
-| `HORDINARY_MODEL` | `anthropic/claude-haiku-4.5` | |
+| `HORDINARY_MODEL` | `qwen/qwen3.8-flash` | |
 | `HORDINARY_BASE_URL` | `https://openrouter.ai/api/v1` | |
 | `HORDINARY_MAX_COST_USD` | `0.50` | plafond dur, pour la durée du processus |
 | `HORDINARY_TEMPERATURE` | `0.0` | |
@@ -147,7 +147,7 @@ fausser un tableau quelques semaines plus tard.
 
 ```bash
 python -m evals.run --dry-run                                   # vérifie le harnais, sans réseau
-python -m evals.run --model anthropic/claude-haiku-4.5
+python -m evals.run --model qwen/qwen3.8-flash
 python -m evals.run --model x --model y --model z               # la comparaison
 python -m evals.run --model x --no-digest                       # ablation 1
 python -m evals.run --model x --few-shot 4                      # ablation 2
@@ -184,7 +184,7 @@ tableau. Elle a déjà tué un passage entièrement réussi.
   "constraint": { "form": "require_before", "predicate": "at(agent, group)",
                   "action_class": "enter:building", "factor": null },
   "rationale": "regroupement exige avant tout deplacement vers un lieu de type batiment",
-  "model": "anthropic/claude-haiku-4.5",
+  "model": "qwen/qwen3.8-flash",
   "latency_ms": 1240,
   "tokens": { "prompt": 890, "completion": 64 },
   "cost_usd": 0.0012

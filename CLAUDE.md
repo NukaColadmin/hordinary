@@ -397,10 +397,22 @@ au joueur garde le mot qu'il a employé.
   pas les modèles** : son « 0 % de faux acceptés » vient d'un bouchon qui refuse tout.
 
   Quatre modèles ouverts ont été mesurés (`results.ouverts.md`, `results.qwen38.md`), **sans aucune
-  ablation** : les deux colonnes que la spec exige n'ont donc encore aucun chiffre, et
-  `anthropic/claude-haiku-4.5`, qui est le défaut livré, reste la ligne manquante. Ce qui est déjà
+  ablation** : les deux colonnes que la spec exige n'ont donc encore aucun chiffre. Ce qui est déjà
   acquis : ces passages ont servi de *fuzzer* à la grammaire et ont produit un défaut de code — voir
-  ci-dessous ;
+  ci-dessous.
+
+  **Le défaut livré est `qwen/qwen3.8-flash`**, et il l'est partout : `config/game_config.json`,
+  `InstructionSettings.Model`, `Settings.model` et les exemples de la spec disaient trois choses
+  différentes, ce qui est la pire forme de défaut — celle où lire le code ne dit pas ce que le jeu
+  fait. Le choix se défend sur la colonne qui compte : **85 % de refus corrects et 0 % de faux
+  acceptés**, le meilleur des quatre mesurés, pour 0,00007 $ l'instruction. Aucun modèle Anthropic
+  n'est plus cité nulle part.
+
+  Une réserve à garder en tête : **son p95 mesuré est de 21 928 ms**, au-delà du `timeout_s` de 20 s
+  du service et bien au-delà du `timeout_ms` de 8 000 du jeu. La queue lente tombera donc en repli
+  sur les instructions pré-écrites — proprement, et en le signalant, mais elle tombera. Si elle
+  s'avère fréquente, le premier réglage à essayer est `HORDINARY_REASONING=off`, mesuré à 22 fois
+  moins cher et 6 fois plus rapide sur la génération précédente du même modèle ;
 * le portillon 3 est à moitié fait, et la moitié qui manque est le binaire. La recherche du coupable
   minimal existe et est testée (`AI/Instructions/SatisfiabilityGate` : réduction gloutonne en `n + 2`
   appels, minimale au sens de l'inclusion, et qui n'accuse personne quand la mission est impossible

@@ -1,6 +1,6 @@
 """Le harnais d'evaluation (livrable 15).
 
-    python -m evals.run --model anthropic/claude-haiku-4.5
+    python -m evals.run --model qwen/qwen3.8-flash
     python -m evals.run --model x --no-digest          # ablation 1
     python -m evals.run --model x --few-shot 4         # ablation 2
     python -m evals.run --dry-run                      # sans reseau, pour verifier le harnais

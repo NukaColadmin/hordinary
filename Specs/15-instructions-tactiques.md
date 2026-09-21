@@ -533,7 +533,7 @@ d'utiliser un fournisseur distant sans rendre les parties irreproductibles.
     "factor": null
   },
   "rationale": "regroupement exige avant tout deplacement vers un lieu de type batiment",
-  "model": "anthropic/claude-haiku-4.5",
+  "model": "qwen/qwen3.8-flash",
   "latency_ms": 1240,
   "tokens": { "prompt": 890, "completion": 64 },
   "cost_usd": 0.0012
@@ -544,7 +544,7 @@ d'utiliser un fournisseur distant sans rendre les parties irreproductibles.
   "status": "rejected",
   "reason": "preference_not_constraint",
   "message": "« priorite aux blesses » exprime une preference d'objectif, pas une regle de plan",
-  "model": "anthropic/claude-haiku-4.5"
+  "model": "qwen/qwen3.8-flash"
 }
 ```
 
@@ -585,7 +585,7 @@ fonctionnait pas. Les deux sont documentés là où ils vivent (`DomainDigest`, 
     "provider": "openrouter",
     "endpoint": "http://127.0.0.1:8001/instruction",
     "openrouter": {
-      "model": "anthropic/claude-haiku-4.5",
+      "model": "qwen/qwen3.8-flash",
       "api_key_env": "OPENROUTER_API_KEY",
       "base_url": "https://openrouter.ai/api/v1",
       "max_cost_usd_per_session": 0.50
