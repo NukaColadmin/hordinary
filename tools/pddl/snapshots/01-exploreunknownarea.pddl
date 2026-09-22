@@ -7,7 +7,7 @@
   (:objects
     bob claire - ally
     door_6_m2 - door
-    ally cover extraction frontier group objective_zone ruelle start - location
+    ruelle start - location
   )
   (:init
     (accessible ally)

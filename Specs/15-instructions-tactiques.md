@@ -409,10 +409,12 @@ Le vérificateur est écrit en C#, interprète les quatre modalités PDDL 3 util
 externe. Il n'a besoin d'aucun parseur : il lit la structure `PddlFormula`, pas du texte.
 
 VAL sert de corroboration extérieure sur les instantanés de `tools/pddl/snapshots/`, en lui donnant le
-domaine **avec** son bloc `(:constraints …)` et le plan de GBFS. C'est l'usage exact pour lequel les
-contraintes PDDL 3 ont été ajoutées au langage, et VAL est l'outil qui les valide — mais son niveau de
-support réel reste à confirmer pendant le pic technique de la spec G. Si le support n'est pas là, le
-portillon 4 ne perd rien : il perd un témoin, pas sa fonction.
+domaine **avec** son bloc `(:constraints …)` et un plan. C'est l'usage exact pour lequel les
+contraintes PDDL 3 ont été ajoutées au langage, et VAL est l'outil qui les valide.
+
+**Le support est confirmé** — VAL 4 applique `sometime-before` sur ce domaine et nomme la violation.
+La réserve que ce paragraphe portait est donc levée ; elle disait que si le support n'était pas là, le
+portillon 4 perdrait un témoin et non sa fonction. Il a son témoin.
 
 ---
 
@@ -533,7 +535,7 @@ d'utiliser un fournisseur distant sans rendre les parties irreproductibles.
     "factor": null
   },
   "rationale": "regroupement exige avant tout deplacement vers un lieu de type batiment",
-  "model": "qwen/qwen3.8-flash",
+  "model": "deepseek/deepseek-v4.1-flash",
   "latency_ms": 1240,
   "tokens": { "prompt": 890, "completion": 64 },
   "cost_usd": 0.0012
@@ -544,7 +546,7 @@ d'utiliser un fournisseur distant sans rendre les parties irreproductibles.
   "status": "rejected",
   "reason": "preference_not_constraint",
   "message": "« priorite aux blesses » exprime une preference d'objectif, pas une regle de plan",
-  "model": "qwen/qwen3.8-flash"
+  "model": "deepseek/deepseek-v4.1-flash"
 }
 ```
 
@@ -585,7 +587,7 @@ fonctionnait pas. Les deux sont documentés là où ils vivent (`DomainDigest`, 
     "provider": "openrouter",
     "endpoint": "http://127.0.0.1:8001/instruction",
     "openrouter": {
-      "model": "qwen/qwen3.8-flash",
+      "model": "deepseek/deepseek-v4.1-flash",
       "api_key_env": "OPENROUTER_API_KEY",
       "base_url": "https://openrouter.ai/api/v1",
       "max_cost_usd_per_session": 0.50
@@ -642,7 +644,7 @@ ou nul.
 
 C'est la partie qui compte pour le portfolio, et elle ne demande aucun modèle pour être écrite.
 
-**Le corpus.** Soixante phrases de joueur, écrites à la main, dans `service/evals/utterances.jsonl`.
+**Le corpus.** Soixante-six phrases de joueur, écrites à la main, dans `service/evals/utterances.jsonl`.
 Chacune porte son attendu : une contrainte exacte, ou un refus avec sa famille. Il contient des phrases
 ambiguës, des phrases hors sujet, des préférences déguisées en règles, et des formulations que la
 grammaire ne peut pas exprimer. Un corpus qui ne contient que des cas faciles ne mesure rien.
@@ -710,19 +712,24 @@ pré-écrites du mode désactivé). Nouveau fichier par mission
 * [x] Interface : saisie, contraintes actives, refus motivés, journal.
 * [x] **Vérifier ici que tout est jouable et démontrable sans modèle**, via les instructions
       pré-écrites. Tout ce qui suit est du supplément.
-* [~] Brancher le portillon 3. **Fait** : le rendu texte du domaine compilé, le problème depuis l'état
-      courant (`PddlProblemBuilder`, spec G), la recherche du coupable minimal
-      (`AI/Instructions/SatisfiabilityGate`, réduction gloutonne en `n + 2` appels, minimale au sens de
-      l'inclusion, et qui n'accuse personne quand la mission est impossible d'elle-même) et le lanceur
-      (`Tests/SatisfiabilityTests`, `FastDownward.Locate`). **Pas fait** : Fast Downward n'a jamais été
-      exécuté — il n'est installé sur aucune machine du projet. L'oracle est donc un délégué que seuls
-      les tests remplissent, et le refus par preuve d'insatisfiabilité n'existe pas encore en jeu.
+* [x] Brancher le portillon 3. **Fast Downward a été exécuté** — image Docker `aibasel/downward`, que
+      `Tests/SatisfiabilityTests` trouve seule quand elle est présente. Le premier appel a trouvé
+      **quatre défauts d'export** que rien d'autre n'aurait montrés, dont un domaine livré qui n'était
+      pas du PDDL valide ; détail dans [`tools/pddl/results.md`](../tools/pddl/results.md). La preuve
+      d'insatisfiabilité fonctionne de bout en bout : trois consignes, une seule coupable, code de
+      retour 11, `forbid(MoveToLocation)` nommée seule en cinq appels.
+
+      **Reste** : la preuve ne s'affiche pas *pendant une partie*. C'est conforme à ce que cette spec
+      demande du portillon 3 — « hors ligne », « aucun planificateur tiers ne tourne pendant une
+      partie » — mais pas au critère de validation 3, qui veut un refus prouvé en jeu. Les deux
+      exigences sont en tension dans ce document, et c'est le critère qui devra céder ou le portillon
+      changer de statut.
 * [x] Créer l’endpoint `/instruction` dans `service/` et le graphe LangGraph à cinq nœuds.
 * [x] Implémenter l’adaptateur OpenRouter et le plafond de coût.
 * [x] Écrire `InstructionClient.cs` : asynchrone, timeout, cache, repli sur les instructions
       pré-écrites.
 * [x] Écrire le corpus d’évaluation (soixante-six phrases) et le harnais. Le harnais **tourne** :
-      `python -m evals.run --dry-run` traverse les soixante-six cas et produit le rapport. Les 50 tests
+      `python -m evals.run --dry-run` traverse les soixante-six cas et produit le rapport. Les 58 tests
       Python du service passent également (CPython 3.12.10).
 * [ ] Lancer les comparaisons de modèles et les deux ablations ; publier `service/evals/results.md`.
       C'est le seul point du livrable qui demande encore une clé OpenRouter et des appels facturés. Le
@@ -788,15 +795,28 @@ Dans `service/tests/` :
 * l'adaptateur OpenRouter produit le contrat de sortie attendu, avec réponse simulée dans les tests ;
 * le plafond de coût coupe les appels et bascule sur les instructions pré-écrites.
 
-Tests d'intégration, marqués `Skip` si le binaire est absent :
+Tests d'intégration. **Ils ne sont pas marqués `Skip`** : ils changent de question selon ce qui est
+installé — outil présent, ils l'interrogent ; absent, ils vérifient que ce qu'on lui donnerait est bien
+formé. Un test vert par ignorance ne surveille rien. Les trois sont écrits et les trois tournent, par
+Docker (`aibasel/downward`, et `tools/pddl/val/Dockerfile` pour VAL, qui n'a pas d'image officielle) :
 
-* les dix instantanés de `tools/pddl/snapshots/`, recompilés avec une contrainte active, restent
+* [x] les dix instantanés de `tools/pddl/snapshots/`, recompilés avec une contrainte active, restent
   acceptés par Fast Downward — le domaine compilé est toujours du PDDL bien formé ;
-* un domaine compilé rendu insatisfiable est bien détecté comme tel par Fast Downward, et la recherche
-  du coupable minimal désigne la bonne contrainte ;
-* VAL, sur un instantané, valide le plan de GBFS contre le domaine **avec** son bloc
-  `(:constraints …)` — et le rejette quand la contrainte est violée. `Skip` aussi si le support PDDL 3
-  n'est pas au rendez-vous.
+* [x] un domaine compilé rendu insatisfiable est bien détecté comme tel par Fast Downward (code de
+  retour 11, et non 12, qui ne prouve rien), et la recherche du coupable minimal désigne la bonne
+  contrainte ;
+* [x] VAL, sur un instantané, valide contre le domaine **avec** son bloc `(:constraints …)` le plan
+  produit contre le domaine compilé — et rejette, sur la contrainte, un plan qui l'ignore.
+  **Le support PDDL 3 est au rendez-vous** : la réserve que ce document traînait est levée.
+
+  Une nuance apprise à l'usage : le témoin négatif ne peut pas s'adosser au domaine compilé, où le
+  plan fautif n'est même pas *exécutable* — la compilation ayant scindé le schéma visé, VAL le
+  refuserait pour inapplicabilité, ce qui ne dirait rien de la contrainte. Le bloc PDDL 3 s'adosse
+  donc au domaine d'origine pour ce cas.
+
+  Le plan soumis est celui de Fast Downward et non celui de GBFS : la capture d'instantané ne
+  conserve pas le plan que GBFS avait produit à cet instant. Ce qui est établi est donc « le domaine
+  compilé n'autorise que des plans conformes », pas « GBFS et Fast Downward choisissent le même ».
 
 ## Limitations connues
 

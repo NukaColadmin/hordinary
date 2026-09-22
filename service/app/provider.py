@@ -167,8 +167,10 @@ def _extra_body(settings: Settings) -> dict:
     generation apres coup, ce que ce service ne fait pas — d'ou une colonne de cout vide dans les
     tableaux d'evaluation, qui est la seule chose qu'on ne peut pas reconstituer plus tard.
 
-    `reasoning` n'est ajoute que si on l'a demande : le defaut laisse chaque modele a son reglage
-    d'usine, parce qu'on ne compare pas des modeles en en bridant un seul.
+    `reasoning` n'est ajoute que si `Settings.reasoning` n'est pas vide. Le defaut livre est
+    desormais `off` — le modele livre sait raisonner, et le p95 qui a decide de son choix a ete
+    mesure sans reflexion. Passer `HORDINARY_REASONING=` vide rend chaque modele a son reglage
+    d'usine, ce qu'il faut faire pour comparer : on ne compare pas des modeles en en bridant un seul.
     """
     body: dict = {"usage": {"include": True}}
 

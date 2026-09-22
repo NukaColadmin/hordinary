@@ -33,7 +33,7 @@ class Settings:
     """Ce dont le service a besoin pour tourner. Immuable : relu au demarrage, jamais en cours."""
 
     api_key: str = ""
-    model: str = "qwen/qwen3.8-flash"
+    model: str = "deepseek/deepseek-v4.1-flash"
     base_url: str = "https://openrouter.ai/api/v1"
 
     #: Plafond dur de depense, en dollars, pour la duree du processus. Atteint, le service refuse
@@ -46,23 +46,34 @@ class Settings:
     #: une temperature basse reduit seulement la dispersion des traductions d'une phrase a l'autre.
     temperature: float = 0.0
 
-    #: Le mode de raisonnement demande a OpenRouter, pour les modeles qui en ont un. Vide par
-    #: defaut : le service n'impose rien et laisse le fournisseur a son reglage d'usine.
+    #: Le mode de raisonnement demande a OpenRouter, pour les modeles qui en ont un.
+    #:
+    #: **`off` par defaut, et c'est un changement.** Le defaut etait vide — « laisser chaque modele a
+    #: son reglage d'usine » — ce qui se defendait tant que ce champ ne servait qu'a comparer. Il ne
+    #: se defend plus depuis que le modele livre (`deepseek/deepseek-v4.1-flash`) sait raisonner : le
+    #: p95 de 2 771 ms qui a decide de son choix a ete **mesure avec `off`**, et livrer le modele sans
+    #: le reglage rendrait la mesure sans rapport avec ce que le joueur attend. Un defaut qui ne
+    #: reproduit pas le chiffre publie est un defaut qui ment.
     #:
     #: Il existe parce qu'un modele a raisonnement facture ses tokens de reflexion en sortie **et**
     #: les fait attendre. Sur une tache dont la sortie utile fait cent tokens, c'est la difference
     #: entre trois secondes et trois minutes — mesure : un passage a 32 s de latence mediane et
-    #: 267 s en p95, pour un `timeout_s` de 20. Comparer un modele a raisonnement sans ce reglage
-    #: mesure son bavardage, pas sa comprehension.
+    #: 267 s en p95, pour un `timeout_s` de 20. Le jeu, lui, coupe a `timeout_ms` = 8 000.
     #:
-    #: `off` coupe la reflexion ; `minimal` / `low` / `medium` / `high` la bornent.
+    #: **Pour mesurer un modele a son reglage d'usine, passer `HORDINARY_REASONING=` vide en
+    #: environnement** : le harnais d'evaluation lit le meme champ, et comparer des modeles en en
+    #: bridant un seul ne dirait rien.
+    #:
+    #: `off` coupe la reflexion ; `minimal` / `low` / `medium` / `high` la bornent. Attention, tous ne
+    #: l'acceptent pas : `z-ai/glm-5.3-flash`, `z-ai/glm-5.3-flashx` et `google/gemini-3.8-flash`
+    #: repondent `400 — Reasoning is mandatory for this endpoint and cannot be disabled`.
     #:
     #: **Ne pas confondre avec `exclude`**, qui est le piege : sur OpenRouter, `reasoning.exclude`
     #: dit « ne me renvoie pas la trace », pas « ne reflechis pas ». Mesure sur qwen3.7-flash, une
     #: phrase triviale : sans reglage 6 454 ms et 268 tokens de reflexion, avec `exclude` 4 843 ms
     #: et les memes 268 tokens — factures et attendus pour rien. Avec `off` : 983 ms, zero token de
     #: reflexion, 22 fois moins cher. `effort: minimal` ne coupe rien non plus.
-    reasoning: str = ""
+    reasoning: str = "off"
 
     #: Une reprise, puis abandon (noeud `self_check`).
     self_check_retries: int = 1

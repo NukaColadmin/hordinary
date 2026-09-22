@@ -83,27 +83,95 @@ public class PddlTests
     }
 
     /// <summary>
-    /// Les reperes recalcules a chaque decision — <c>group</c>, <c>cover</c>… — sont des objets du
-    /// <b>probleme</b>, pas des constantes du domaine. Ils ne doivent donc pas se retrouver dans
-    /// <c>(:constants …)</c>, et doivent rester nommables par une instruction du joueur.
+    /// <b>Le vocabulaire nommable est exactement l'ensemble des constantes du domaine</b>, et tout
+    /// symbole qu'une action cite en dur en fait partie.
+    ///
+    /// <para>
+    /// Ce test disait l'inverse — « aucun repere n'est une constante » — et il verrouillait ainsi un
+    /// domaine que Fast Downward refuse : PDDL exige qu'un symbole cite dans le corps d'une action
+    /// soit declare par le domaine, faute de quoi le domaine ne se lit pas seul. Le premier appel au
+    /// binaire l'a dit en une ligne, <c>Undefined object: objective_zone</c> sur
+    /// <c>LocateObjective</c>, apres que la regle fausse eut traverse toute la spec G sans etre vue.
+    /// </para>
+    ///
+    /// <para>
+    /// La formulation s'est ensuite <b>elargie</b>, et le binaire l'a exigee lui aussi. S'en tenir aux
+    /// symboles qu'une action nomme deja suffisait au domaine livre et cassait a la premiere consigne
+    /// du joueur : le schema scinde par « avant d'entrer dans un batiment, regroupez-vous » nomme
+    /// <c>group</c>, que personne ne nommait avant. Ce qui est nommable doit donc etre declare, sans
+    /// attendre qu'une action le nomme — c'est la seule version de la regle qui ne se casse pas au
+    /// prochain ajout.
+    /// </para>
     /// </summary>
     [Fact]
-    public void Les_reperes_sont_des_objets_du_probleme_et_non_des_constantes()
+    public void Le_vocabulaire_nommable_est_exactement_les_constantes_du_domaine()
     {
         var exported = Exported;
+        var constants = exported.Constants
+            .Select(constant => constant.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         Assert.NotEmpty(exported.Landmarks);
+        Assert.Equal(
+            exported.Vocabulary.Select(entry => entry.Name).Order(StringComparer.Ordinal),
+            exported.Constants.Select(constant => constant.Name).Order(StringComparer.Ordinal));
 
         foreach (string landmark in exported.Landmarks)
         {
-            Assert.DoesNotContain(
-                exported.Constants,
-                constant => constant.Name.Equals(landmark, StringComparison.OrdinalIgnoreCase));
+            Assert.True(constants.Contains(landmark), $"« {landmark} » est nommable sans etre declare.");
         }
 
-        Assert.All(
-            exported.Constants,
-            constant => Assert.NotEqual(PlanningObjectTypes.Location, constant.Type));
+        foreach (string named in NamedByAnAction(exported))
+        {
+            Assert.True(
+                constants.Contains(named),
+                $"« {named} » est nomme par une action sans etre declare : Fast Downward refuse le domaine.");
+        }
+    }
+
+    /// <summary>
+    /// Les symboles — et non les variables — que le corps d'une action cite en dur. La descente est
+    /// explicite parce que <c>Literals</c> s'arrete aux negations et aux quantificateurs : c'est
+    /// precisement sous un <c>(not …)</c> et sous un <c>(forall …)</c> que vivent la moitie des
+    /// mentions de <c>objective_zone</c>.
+    /// </summary>
+    private static HashSet<string> NamedByAnAction(PddlDomain domain)
+    {
+        var named = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var action in domain.Actions)
+        {
+            Collect(action.Precondition);
+            Collect(action.Effect);
+        }
+
+        return named;
+
+        void Collect(PddlFormula formula)
+        {
+            switch (formula)
+            {
+                case PddlAtom atom:
+                    foreach (string argument in atom.Arguments.Where(argument => !argument.StartsWith('?')))
+                    {
+                        named.Add(argument);
+                    }
+
+                    break;
+
+                case PddlNegation negation:
+                    Collect(negation.Inner);
+                    break;
+
+                case PddlUniversal universal:
+                    Collect(universal.Body);
+                    break;
+
+                case PddlConjunction conjunction:
+                    foreach (var part in conjunction.Parts) Collect(part);
+                    break;
+            }
+        }
     }
 
     /// <summary>

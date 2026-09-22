@@ -7,7 +7,7 @@
   (:objects
     bob claire - ally
     door_6_m2 - door
-    ally away_from_danger cover danger entrepot_ouest extraction frontier group objective_zone rue_principale ruelle start - location
+    danger entrepot_ouest rue_principale ruelle start - location
     window_m2_12 window_m4_4 window_m4_m6 window_m8_m1 - window
   )
   (:init

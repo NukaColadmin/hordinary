@@ -1,0 +1,9 @@
+# Le contexte de construction n'a besoin que des sources. L'environnement virtuel local pese des
+# centaines de mega-octets et serait recopie a chaque build pour etre aussitot ignore.
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Les resultats d'evaluation sont des mesures, pas du code : ils n'ont rien a faire dans l'image.
+evals/results*.md

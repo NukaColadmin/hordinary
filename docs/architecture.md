@@ -19,7 +19,7 @@ La specification complete est dans [`Specs/`](Specs/00-INDEX.md), decoupee en hu
 | 7 — Survivants et partage | fait |
 | 8 — Interface et boucle complete | fait |
 | 11 — Objets, armes et economie du camp | fait (code, tests et tuiles ; rendu a verifier dans l'editeur) |
-| 15 — Instructions tactiques | fait ; service de langage ecrit mais jamais execute ici, portillon 3 hors ligne |
+| 15 — Instructions tactiques | fait ; portillon 3 eprouve contre Fast Downward (Docker), VAL et le tableau des modeles restants |
 | 16 — Missions aleatoires et recompenses | fait |
 | G — Export PDDL | fait |
 
@@ -2008,19 +2008,29 @@ dans la mission. Rejouer ne reinterroge aucun modele.
 
 ### Limites assumees
 
-* Le portillon 3 n'est pas cable : Fast Downward et VAL restent des outils **hors ligne**, et ne sont
-  installes sur aucune machine du projet. Aucun planificateur tiers ne tourne pendant une partie, et
-  le refus par preuve d'insatisfiabilite — le meilleur moment de demonstration du livrable — n'existe
-  donc pas encore en jeu. `tools/pddl/results.md`, qui doit porter le tableau des dix instantanes
-  (plan FD, plan GBFS, ecart), attend de les avoir lances.
-* **`ally` est a la fois un type et un objet** dans les instantanes : le domaine declare
-  `(:types ally …)` et le repere « l'allie le plus proche » s'appelle `ally`. Les deux vivent dans des
-  espaces de noms distincts au sens de la grammaire PDDL, et la plupart des analyseurs l'acceptent ;
-  certains s'en plaignent. Le mecanisme pour le corriger existe deja —
-  `SymbolicStateBuilder.LocationAliases` renomme `objective` en `objective_spot` pour exactement cette
-  raison — mais le faire change le vocabulaire du domaine livre, alors on attend de savoir si c'est
-  necessaire plutot que de le changer a l'aveugle.
-* Le service de langage **tourne** : 50 tests Python passent (CPython 3.12.10), `uvicorn` sert
+* **Fast Downward tourne desormais** — image Docker `aibasel/downward`, que `SatisfiabilityTests`
+  trouve seule — et la preuve d'insatisfiabilite marche de bout en bout dans la suite : trois
+  consignes, code de retour 11, la coupable nommee seule. Elle ne s'affiche toujours pas *pendant une
+  partie*, ce qui est conforme au portillon (« hors ligne ») mais laisse en suspens le critere de
+  validation 3 de la spec 15. Les resultats sont dans
+  [`tools/pddl/results.md`](../tools/pddl/results.md), dont il manque la colonne « plan GBFS ».
+* **VAL corrobore le portillon 4**, et son support PDDL 3 est confirme : il lit le bloc
+  `(:constraints …)` et applique `sometime-before` sur notre domaine. Pas d'image officielle, donc
+  `tools/pddl/val/Dockerfile` compile VAL 4. Ce qu'il etablit : le plan que Fast Downward produit
+  contre le domaine **compile** satisfait la forme **declarative** de la consigne — la question du
+  portillon 4, posee a un outil qui ne sait rien de notre compilation.
+* **Le premier appel au binaire a trouve quatre defauts d'export**, et le domaine livre n'etait pas du
+  PDDL valide. Voir `tools/pddl/results.md` pour le detail ; la regle qui en sort tient en une ligne et
+  vaut au-dela du cas : **le vocabulaire nommable est exactement l'ensemble des constantes du
+  domaine**, parce que tout symbole qu'un joueur peut citer peut finir en precondition apres
+  compilation d'une contrainte. La version etroite de la regle — declarer ce qu'une action nomme deja —
+  suffisait au domaine livre et cassait a la premiere consigne.
+* **`ally` est a la fois un type et un objet** : le domaine declare `(:types ally …)` et le repere
+  « l'allie le plus proche » s'appelle `ally`. Fast Downward l'accepte, les deux espaces de noms etant
+  distincts pour son analyseur ; le renommage que `SymbolicStateBuilder.LocationAliases` aurait permis
+  n'est donc pas necessaire et n'a pas ete fait. La collision reste un piege de lecture pour un humain,
+  pas pour l'outil.
+* Le service de langage **tourne** : 58 tests Python passent (CPython 3.12.10), `uvicorn` sert
   `/health` et `/instruction`, et le harnais d'evaluation se deroule de bout en bout en `--dry-run`.
   Trois defauts n'ont ete vus qu'en l'executant, et ils valent d'etre nommes parce qu'ils sont
   typiques de ce qu'une relecture laisse passer : un temoin negatif portant sur `barricaded`, symbole

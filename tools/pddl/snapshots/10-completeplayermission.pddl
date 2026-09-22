@@ -7,7 +7,7 @@
   (:objects
     alice - ally
     door_0_3 door_3_12 door_6_m2 - door
-    ally cover entrepot_ouest extraction frontier group hangar_sud mission objective_zone rue_principale ruelle start - location
+    entrepot_ouest hangar_sud rue_principale ruelle start - location
     window_12_m2 window_7_12 window_9_5 window_9_m6 window_m2_12 window_m4_4 window_m4_m6 window_m8_m1 - window
   )
   (:init

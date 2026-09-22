@@ -29,15 +29,46 @@ Le point d'architecture central : **la logique de décision ne référence jamai
 `Hordinary.Core` est un projet .NET pur, testable sans Godot ; la couche moteur n'est qu'un
 afficheur et un fournisseur de perception.
 
-**606 tests** : 548 en C# (`xUnit`, ~26 s) exécutés sans moteur, sur la carte et les fichiers de
-`config/` réellement livrés — pas des copies — et 50 en Python sur le service de langage, sans
+**609 tests** : 551 en C# (`xUnit`, ~44 s) exécutés sans moteur, sur la carte et les fichiers de
+`config/` réellement livrés — pas des copies — et 58 en Python sur le service de langage, sans
 réseau ni clé d'API.
+
+## Le LLM traduit, il ne décide pas
+
+Le joueur donne ses consignes tactiques en français — « Évitez de forcer les portes », « Avant
+d'entrer dans un bâtiment, regroupez-vous ». Un modèle les traduit dans une **grammaire fermée de
+cinq formes**, puis **quatre portillons déterministes** décident, et eux seuls : validation
+grammaticale et typée, compilation en préconditions PDDL, preuve de satisfiabilité par Fast Downward,
+vérification de trajectoire sur chaque plan produit. Un modèle qui se trompe ne casse rien — il est
+rattrapé.
+
+Quinze modèles ont été soumis à un corpus de **66 phrases**, dont 26 qui *doivent* être refusées :
+préférences déguisées en règles, conditionnelles, injection de prompt, consignes inexprimables.
+Dossier complet : **[`service/evals/README.md`](service/evals/README.md)**.
+
+| Modèle | Compilation | Refus corrects | **Faux acceptés** | p95 |
+|---|---|---|---|---|
+| `deepseek/deepseek-v4.1-flash` | 80 % | 85 % | **0 %** | 2 771 ms |
+| `mistralai/mistral-medium-3-5` | 95 % | 81 % | 8 % | 3 376 ms |
+| `inference-net/schematron-v2-turbo` | 90 % | 8 % | **85 %** | 6 201 ms |
+
+La colonne qui décide est **faux acceptés**, pas compilation. `schematron-v2-turbo` compile 90 % des
+phrases et serait premier d'un tableau malhonnête : il traduit *tout*, y compris l'injection de prompt
+du corpus. C'est la justification de cette colonne, et elle est arrivée toute seule dans l'échantillon.
+
+Trois résultats que seule l'exécution a donnés : le plafond de qualité était **le prompt et non le
+modèle** — 163 phrases traduisibles refusées contre 29 traduites de travers, et une réécriture qui
+fait passer un même modèle de 42 % à 78 % de compilation, au prix mesuré de 4 points de faux
+acceptés ; la
+**latence décidait avant l'exactitude** (les meilleurs taux de la première génération avaient des p95
+de 22 s et 267 s) ; et trois des modèles les plus récents du catalogue **refusent qu'on désactive leur
+raisonnement**, ce qui les exclut d'un usage temps réel.
 
 ## Démarrage
 
 ```bash
 dotnet build Hordinary.sln
-dotnet test Tests/Hordinary.Tests.csproj   # 548 tests, sans Godot
+dotnet test Tests/Hordinary.Tests.csproj   # 551 tests, sans Godot
 ```
 
 Le service de langage est optionnel et a sa propre suite (Python 3.12) :

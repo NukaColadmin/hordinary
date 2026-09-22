@@ -81,7 +81,7 @@ public sealed class InstructionSettings
 /// </summary>
 public sealed class OpenRouterSettings
 {
-    public string Model { get; init; } = "qwen/qwen3.8-flash";
+    public string Model { get; init; } = "deepseek/deepseek-v4.1-flash";
 
     /// <summary>
     /// Le <b>nom de la variable d'environnement</b> qui porte la cle, jamais la cle. Un fichier de

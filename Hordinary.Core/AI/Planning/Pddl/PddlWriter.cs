@@ -16,7 +16,15 @@ public static class PddlWriter
         var text = new StringBuilder();
         text.Append("(define (domain ").Append(domain.Name).AppendLine(")");
 
-        text.Append("  (:requirements ").Append(string.Join(' ', domain.Requirements)).AppendLine(")");
+        // `:constraints` n'est ajoute que si le bloc PDDL 3 est rendu, et il ne l'est jamais pour un
+        // planificateur : le domaine donne a Fast Downward garde donc exactement les exigences de la
+        // spec G. VAL, lui, accepte le bloc sans le drapeau, mais un fichier qui existe pour etre lu
+        // par des outils tiers n'a pas a parier sur leur indulgence.
+        var requirements = includeConstraints && domain.Constraints.Count > 0
+            ? domain.Requirements.Append(":constraints")
+            : domain.Requirements;
+
+        text.Append("  (:requirements ").Append(string.Join(' ', requirements)).AppendLine(")");
         text.Append("  (:types ").Append(string.Join(' ', domain.Types)).AppendLine(" - object)");
 
         if (domain.Constants.Count > 0)
@@ -44,7 +52,15 @@ public static class PddlWriter
             text.AppendLine("  ))");
         }
 
-        foreach (var action in domain.Actions) Render(text, action);
+        int scale = CostScale(domain.Actions);
+
+        if (scale != 1)
+        {
+            text.Append("  ; Couts multiplies par ").Append(scale)
+                .AppendLine(" : PDDL n'admet que des entiers. L'ordre des plans est inchange.");
+        }
+
+        foreach (var action in domain.Actions) Render(text, action, scale);
 
         return text.AppendLine(")").ToString();
     }
@@ -83,7 +99,46 @@ public static class PddlWriter
         return text.AppendLine(")").ToString();
     }
 
-    private static void Render(StringBuilder text, PddlAction action)
+    /// <summary>
+    /// Le facteur par lequel multiplier les couts pour qu'ils deviennent tous entiers.
+    ///
+    /// <para>
+    /// PDDL n'admet pas de cout fractionnaire, et Fast Downward le dit sans detour :
+    /// <c>Fractional numbers are not supported. Got: 2.5</c>, sur <c>PushBackZombie</c>. Le domaine
+    /// livre etait donc irrecevable pour cette seule action, et le defaut n'avait jamais ete vu parce
+    /// que le binaire n'avait jamais ete lance.
+    /// </para>
+    ///
+    /// <para>
+    /// Multiplier plutot qu'arrondir n'est pas une coquetterie : un arrondi change l'ordre des plans
+    /// en silence — 2,5 devenu 3 rend soudain <c>PushBackZombie</c> aussi cher qu'une action a 3 —
+    /// alors qu'un facteur commun le laisse exactement ou il etait. Le cout absolu exporte n'a de
+    /// toute facon pas de sens comparable a celui de GBFS, qui compte en plus la part de distance ;
+    /// ce qui doit survivre a l'export, c'est l'<b>ordre</b>, et c'est ce que le facteur preserve.
+    /// </para>
+    ///
+    /// <para>
+    /// La structure, elle, garde ses flottants : <see cref="PlanningDomainRenderer"/> alimente GBFS
+    /// avec les couts reels. La mise a l'echelle n'appartient qu'au texte, parce que la contrainte
+    /// n'appartient qu'a PDDL.
+    /// </para>
+    /// </summary>
+    private static int CostScale(IReadOnlyList<PddlAction> actions)
+    {
+        for (int scale = 1; scale <= MaxCostScale; scale++)
+        {
+            if (actions.All(action => IsWhole(action.Cost * scale))) return scale;
+        }
+
+        return MaxCostScale;
+    }
+
+    /// <summary>Au-dela, on renonce a etre exact et on arrondit : un cout a sept decimales n'est pas un cout.</summary>
+    private const int MaxCostScale = 1000;
+
+    private static bool IsWhole(float value) => MathF.Abs(value - MathF.Round(value)) < 1e-4f;
+
+    private static void Render(StringBuilder text, PddlAction action, int scale)
     {
         text.AppendLine();
 
@@ -95,7 +150,8 @@ public static class PddlWriter
 
         // Le cout n'est pas un effet de la structure — il vit dans PddlAction.Cost — mais il en est
         // un en PDDL. C'est ici, et seulement ici, qu'il le redevient.
-        var effect = action.Effect.Conjoin(new PddlIncrease(PddlIncrease.TotalCost, action.Cost));
+        var effect = action.Effect.Conjoin(
+            new PddlIncrease(PddlIncrease.TotalCost, MathF.Round(action.Cost * scale)));
         text.Append("    :effect ").Append(effect.Canonical).AppendLine(")");
     }
 

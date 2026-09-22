@@ -157,7 +157,7 @@ retiré, le 16 est fait.
 ## État actuel
 
 Branche `epuration-spec-15`, travail en cours d'épuration du projet autour du livrable 15. Sur l'arbre
-de travail actuel, `dotnet test` donne **548 passés sur 548**. **Toute ligne rouge est donc une
+de travail actuel, `dotnet test` donne **551 passés sur 551**. **Toute ligne rouge est donc une
 régression** — il n'y a plus de liste d'exceptions à consulter avant de conclure, et c'est le principal
 acquis de cette passe : une suite qui se lit avec une table d'exceptions en prose ne détecte plus rien.
 
@@ -378,7 +378,7 @@ au joueur garde le mot qu'il a employé.
   des tests (« deux générations avec la même graine produisent des rosters identiques ») qui n'ont pas
   de sujet ;
 * **le service Python tourne, et ses tests passent** : **58 sur 58** (`service/`, pytest, ~0,5 s), à
-  côté des 548 du .NET — soit **606 au total**. Le harnais d'évaluation se déroule de bout en bout
+  côté des 551 du .NET — soit **609 au total**. Le harnais d'évaluation se déroule de bout en bout
   (`python -m evals.run --dry-run`) et `uvicorn` sert `/health` et `/instruction`, qui refuse
   proprement avec `provider_unavailable` tant qu'aucune clé n'est configurée. L'exécution a levé
   **trois défauts qu'aucune relecture n'aurait donnés**, et c'est l'argument pour lancer plutôt que
@@ -396,30 +396,90 @@ au joueur garde le mot qu'il a employé.
   acceptés** — demande une clé OpenRouter et des appels facturés. Le `--dry-run` valide **le harnais,
   pas les modèles** : son « 0 % de faux acceptés » vient d'un bouchon qui refuse tout.
 
-  Quatre modèles ouverts ont été mesurés (`results.ouverts.md`, `results.qwen38.md`), **sans aucune
-  ablation** : les deux colonnes que la spec exige n'ont donc encore aucun chiffre. Ce qui est déjà
-  acquis : ces passages ont servi de *fuzzer* à la grammaire et ont produit un défaut de code — voir
-  ci-dessous.
+  **Quinze modèles soumis, onze mesurés, en deux générations de prompt.** La synthèse est
+  `service/evals/README.md` — c'est le dossier à lire, et c'est la pièce portfolio du livrable ; les
+  tableaux bruts sont les `results.*.md` à côté. **Les deux ablations que la spec exige
+  (`--no-digest`, `--few-shot`) n'ont toujours aucun chiffre.**
 
-  **Le défaut livré est `qwen/qwen3.8-flash`**, et il l'est partout : `config/game_config.json`,
-  `InstructionSettings.Model`, `Settings.model` et les exemples de la spec disaient trois choses
-  différentes, ce qui est la pire forme de défaut — celle où lire le code ne dit pas ce que le jeu
-  fait. Le choix se défend sur la colonne qui compte : **85 % de refus corrects et 0 % de faux
-  acceptés**, le meilleur des quatre mesurés, pour 0,00007 $ l'instruction. Aucun modèle Anthropic
-  n'est plus cité nulle part.
+  Trois résultats, qu'aucune relecture n'aurait donnés :
 
-  Une réserve à garder en tête : **son p95 mesuré est de 21 928 ms**, au-delà du `timeout_s` de 20 s
-  du service et bien au-delà du `timeout_ms` de 8 000 du jeu. La queue lente tombera donc en repli
-  sur les instructions pré-écrites — proprement, et en le signalant, mais elle tombera. Si elle
-  s'avère fréquente, le premier réglage à essayer est `HORDINARY_REASONING=off`, mesuré à 22 fois
-  moins cher et 6 fois plus rapide sur la génération précédente du même modèle ;
-* le portillon 3 est à moitié fait, et la moitié qui manque est le binaire. La recherche du coupable
-  minimal existe et est testée (`AI/Instructions/SatisfiabilityGate` : réduction gloutonne en `n + 2`
-  appels, minimale au sens de l'inclusion, et qui n'accuse personne quand la mission est impossible
-  d'elle-même — l'erreur judiciaire à éviter). Mais l'oracle est un **délégué** que seuls les tests
-  remplissent : Fast Downward et VAL restent des outils hors ligne, ne sont installés ici sur aucune
-  machine, et aucun planificateur tiers ne tourne pendant une partie. `tools/pddl/results.md` attend
-  donc de les avoir lancés.
+  * **le plafond était le prompt, pas le modèle.** Dépouillement des six premiers passages : **163
+    phrases traduisibles refusées contre 29 traduites de travers**, un rapport de 5,6 contre 1. Trois
+    défauts de *définition* dans le prompt système l'expliquaient — `preference_not_constraint`
+    mangeait `penalize` (« évitez de forcer les portes » était refusée alors que la cinquième forme
+    existe pour elle), `conditional_not_supported` mangeait `require_before` (« avant de » lu comme
+    « si »), et « dans le doute, refuse » n'était pas calibré. Le prompt réécrit donne un test ordonné
+    et des exemples **pris hors du corpus** — y coller les phrases évaluées aurait confondu
+    l'apprentissage et l'examen, et vidé l'ablation `--few-shot` de son sens ;
+  * **la latence décide avant l'exactitude.** Les deux meilleurs taux de compilation de la première
+    génération appartenaient à des modèles dont le p95 était de 22 s et 267 s, hors de portée du
+    `timeout_ms` de 8 000 du jeu ;
+  * **un modèle à 90 % de compilation peut être le pire du tableau.**
+    `inference-net/schematron-v2-turbo` traduit tout, y compris l'injection de prompt du corpus :
+    **85 % de faux acceptés, 8 % de refus corrects**. Il est arrivé seul dans l'échantillon, et c'est
+    la meilleure justification possible de cette colonne.
+
+  **Le défaut livré est `deepseek/deepseek-v4.1-flash`** depuis le 21 septembre 2026, et il l'est
+  partout : `config/game_config.json`, `InstructionSettings.Model`, `Settings.model`, plus les
+  exemples de la spec et des tests. Ces quatre endroits ont déjà dit trois choses différentes par le
+  passé, ce qui est la pire forme de défaut — celle où lire le code ne dit pas ce que le jeu fait ;
+  **les changer ensemble, ou pas du tout.** Aucun modèle Anthropic n'est plus cité nulle part.
+
+  Il remplace `qwen/qwen3.8-flash` : compilation doublée (80 % contre 40 %), refus correct égal
+  (85 %), faux acceptés égaux (0 %), pour 0,00010 $ contre 0,00007 $. Surtout, **p95 de 21 928 ms à
+  2 771 ms** — sous le `timeout_ms` de 8 000 du jeu pour la première fois. La queue lente de l'ancien
+  tombait en repli sur les instructions pré-écrites, proprement et en le signalant, mais elle tombait.
+
+  **`HORDINARY_REASONING` passe à `off` par défaut, et c'est indissociable.** Le nouveau modèle sait
+  raisonner et les 2 771 ms ont été mesurés sans réflexion : le livrer au réglage d'usine du
+  fournisseur donnerait un défaut qui ne reproduit pas le chiffre publié. Le défaut précédent — vide,
+  « on ne bride personne » — se défendait tant que ce champ ne servait qu'à *comparer* ; pour comparer,
+  passer la variable **vide** reste la bonne façon de faire, et le harnais lit le même champ.
+
+  Une note de catalogue, apprise à l'usage : `supported_parameters: ["reasoning"]` sur OpenRouter ne
+  veut **pas** dire « débrayable ». Trois des modèles les plus récents (`z-ai/glm-5.3-flash`,
+  `z-ai/glm-5.3-flashx`, `google/gemini-3.8-flash`) répondent `400 — Reasoning is mandatory for this
+  endpoint and cannot be disabled`. Ils ont compté 0 % avec 40 ms de latence : **une ligne à zéro se
+  lit toujours avec sa latence**, sans quoi on prend un échec de transport pour un modèle nul ;
+* **le portillon 3 tourne pour de vrai**, par Docker (`aibasel/downward`). `Tests/SatisfiabilityTests`
+  cherche le planificateur dans `HORDINARY_FAST_DOWNWARD`, puis le PATH, puis l'image ; les tests
+  d'intégration ne sont pas marqués `Skip`, ils **changent de question** selon ce qu'ils trouvent. La
+  preuve d'insatisfiabilité marche de bout en bout : trois consignes actives, code de retour 11,
+  `forbid(MoveToLocation)` nommée seule en cinq appels. Le verdict se lit dans le **code de retour** et
+  non dans le texte — `11` est une preuve, `12` est une recherche qui a renoncé, et accuser un joueur
+  sur un `12` serait l'erreur judiciaire que `SatisfiabilityGate` existe pour éviter.
+
+  Ce qui reste : la preuve ne s'affiche pas *pendant une partie*, ce qui est conforme au portillon
+  (« hors ligne ») mais pas au critère de validation 3 de la spec 15 — les deux exigences sont en
+  tension dans ce document ;
+* **VAL corrobore le portillon 4**, et son support PDDL 3 — réserve de longue date de la spec — est
+  confirmé : il applique `sometime-before` sur notre domaine et le dit en toutes lettres. Pas d'image
+  officielle, donc `tools/pddl/val/Dockerfile` compile VAL 4 ; à construire une fois, à la main. Le
+  test qui compte est `Val_confirme_que_la_compilation_dit_ce_que_le_joueur_a_dit` : le plan que Fast
+  Downward produit contre le domaine **compilé** satisfait la forme **déclarative** de la consigne.
+  `TrajectoryChecker` répond déjà à cette question, mais il est écrit par la main qui a écrit le
+  compilateur — si les deux se trompaient de la même façon, rien ne le verrait.
+
+  Deux pièges. **Sans `-v`, VAL ne dit pas pourquoi** il refuse : « `Plan failed to execute` » et rien
+  d'autre. Et **le témoin négatif ne peut pas s'adosser au domaine compilé** — le plan libre n'y est
+  même pas exécutable, puisque la compilation a scindé `MoveToLocation` ; VAL le refuserait pour
+  inapplicabilité, ce qui ne dirait rien de la contrainte. Le bloc PDDL 3 s'adosse donc au domaine
+  d'origine pour ce cas ;
+* **le premier appel au binaire a trouvé quatre défauts d'export d'un coup**, et c'est l'argument
+  entier pour installer un outil plutôt que relire un fichier. Le domaine livré **n'était pas du PDDL
+  valide** : `LocateObjective` nommait `objective_zone` sans que le domaine le déclare, `PushBackZombie`
+  coûtait 2,5 là où PDDL n'admet que des entiers, le problème redéclarait ensuite ce que le domaine
+  déclarait, et le schéma scindé par une consigne du joueur nommait `group`, que personne ne nommait
+  avant. La règle retenue est structurelle plutôt que ponctuelle : **le vocabulaire nommable est
+  exactement l'ensemble des constantes du domaine** — tout ce qu'un joueur peut citer peut finir en
+  précondition, donc tout doit être déclaré d'avance. Les coûts sont **multipliés** par un facteur
+  commun (2, écrit en tête du domaine) et non arrondis : arrondir 2,5 à 3 changerait l'ordre des plans
+  en silence. Détail et tableau dans `tools/pddl/results.md` ;
+* **le service se lance aussi en conteneur** (`service/Dockerfile`), ce qui le rend démarrable sans
+  Python ni environnement virtuel. La clé passe par `-e OPENROUTER_API_KEY` sans valeur, donc n'entre
+  ni dans l'image ni dans une ligne de commande. L'image n'emporte pas le dépôt : les trois tests qui
+  comparent le digest à `tools/pddl/domain.pddl` s'y annoncent ignorés avec leur raison, et c'est le
+  passage depuis le dépôt qui fait foi (58 contre 55 + 3).
 
 Le domaine compte **25 actions, 8 verbes** — mais toutes ne sont pas jouables. Une action n'est
 atteignable que si une chaîne arrière la relie à un but de `planner_domain.json`, **et** qu'un

@@ -48,6 +48,21 @@ Un dépôt est publié ; une clé qui y entre est publiée avec lui.
 uvicorn app.main:app --host 127.0.0.1 --port 8001
 ```
 
+Ou en conteneur, sans installer Python :
+
+```bash
+docker build -t hordinary-service service/
+docker run --rm -p 8001:8001 -e OPENROUTER_API_KEY hordinary-service
+```
+
+`-e OPENROUTER_API_KEY` sans valeur reprend celle de l'environnement courant : **la clé n'entre ni
+dans l'image ni dans une ligne de commande.** Une image se pousse et se met en cache ; une clé qui y
+entre est publiée avec elle.
+
+L'image sert le service ; elle n'emporte pas le dépôt. Les trois tests qui comparent le digest au
+`tools/pddl/domain.pddl` du jeu s'y annoncent donc comme ignorés, avec leur raison — c'est le passage
+depuis le dépôt qui fait foi (58 contre 55 + 3).
+
 Puis, côté jeu, passer `instructions.enabled` à `true` dans `config/game_config.json`. Le champ de
 saisie du panneau d'instructions accepte alors du français ; sans le service, il attend une contrainte
 de la grammaire.
@@ -63,12 +78,26 @@ Tous par variable d'environnement, tous avec un défaut utilisable :
 | Variable | Défaut | |
 |---|---|---|
 | `OPENROUTER_API_KEY` | — | sans elle, le service refuse tout appel |
-| `HORDINARY_MODEL` | `qwen/qwen3.8-flash` | |
+| `HORDINARY_MODEL` | `deepseek/deepseek-v4.1-flash` | |
 | `HORDINARY_BASE_URL` | `https://openrouter.ai/api/v1` | |
 | `HORDINARY_MAX_COST_USD` | `0.50` | plafond dur, pour la durée du processus |
 | `HORDINARY_TEMPERATURE` | `0.0` | |
+| `HORDINARY_REASONING` | `off` | coupe la réflexion. **Vide** = réglage d'usine du modèle |
 | `HORDINARY_SELF_CHECK_RETRIES` | `1` | une reprise, puis abandon |
 | `HORDINARY_TIMEOUT_S` | `20` | |
+
+**`HORDINARY_REASONING` est livré à `off`, et ce n'est pas une préférence.** Le modèle livré sait
+raisonner, et le p95 de 2 771 ms qui a décidé de son choix a été mesuré **sans réflexion**. Livrer le
+modèle sans le réglage donnerait un défaut qui ne reproduit pas le chiffre publié. Pour mesurer un
+modèle à son réglage d'usine — ce qu'il faut faire pour comparer — passer la variable **vide**.
+
+Piège à connaître : `reasoning.exclude` d'OpenRouter dit « ne me renvoie pas la trace », pas « ne
+réfléchis pas ». Mesuré sur une phrase triviale : sans réglage 6 454 ms et 268 tokens de réflexion,
+avec `exclude` 4 843 ms et **les mêmes 268 tokens**, facturés et attendus pour rien ; avec `off`,
+983 ms et zéro token. `effort: minimal` ne coupe rien non plus.
+
+Et tous ne l'acceptent pas : `z-ai/glm-5.3-flash`, `z-ai/glm-5.3-flashx` et `google/gemini-3.8-flash`
+répondent `400 — Reasoning is mandatory for this endpoint and cannot be disabled`.
 
 **Deux plafonds, pour deux pannes différentes.** Celui-ci protège d'un service oublié allumé ; celui
 de `instructions.openrouter.max_cost_usd_per_session`, côté jeu, protège d'un jeu qui boucle. Atteint,
@@ -124,7 +153,7 @@ elle est traitée comme une **ablation à publier**, pas comme un acquis (voir c
 
 ```bash
 cd service
-python -m pytest tests/ -q          # 50 tests, ~0,5 s
+python -m pytest tests/ -q          # 58 tests, ~0,5 s
 ```
 
 Aucun n'ouvre de connexion et aucun ne demande de clé : le fournisseur est un `ScriptedProvider` à qui
@@ -147,7 +176,7 @@ fausser un tableau quelques semaines plus tard.
 
 ```bash
 python -m evals.run --dry-run                                   # vérifie le harnais, sans réseau
-python -m evals.run --model qwen/qwen3.8-flash
+python -m evals.run --model deepseek/deepseek-v4.1-flash
 python -m evals.run --model x --model y --model z               # la comparaison
 python -m evals.run --model x --no-digest                       # ablation 1
 python -m evals.run --model x --few-shot 4                      # ablation 2
@@ -158,10 +187,36 @@ y compris s'il est mauvais : c'est ce que les quatre portillons existent pour ra
 qui rend la démonstration honnête. Un tableau qui ne publierait que le taux de compilation dirait
 qu'un modèle complaisant est le meilleur.
 
-`evals/results.md` est la sortie de ces commandes. Le `--dry-run` en produit déjà une version, mais
-elle ne mesure **que le harnais** : le fournisseur y est un bouchon qui refuse tout, si bien que son
-« 0 % de faux acceptés » est un contrôle d'arithmétique et non un résultat. Le vrai tableau demande
-une clé OpenRouter et des appels facturés ; le fichier est ignoré par git tant qu'il n'est pas réel.
+### Les résultats
+
+**Quinze modèles soumis, onze mesurés, deux générations de prompt : [`evals/README.md`](evals/README.md).**
+C'est le dossier à lire ; ce qui suit n'en est que la tête.
+
+| Modèle | Compil. | Refus corr. | **Faux acc.** | p95 | $/instr. |
+|---|---|---|---|---|---|
+| **`deepseek/deepseek-v4.1-flash`** — **livré** | 80 % | 85 % | **0 %** | **2 771 ms** | 0,00010 $ |
+| `mistralai/mistral-medium-3-5` | 95 % | 81 % | 8 % | 3 376 ms | 0,00393 $ |
+| `inference-net/schematron-v2-turbo` | 90 % | 8 % | **85 %** | 6 201 ms | 0,00009 $ |
+| `qwen/qwen3.8-flash` — livré jusqu'au 21/09/2026 | 40 % | 85 % | **0 %** | **21 928 ms** | 0,00007 $ |
+
+Trois choses s'y lisent, et aucune n'aurait été trouvée par relecture :
+
+* **le plafond était le prompt, pas le modèle** — 163 phrases traduisibles refusées contre 29
+  traduites de travers, un rapport de 5,6 contre 1, dû à trois défauts de *définition* dans le prompt
+  système (`preference_not_constraint` mangeait `penalize`, `conditional_not_supported` mangeait
+  `require_before`). **Mesuré à modèle constant : 42 % → 78 % de compilation**, au prix de 4 points
+  de faux acceptés ;
+* **la latence décidait, pas l'exactitude** — les deux meilleurs taux de compilation de la première
+  génération appartenaient à des modèles dont le p95 était de 22 s et 267 s, hors de portée du
+  `timeout_ms` de 8 000 du jeu ;
+* **un modèle à 90 % de compilation peut être le pire du tableau** — `schematron-v2-turbo` traduit
+  tout, y compris l'injection de prompt du corpus, avec 85 % de faux acceptés. C'est la justification
+  de cette colonne, arrivée toute seule dans l'échantillon.
+
+`evals/results.md` est la sortie brute de ces commandes, et le `--dry-run` en produit déjà une
+version — mais elle ne mesure **que le harnais** : le fournisseur y est un bouchon qui refuse tout, si
+bien que son « 0 % de faux acceptés » est un contrôle d'arithmétique et non un résultat. Ce fichier-là
+est ignoré par git ; les passages réels sont versionnés sous `evals/results.*.md`.
 
 Le rapport s'écrit sur disque **avant** d'être affiché. Ce n'est pas un détail : un passage complet
 coûte des appels facturés, et la console Windows — en cp1252 — ne sait pas rendre les flèches du
@@ -184,7 +239,7 @@ tableau. Elle a déjà tué un passage entièrement réussi.
   "constraint": { "form": "require_before", "predicate": "at(agent, group)",
                   "action_class": "enter:building", "factor": null },
   "rationale": "regroupement exige avant tout deplacement vers un lieu de type batiment",
-  "model": "qwen/qwen3.8-flash",
+  "model": "deepseek/deepseek-v4.1-flash",
   "latency_ms": 1240,
   "tokens": { "prompt": 890, "completion": 64 },
   "cost_usd": 0.0012

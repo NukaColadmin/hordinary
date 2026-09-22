@@ -54,7 +54,7 @@ public static class PddlDomainBuilder
             Name = name,
             Requirements = Requirements,
             Types = [.. PlanningObjectTypes.Names.Order(StringComparer.Ordinal)],
-            Constants = Constants(types),
+            Constants = Constants(types, landmarks),
             Predicates = Predicates(types, locationKinds),
             Functions = [new PddlFunction(PddlIncrease.TotalCost, [])],
             Actions = [.. schemas.Select(schema => Translate(schema, types))],
@@ -120,19 +120,54 @@ public static class PddlDomainBuilder
     }
 
     /// <summary>
-    /// Les constantes du domaine : les symboles nommes en dur par une precondition ou un effet, sauf
-    /// ceux de type <c>location</c>.
+    /// Les constantes du domaine : <b>tous</b> les symboles nommes en dur par une precondition ou un
+    /// effet, quel que soit leur type.
     ///
-    /// La ligne de partage n'est pas arbitraire. Un lieu depend de la carte et de la mission —
-    /// <c>objective_zone</c> n'est pas la meme pharmacie d'une partie a l'autre — donc il appartient
-    /// au <b>probleme</b>. <c>agent</c>, <c>objective</c> ou <c>remedy</c> sont des symboles du
-    /// langage, vrais pour toute partie : ils appartiennent au domaine.
+    /// <para>
+    /// Il y avait ici une exception pour <c>location</c>, au motif qu'un lieu depend de la carte et de
+    /// la mission — <c>objective_zone</c> n'est pas la meme pharmacie d'une partie a l'autre — donc
+    /// qu'il appartient au probleme. Le raisonnement confond deux choses : ce qui varie d'une partie a
+    /// l'autre, ce n'est pas le <b>symbole</b>, c'est ce qui est <b>vrai de lui</b>. Et ce qui est vrai
+    /// de lui, c'est deja le <c>(:init …)</c> du probleme qui le dit.
+    /// </para>
+    ///
+    /// <para>
+    /// PDDL, lui, ne laisse pas le choix : un symbole cite dans le corps d'une action doit etre une
+    /// constante du domaine ou un parametre du schema, sans quoi le domaine ne se lit pas seul. Fast
+    /// Downward refusait donc le domaine livre, des la premiere action qui nomme un lieu —
+    /// <c>Undefined object: objective_zone</c>, sur <c>LocateObjective</c>. Le defaut a survecu a toute
+    /// la spec G parce que le binaire n'avait jamais ete lance : c'est le premier appel qui l'a rendu.
+    /// </para>
+    ///
+    /// <para>
+    /// Les reperes y sont <b>tous</b>, et pas seulement ceux qu'une action nomme aujourd'hui. La
+    /// raison tient au livrable 15 : une contrainte du joueur compile en precondition, donc n'importe
+    /// quel symbole du vocabulaire peut se retrouver demain dans un corps d'action. S'en tenir aux
+    /// symboles deja nommes marchait pour le domaine livre et cassait des la premiere consigne —
+    /// « avant d'entrer dans un batiment, regroupez-vous » scinde <c>MoveToLocation</c> en un schema
+    /// qui nomme <c>group</c>, et Fast Downward repondait <c>Undefined object: group</c>. La regle
+    /// sure est donc celle-ci : <b>le vocabulaire nommable est exactement l'ensemble des constantes</b>,
+    /// ce qui rend l'invariant structurel au lieu de le confier a la vigilance du compilateur.
+    /// </para>
+    ///
+    /// <para>
+    /// Les lieux propres a une carte — <c>entrepot_ouest</c>, decouvert par la perception — n'en sont
+    /// pas : ils n'appartiennent pas au vocabulaire du domaine et restent des objets du probleme.
+    /// <see cref="PddlProblemBuilder"/> ecarte deja des <c>(:objects …)</c> ce que le domaine declare,
+    /// donc rien n'est a y changer — sans quoi le probleme redeclarerait ces symboles et Fast Downward
+    /// refuserait pour <c>duplicate objects</c>.
+    /// </para>
     /// </summary>
-    private static List<PddlParameter> Constants(Typing types)
-        => [.. types.Constants
-            .Where(pair => !pair.Value.Equals(PlanningObjectTypes.Location, StringComparison.OrdinalIgnoreCase))
+    private static List<PddlParameter> Constants(Typing types, IEnumerable<string> landmarks)
+    {
+        var declared = new Dictionary<string, string>(types.Constants, StringComparer.OrdinalIgnoreCase);
+
+        foreach (string landmark in landmarks) declared.TryAdd(landmark, PlanningObjectTypes.Location);
+
+        return [.. declared
             .OrderBy(pair => pair.Key, StringComparer.Ordinal)
             .Select(pair => new PddlParameter(pair.Key, pair.Value))];
+    }
 
     private static List<string> Landmarks(PlanningDomain domain, Typing types)
     {

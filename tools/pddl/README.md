@@ -56,18 +56,35 @@ non-dérive signalerait alors du bruit plutôt qu'un changement.
 
 ## Relancer Fast Downward et VAL
 
-**Aucun des deux n'est installé ni requis.** Le jeu n'acquiert aucune dépendance : aucun planificateur
-tiers ne tourne pendant une partie, et la suite de tests passe sans eux. Ce qui suit est la procédure
-hors ligne, le jour où on la fait.
+**Les deux ont été lancés.** Les résultats sont dans [`results.md`](./results.md) — dont le premier
+passage a trouvé quatre défauts d'export que rien d'autre n'aurait montrés, et où le support PDDL 3
+de VAL, réserve de longue date de la spec, est confirmé.
+
+Le jeu n'acquiert toujours aucune dépendance : aucun planificateur tiers ne tourne pendant une partie,
+et la suite de tests passe sans eux. Mais elle **s'en sert quand ils sont là**, et une image Docker
+suffit à les rendre disponibles :
 
 ```bash
-# Fast Downward — le domaine est-il bien formé, et un plan existe-t-il ?
-./fast-downward.py tools/pddl/domain.pddl tools/pddl/snapshots/10-completeplayermission.pddl \
+docker pull aibasel/downward          # une fois. Les tests ne tirent jamais l'image eux-memes.
+
+# Le domaine est-il bien formé, et un plan existe-t-il ?
+docker run --rm -v "$PWD/tools/pddl:/benchmarks" -w /tmp aibasel/downward \
+    /benchmarks/domain.pddl /benchmarks/snapshots/10-completeplayermission.pddl \
     --search "astar(lmcut())"
 
-# VAL — le plan que GBFS avait produit respecte-t-il la sémantique du domaine ?
-validate tools/pddl/domain.pddl tools/pddl/snapshots/10-completeplayermission.pddl plan.txt
+# VAL — le plan respecte-t-il la sémantique du domaine, contraintes PDDL 3 comprises ?
+docker build -t hordinary-val tools/pddl/val     # pas d'image officielle : celle-ci compile VAL 4
+docker run --rm -v "<dossier>:/data" hordinary-val -v \
+    /data/domain.declared.pddl /data/problem.pddl /data/plan.txt
 ```
+
+Le `-v` de VAL n'est pas décoratif : sans lui, un plan refusé pour violation de contrainte rend
+« `Plan failed to execute` » et rien de plus.
+
+`Tests/SatisfiabilityTests.cs` cherche le planificateur dans cet ordre : la variable
+`HORDINARY_FAST_DOWNWARD`, le PATH, puis l'image Docker (`HORDINARY_FAST_DOWNWARD_IMAGE` pour en
+désigner une autre). Les tests d'intégration ne sont pas marqués `Skip` : ils **changent de question**
+selon ce qui est trouvé.
 
 Les deux prouvent des choses différentes, et c'est pour ça qu'il en faut deux :
 
@@ -75,8 +92,9 @@ Les deux prouvent des choses différentes, et c'est pour ça qu'il en faut deux 
 * **VAL qui valide le plan de Hordinary** prouve que notre planificateur respecte la sémantique qu'il
   prétend implémenter.
 
-Le tableau des dix — plan FD, plan GBFS, écart — vivra dans `results.md`, qui n'existe pas encore
-faute d'avoir lancé les binaires.
+Le tableau des dix est dans [`results.md`](./results.md). La colonne « plan GBFS » y manque encore :
+la capture ne conserve pas le plan que GBFS avait produit au moment de l'instantané, donc on sait que
+le domaine est bien formé, pas que les deux planificateurs sont d'accord.
 
 ### Livrable 15
 
@@ -86,34 +104,32 @@ Une mission sous instruction tactique écrit en plus, sous `missions/<id>/` (gé
   donne à Fast Downward : il ne prend pas les contraintes de trajectoire PDDL 3 en entrée ;
 * `domain.declared.pddl` — le même **avec** le bloc PDDL 3, pour VAL.
 
-## À regarder au premier lancement
+## Ce que le premier lancement a tranché
 
-Trois points connus, qu'aucun test local ne peut trancher sans les binaires.
+Trois points attendaient les binaires. Ils ont été posés à Fast Downward, et le détail est dans
+[`results.md`](./results.md).
 
-**1. `ally` est à la fois un type et un objet.** Le domaine déclare `(:types ally … )` et les
-instantanés déclarent un lieu nommé `ally` — le repère « l'allié le plus proche », que
-`ShareKnowledge` lit dans `(at agent ally)`. Les deux vivent dans des espaces de noms distincts au
-sens de la grammaire PDDL, et la plupart des analyseurs l'acceptent ; certains s'en plaignent. Le jeu
-a déjà le mécanisme pour le corriger si nécessaire — `SymbolicStateBuilder.LocationAliases` renomme
-déjà `objective` en `objective_spot` pour exactement cette raison — mais le faire change le
-vocabulaire du domaine livré, donc on attend de savoir si c'est nécessaire.
+**1. `ally` est à la fois un type et un objet — accepté.** Le domaine déclare `(:types ally …)` et une
+constante `ally`, le repère « l'allié le plus proche » que `ShareKnowledge` lit dans `(at agent ally)`.
+Les deux espaces de noms sont bien distincts pour l'analyseur. Le renommage que
+`SymbolicStateBuilder.LocationAliases` aurait permis n'est donc pas nécessaire, et n'a pas été fait :
+la collision reste un piège de lecture pour un humain, pas pour l'outil.
 
-**2. L'état initial place l'agent en plusieurs endroits à la fois.** `10-completeplayermission.pddl`
-porte `(at agent cover)` et `(at agent objective_zone)` ensemble. Le domaine, lui, est correct :
-`MoveToLocation` efface toutes les positions avant d'en poser une
+**2. L'état initial place l'agent en plusieurs endroits à la fois — accepté, sans effet mesuré.**
+`10-completeplayermission.pddl` porte `(at agent cover)` et `(at agent objective_zone)` ensemble. Le
+domaine, lui, est correct : `MoveToLocation` efface toutes les positions avant d'en poser une
 (`(forall (?l - location) (not (at agent ?l)))`), donc `at` redevient mono-valué dès la première
 action. La multiplicité vient de ce que les repères se recouvrent — le survivant se tient sur une case
 qui est en même temps la zone objectif et un abri.
 
-Conséquence concrète, et c'est elle qui vaut la note : **le premier `MoveToLocation` détruit toutes ces
-positions et rien ne peut en restaurer plus d'une.** GBFS ne s'en aperçoit pas, parce qu'il reconstruit
-l'état symbolique depuis la perception à chaque replanification ; le PDDL exporté n'a que son `:init`.
-C'est une divergence réelle entre les deux rendus, pas un détail de syntaxe — et exactement ce que le
-portillon 3 existe pour attraper. La corriger demanderait de distinguer *être à un endroit* de *être
-auprès d'un repère*, soit un second prédicat : on attend de savoir si Fast Downward s'en plaint.
+La conséquence reste réelle : **le premier `MoveToLocation` détruit toutes ces positions et rien ne
+peut en restaurer plus d'une.** GBFS ne s'en aperçoit pas, parce qu'il reconstruit l'état symbolique
+depuis la perception à chaque replanification ; le PDDL exporté n'a que son `:init`. Aucun des dix
+instantanés ne la fait apparaître, parce qu'aucun but n'exige d'être à deux endroits ensuite — donc le
+point n'est pas clos, il est sans effet mesuré, ce qui n'est pas la même chose.
 
-**3. Fast Downward peut déclarer morte une action qui ne l'est pas.** Certains prédicats sont posés
-par le moteur (`WorldPlanRuntime`, la perception, les catégories de lieux) et par aucune action du
-fichier. Le domaine décrit ce que le planificateur peut faire, pas ce que le moteur fait par ailleurs.
-Cette classe de faux positifs est documentée dans `Specs/G-export-pddl.md` et n'est pas un défaut de
-l'export.
+**3. Fast Downward peut déclarer morte une action qui ne l'est pas — non contredit.** Certains
+prédicats sont posés par le moteur (`WorldPlanRuntime`, la perception, les catégories de lieux) et par
+aucune action du fichier. Le domaine décrit ce que le planificateur peut faire, pas ce que le moteur
+fait par ailleurs. Cette classe de faux positifs est documentée dans `Specs/G-export-pddl.md` et n'est
+pas un défaut de l'export ; le passage n'en a caractérisé aucun cas, faute d'occasion.

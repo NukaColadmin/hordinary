@@ -44,8 +44,19 @@ def block(text: str, header: str) -> str:
     return ""
 
 
+#: La marque du depot. Le service tourne aussi en conteneur, ou il n'emporte que `service/` — le
+#: texte PDDL du jeu n'y est pas, et ne peut pas y etre sans recopier une source de verite.
+REPOSITORY = DOMAIN_PATH.parents[2] / "Hordinary.sln"
+
+
 @pytest.fixture(scope="module")
 def domain_text() -> str:
+    # Hors du depot, ces trois tests n'ont pas de sujet, et le dire vaut mieux que d'echouer : le
+    # passage qui fait autorite est celui du depot. Dans le depot, en revanche, un domaine absent
+    # reste une panne — c'est precisement la derive que ce fichier surveille.
+    if not REPOSITORY.exists():
+        pytest.skip(f"{DOMAIN_PATH} est hors de portee : execution hors du depot (conteneur).")
+
     assert DOMAIN_PATH.exists(), (
         f"{DOMAIN_PATH} est absent. Regenerer : "
         "HORDINARY_PDDL_REGEN=1 dotnet test --filter PddlArtifactsTests"
