@@ -362,6 +362,28 @@ public class OutcomeTests
     }
 
     /// <summary>
+    /// La confiance dans le plan est celle du plan <b>courant</b>. Un survivant bloque sur un
+    /// objectif que le planificateur ne sait pas resoudre l'a a zero ; sans remise a un, le rappel
+    /// se scorait au plancher de <c>plan_confidence</c> et perdait contre la fouille impossible —
+    /// la mission ne se concluait jamais. Le deroule complet est dans « Ni vitre, ni effraction »
+    /// (<c>DemoScenarioTests</c>), qui exige un bilan.
+    /// </summary>
+    [Fact]
+    public void Un_ordre_neuf_ne_paie_pas_l_echec_du_plan_precedent()
+    {
+        var mission = new MissionRun(settings: new MissionSettings { TimeLimit = 60d });
+
+        mission.Alice.Position = mission.Spawn(ZoneKind.Pharmacy);
+        mission.Alice.PlanConfidence = 0f;
+
+        mission.Tracker.Evaluate(61d);
+
+        Assert.True(mission.Tracker.Recalled);
+        Assert.NotNull(mission.Alice.Mission);
+        Assert.Equal(1f, mission.Alice.PlanConfidence);
+    }
+
+    /// <summary>
     /// Zero desamorce le chronometre : le van attend indefiniment. Ce n'est pas un reglage de
     /// confort — c'est ce qui rend observables les tests qui mesurent autre chose que l'horloge.
     /// </summary>

@@ -132,6 +132,14 @@ meme code, pas deux copies qui divergent.
 elles obeissent a `debug.commands` et ne repondent plus quand le mode debug est eteint. Les autres
 sont celles du joueur et repondent toujours.
 
+Le fichier livre les ferme (`debug.commands` et `debug.hud_text` a `false`) : un joueur n'a pas a
+deplacer une horde d'une pression sur la barre d'espace. `-- --observateur` les rouvre, avec les
+panneaux de texte, **pour la session** (`DebugSettings.LocallyObserved`) — c'est ce qu'il faut pour
+filmer un plan, ses scores et son journal sans retoucher un fichier versionne, sur le modele de
+`-- --ia` pour le service de langage. Le reglage est fixe au lancement, pas basculable en cours de
+partie : deux parties lancees de meme restent comparables. Guide de tournage :
+[`enregistrer-la-demo.md`](enregistrer-la-demo.md).
+
 Il y a **trois** survivants depuis le livrable 7, et l'interface le prend au serieux : elle n'affiche
 jamais « ce que le groupe sait », parce que cela n'existe pas. `Tab` change de point de vue, et la
 carte mentale, la carte de chaleur, les scores, le plan et le journal changent avec lui. Le
@@ -606,7 +614,10 @@ permet de fuir *dans la bonne direction*.
 
 Le danger percu s'accumule en probabilite plutot qu'en maximum : trois zombies autour de soi
 inquietent plus qu'un seul. Un bruit compte pour moitie (`noise_danger_weight`) — entendre n'est pas
-voir.
+voir. Et tous les bruits ne comptent pas : un survivant ne prend ni un pas, ni une course, ni une porte
+poussee en passant pour une menace, et pas davantage un fracas dont il voit l'auteur, un camarade
+(`PerceptionSystem.Listen`, voir « Defauts reveles ») — les zombies n'emettent aucun bruit dans la
+simulation, et ce qui s'entend de pas est toujours celui du groupe.
 
 ### Ce que fait Alice de son objectif
 
@@ -654,8 +665,8 @@ pourquoi fouiller ou ramasser porte sur le local entier quand on est a l'interie
 ### Une action est une donnee, pas une classe
 
 Il n'y a ni `MoveToAction` ni `OpenDoorAction`. Le code connait **huit verbes primitifs** — `toPos`,
-`take`, `put`, `setFlag`, `wait`, `damage`, `push`, `emitNoise` — et les vingt-cinq actions livrees
-sont vingt-cinq entrees de [`config/planner_domain.json`](config/planner_domain.json) :
+`take`, `put`, `setFlag`, `wait`, `damage`, `push`, `emitNoise` — et les vingt-neuf actions livrees
+sont vingt-neuf entrees de [`config/planner_domain.json`](config/planner_domain.json) :
 
 ```json
 {
@@ -679,12 +690,12 @@ sont appliquees avant les ajouts.
 different. `AttackZombie` est un `damage` a mains nues, `AttackWithWeapon` le meme verbe avec
 `amount: 0`, qui veut dire « ce que je tiens » et fait lire les degats dans `config/weapons.json`.
 
-Le verbe `emitNoise` n'a plus d'action qui l'emploie : `ThrowFirecracker` a ete retiree du domaine en
-meme temps que `CreateNoiseDistraction`, l'objectif `CreateDistraction` et le fait
-`distraction_created`. Faire du bruit expres pour attirer la horde ailleurs n'est pas un reflexe,
-c'est un sacrifice calcule — voir « Ce qui a ete retire, et pourquoi ». Le moteur sait toujours
-l'executer (`WorldPlanRuntime.ThrowNoise`, et l'effet `emit_noise` du petard de `config/items.json`) :
-c'est le demandeur qui manque, et le livrable 15 doit le fournir.
+Le verbe `emitNoise` a retrouve une action, `ThrowFirecracker`, mais pas son ancien demandeur :
+`CreateNoiseDistraction`, l'objectif `CreateDistraction` et le fait `distraction_created` restent
+retires. Faire du bruit expres pour attirer la horde ailleurs n'est pas un reflexe, c'est un sacrifice
+calcule — voir « Ce qui a ete retire, et pourquoi ». Le petard pose `diversion_made`, que rien ne
+reclame : c'est une consigne du joueur qui le rend necessaire (« Mode demonstration », « Cooperation
+entre survivants »).
 
 Un verbe inconnu, un parametre manquant, une variable non declaree ou un type d'objet inexistant sont
 refuses **au chargement**, avec le vocabulaire disponible.
@@ -692,7 +703,7 @@ refuses **au chargement**, avec le vocabulaire disponible.
 ### Ce que le domaine sait faire, et ce qui y dort
 
 Une action n'est jouable que si une chaine arriere la relie a un but symbolique, et si un objectif de
-la Utility AI demande ce but. Les vingt-cinq schemas ne se valent donc pas, et c'est mesurable : le
+la Utility AI demande ce but. Les vingt-neuf schemas ne se valent donc pas, et c'est mesurable : le
 tri de `ActionRelevance` part des faits que le but reclame et remonte jusqu'au point fixe, si bien
 qu'une action dont **aucun** effet n'entre dans cette cloture ne peut apparaitre dans aucun plan, pour
 aucun objectif.
@@ -703,7 +714,8 @@ aucun objectif.
 | **Atteignables** — chaine complete, selon la partie | `OpenDoor`, `BreakWindow`, `ReachExtraction`, `EscapeLocation`, `Hide`, `PushBackZombie`, `AttackZombie`, `HealSelf`, `EquipWeapon`, `AttackWithWeapon`, `PickUpItem` | une porte fermee, un zombie au contact, une blessure, une arme au sol |
 | **Degeneree** | `DropItem` | elle survit au tri par `item_at` et `!has`, mais aucun but ne demande de poser quoi que ce soit : elle ne peut apparaitre que dans un cycle que GBFS ne prefere jamais |
 | **Inertes** — jamais pertinentes, quel que soit le but | `Observe`, `Wait`, `UseItem`, `PushHeavyObject` | leurs effets — `observed`, `waited`, `used`, `pushed` — ne sont lus par aucune precondition et par aucun but |
-| **Sans demandeur** | `ShareKnowledge` | le but symbolique existe, aucun objectif de `utility_goals.json` ne le reclame |
+| **Sans demandeur** | `ShareKnowledge` | le but symbolique existe, aucun objectif de `utility_goals.json` ne le reclame ; `require_before(knowledge_shared, ReachExtraction)` la reveille |
+| **En attente d'une consigne** | `ThrowFirecracker`, `BorrowWeapon`, `TendAlly`, `OrderAlly`, `OrderBand` | leurs faits — `diversion_made`, `armed`, `band_tended`, `ordered(lieu)`, `band_ordered(lieu)` — ne sont reclames par personne ; une consigne `require_before(<fait>, enter:building)` en fait la condition d'entree, et le planificateur remonte jusqu'au geste |
 
 Les quatre inertes ne sont pas des oublis. `Observe`, `Wait` et `DropItem` sont listees par
 [`Specs/05`](../Specs/05-planification-gbfs.md) parmi les actions a couvrir : elles sont ecrites, et il
@@ -715,8 +727,9 @@ Deux consequences a connaitre avant d'ecrire une instruction tactique :
 
 * **`PickUpItem` ne sert plus qu'a s'armer.** Le seul chemin qui y mene passe par `EquipWeapon` →
   `AttackWithWeapon` → `FightZombie`. Il y en avait un second, `ThrowFirecracker` →
-  `CreateDistraction`, qui est parti avec la diversion. Aucun but ne dit « ramasse ce qui traine », et
-  ramasser des vivres n'est donc pas planifiable.
+  `CreateDistraction`, qui est parti avec la diversion — et le petard revenu ne le retablit pas :
+  `ThrowFirecracker` lance ce qu'on **porte** (`noisemaker`), pas ce qui traine. Aucun but ne dit
+  « ramasse ce qui traine », et ramasser des vivres n'est donc pas planifiable.
 * **Un blesse ne peut pas planifier de ramasser un bandage qu'il voit.** `HealSelf` demande
   `has(agent, remedy)`, et `remedy` n'est declare par `SymbolicStateBuilder` que si le sac en contient
   **deja** un : ce qui soigne au sol reste un `item_at(bandage, spot_x_y)` que rien ne relie au soin.
@@ -1133,7 +1146,9 @@ le meme statut :
   `MissionOrder` que la Utility AI met en concurrence avec ses propres objectifs. Il peut etre mis de
   cote au profit d'un danger immediat, et il peut aussi **echouer a etre donne** : on n'envoie
   personne a un endroit dont il ignore l'existence. Chaque ordre est resolu dans la memoire de celui
-  qui le recoit, jamais sur la carte reelle ;
+  qui le recoit, jamais sur la carte reelle. Un ordre peut aussi venir d'un **camarade**
+  (`OrderAlly`, ou `OrderBand` pour tout le groupe, voir « Cooperation entre survivants ») : meme
+  `MissionOrder`, mais temporaire — il met celui du joueur de cote et le rend une fois resolu ;
 * une **consigne permanente** (`ForbidNoise`, `AllowNoise`, `ForbidZone`, `AllowZone`) ne se negocie
   pas. Elle ne penalise pas un score : elle ampute le repertoire. Interdire le bruit retire les
   actions au-dela de 2 du domaine **avant** la recherche, et GBFS trouve un autre plan — ou n'en
@@ -1221,6 +1236,20 @@ mange), vide la scene de tout ce que la mission y avait pose, rend aux couches d
 dessinee, et rouvre l'ecran de camp avec le verdict en tete et les offres du lendemain. Le prototype
 s'arretait sur un verdict fige : tout ce que le camp sait faire — consommer, entreposer, reproposer —
 n'arrivait jamais, et le jour de campagne ne bougeant pas, les trois memes offres seraient revenues.
+
+Ce qui s'affiche en tete est un bilan (`MissionReport`), choisi pour ce qu'il change a la decision
+suivante : qui est rentre et dans quel etat, ce que la sortie a rapporte, ce que le pret a coute, si
+les consignes ont tenu, et combien de jours le camp tient encore. Il se dresse en trois temps, parce
+que ces faits n'existent pas au meme instant : l'etat du groupe **au verdict** (c'est l'instant que le
+verdict juge, pas celui ou le camp reprend la main), ce qui rentre au camp **au reglement** — que
+`GameRoot` inscrit parce que c'est lui qui vide les sacs —, et l'autonomie **apres la journee**.
+
+Le pret se compte au groupe, pas au survivant : « non rendu » est ce que le camp a confie moins ce
+qui est rentre a l'entrepot, quel que soit celui qui l'a rapporte. Compter au survivant aurait declare
+perdue l'arme qu'un camarade a ramassee sur un corps et remise sur l'etagere. Un bandage consomme en
+route y figure aussi, et c'est juste : il ne sera plus sur l'etagere demain. Une violation du
+portillon 4 y est imputee au compilateur, en toutes lettres, pour ne pas se lire comme une
+desobeissance du survivant.
 
 Le nettoyage passe par un registre (`AddMissionChild`) plutot que par une recherche de noeuds par
 leur nom : ce qui appartient a la mission y est inscrit en y entrant, et un noeud ajoute demain sera
@@ -1847,7 +1876,9 @@ la forme — c'est ce que verifient `Un_penalize_sous_gbfs_avertit_sans_refuser`
 
 ### Sans modele de langage
 
-`instructions.enabled` est livre a `false` : aucune requete n'est emise et les huit instructions
+`instructions.enabled` est livre a `false` — pour l'allumer le temps d'une session sans ecrire `true`
+dans un fichier versionne, lancer le jeu avec `-- --ia` ou `HORDINARY_IA=1`
+(`InstructionSettings.LocallyEnabled`) : aucune requete n'est emise et les huit instructions
 pre-ecrites de [`config/instruction_presets.json`](config/instruction_presets.json) restent
 proposees. Ce qui est desactive est la **traduction** d'une phrase libre en contrainte, pas les
 contraintes : les portillons, le compilateur et le verificateur tournent exactement pareil dans les
@@ -2030,7 +2061,7 @@ dans la mission. Rejouer ne reinterroge aucun modele.
   distincts pour son analyseur ; le renommage que `SymbolicStateBuilder.LocationAliases` aurait permis
   n'est donc pas necessaire et n'a pas ete fait. La collision reste un piege de lecture pour un humain,
   pas pour l'outil.
-* Le service de langage **tourne** : 58 tests Python passent (CPython 3.12.10), `uvicorn` sert
+* Le service de langage **tourne** : 62 tests Python passent (CPython 3.12.10), `uvicorn` sert
   `/health` et `/instruction`, et le harnais d'evaluation se deroule de bout en bout en `--dry-run`.
   Trois defauts n'ont ete vus qu'en l'executant, et ils valent d'etre nommes parce qu'ils sont
   typiques de ce qu'une relecture laisse passer : un temoin negatif portant sur `barricaded`, symbole
@@ -2053,6 +2084,421 @@ dans la mission. Rejouer ne reinterroge aucun modele.
 * La compilation reste **correcte et non complete** : la lecture « immediatement avant » est plus
   stricte que le `sometime-before` de PDDL 3. Le verificateur de trajectoire, lui, lit la modalite au
   sens large — sans quoi il ne verifierait plus la contrainte mais sa traduction.
+
+## Mode demonstration
+
+Un ecran de choix remplace l'ecran de camp quand `demo.enabled` est vrai (ou avec `-- --demo` en
+ligne de commande) : une **grille**, puis un **scenario** d'essai, et une case pour jouer la prise
+avec ou sans ses consignes. Le mode sert a tourner des clips, et il existe parce qu'une mission du
+camp ne garantit rien — le quartier est tire, la horde aussi, et la vitre qu'on voulait filmer n'a
+peut-etre jamais ete sur le chemin. Un scenario isole **une** consigne du joueur (livrable 15) ou
+**un** geste du survivant, sur un terrain dessine pour qu'il s'y produise.
+
+Les grilles et les scenarios sont des donnees ([`config/demo_scenarios.json`](../config/demo_scenarios.json),
+dont l'en-tete decrit le format) : quatre grilles, vingt-quatre scenarios — cinq de consigne, sept
+d'action (effraction, combat arme, sans arme, fuite, soin, partage, rappel), sept de cooperation
+(plus bas), quatre de **strategies combinees** (plus bas encore) et une **carte blanche** (paragraphe
+suivant). Une grille est dessinee en deux couches de caracteres — le terrain, avec des **reperes**
+que les scenarios citent, et les lieux, une lettre par case —, et `DemoGrid.Build` en fait un
+`GeneratedDistrict`. C'est le choix qui a tout simplifie : le jeu peint, peuple et joue une grille
+par le chemin du livrable 13, `GameRoot.UseDistrict`, sans apprendre qu'elle a ete ecrite a la main.
+Un scenario devient une `MissionDefinition` ; apres la carte, une mission du camp et une prise
+partagent `GameRoot.Launch` a la ligne pres.
+
+Ce qu'une prise ecarte l'est volontairement : **ni peage, ni entrepot, ni journee**. Le paquetage est
+compose sur un stock qui n'a que lui (`DemoStage.Loadout`, par `CampLoadout` pour que le sac obeisse
+aux vraies limites), et le camp de la partie n'est jamais touche. Une prise ne consomme rien, sans
+quoi la troisieme ne serait plus la premiere.
+
+**Chaque scenario dit ce qu'il montre, et la suite le verifie.** Le champ `expect` nomme les actions
+ou evenements qui doivent survenir (`shows`) et ceux qui ne le doivent pas (`never`), avec les
+consignes et sans elles. `Tests/DemoRun.cs` deroule un scenario sans Godot — horde comprise, ce que
+`MissionRun` n'a pas — et `Tests/DemoScenarioTests.cs` exige ces attentes pour les douze, plus le
+contraste des cinq scenarios de consigne : un scenario de consigne pourrait sinon « marcher » parce que
+le geste interdit n'aurait de toute facon jamais eu lieu. Pour la meme raison, une consigne peut ne
+promettre qu'une absence (« jamais `EscapeLocation` ») a condition que son contraste montre le geste :
+c'est le contraste qui prouve que l'absence tient a la consigne. Le jeu fait la meme lecture
+(`DemoOutcome.Failures`) et l'affiche en tete du bilan : « PRISE CONFORME » ou l'ecart en toutes
+lettres.
+
+**La carte blanche** (`DemoFocus.Strategy`, scenario `carte_blanche`) est la seule prise dont les
+consignes ne sont pas dans le fichier : c'est le joueur qui les ecrit, a l'ecran de demonstration,
+dans le meme `InstructionPanel` qu'au camp — en francais traduit par le service de langage quand
+`instructions.enabled` est vrai, dans la grammaire fermee sinon, consignes pre-ecrites comprises. Le
+panneau ne traduit ni ne verifie rien lui-meme, et `GameRoot.Instruct` recompile ensuite contre la
+grille comme pour toute prise : un second chemin de saisie aurait ete un second endroit ou accepter
+une consigne a tort. La grille est la superette, et le placement reunit ce que les prises d'entraide
+separent — deux zombies devant la porte, Bob **blesse** avec un petard, une batte et un pied-de-biche,
+Alice les mains vides, Claire et deux bandages —, pour que chacune des six consignes d'entraide
+pre-ecrites ait de quoi agir. Sans la blessure de Bob, « Soignez les blesses avant d'entrer » etait
+acceptee et ne faisait rien : une strategie validee sans effet visible est ce qu'une carte blanche ne
+doit pas montrer.
+
+Le fichier ne peut pas savoir ce que fera la consigne d'un joueur. L'attente ecrite est donc celle du
+groupe **livre a lui-meme** (partage, victoire, aucun geste d'entraide), verifiee comme les autres ;
+une prise jouee sous consignes n'en a pas (`DemoScenario.Expected` rend `null`), et son bilan dit
+« PRISE LIBRE » suivi du deroule (`DemoEvents.Chronicle`) et de chaque consigne, phrase du joueur et
+contrainte jouee — celles que la compilation a refusees sur cette carte sont listees a part, sans
+effet. `La_carte_blanche_joue_la_strategie_que_le_joueur_lui_donne` verifie les deux moitiés : pour
+chacune des six consignes d'entraide, lue dans `config/instruction_presets.json`, le geste survient et
+la prise se conclut. Une carte blanche ne porte aucune consigne ecrite (`Validate` le refuse) : elle
+s'ajouterait en silence a celles du joueur. En headless, `-- --demo=carte_blanche
+"--consigne=<contrainte>"` (repetable) joue une consigne de la grammaire fermee, **sans** passer par le
+service : une prise lancee d'office se rejoue sans reseau et a l'identique.
+
+Ce qu'elle a montre en la faisant tourner : sous « Faites diversion avant d'entrer », le moteur perd
+la prise. Il y perdait Bob sous la horde, ecart que l'on mettait sur le compte de la cadence ; depuis
+que les pas d'un camarade ne font plus fuir le groupe (« Defauts reveles »), plus personne ne tombe,
+mais le jerrican n'est pas rapporte avant le temps imparti — le petard part, le groupe entre, la horde
+revient. Une prise libre n'a pas d'attente qui la rendrait fausse, et une diversion achete du temps
+sans le fixer. Le groupe livre a lui-meme, lui, gagne.
+
+**Le harnais joue a la cadence du jeu, et c'est la lecon principale du mode.** Sa premiere version
+avancait par pas de 0,1 s et percevait a chaque pas : elle donnait raison aux douze scenarios pendant
+que le jeu, en headless, en ratait six — les deux combats, la menace, et trois prises qui ne se
+concluaient pas. `DemoRun` deroule maintenant `GameRoot._Process` frame par frame (1/60 s), perception
+toutes les `perception.update_interval`, zombies toutes les `zombies.update_interval`, bruits forts
+signales comme `GameRoot.NoticeImportantEvents`, generateur de bruit seme sur `zombies.seed`. Et il va
+**jusqu'au bilan**, comme le jeu : une prise qui ne se conclut pas echoue, au lieu de passer parce que
+l'attente etait remplie a mi-parcours. Une horde fait d'un combat une affaire de dixiemes de seconde :
+les scenarios avec zombies ont ete retenus parmi les placements qui tiennent a 30, 50, 55, 60, 65 et
+75 images par seconde, et plusieurs placements voisins ne tenaient qu'a une seule de ces cadences.
+
+**En headless, `--fixed-fps 60` n'est pas optionnel.** Sans lui, Godot headless tourne sans
+synchronisation — une frame dure environ une milliseconde, et sa duree varie avec la charge.
+`--quit-after 30000` ne representait alors que 32 s de partie sur « Partage d'informations » : les
+« prises sans bilan » du premier passage etaient un budget de frames epuise, pas des missions bloquees.
+Avec `--fixed-fps 60`, le jeu joue exactement la frame du harnais, aussi vite que la machine le
+permet. Le 25 septembre 2026, les vingt prises et les onze contrastes sont sortis **PRISE
+CONFORME** du moteur — les strategies combinees et leurs contrastes le 28, et la serie entiere de nouveau le 28 sous `gbfs`, le reglage livre (`--fixed-fps 60 --quit-after 40000 -- --demo=<scenario> --quitter`, et
+`--sans-consignes` ; `tools/demo/prises_headless.sh` les enchaine), sans une erreur, et la carte blanche en
+« PRISE LIBRE » sous deux `--consigne` — pret d'arme et rappel general —, sans erreur non plus.
+**Apres une retouche du coeur, `dotnet build Hordinary.sln` d'abord** : `dotnet test` ne reconstruit
+pas le jeu, et un Godot qui joue l'ancien `Hordinary.Core` avec le `config/` neuf fait reussir en
+silence un predicat que l'ancien `SetFlag` ignore — `band_ordered` est sorti « PRISE CONFORME » sans
+que personne n'ait ete rappele.
+
+Deux reglages ne sont pas anodins. Le harnais desserre `planner.max_time_ms` (une horloge, voir plus
+haut), et il applique `debug.panic_enabled` comme le jeu : un scenario verifie avec la panique ne
+dirait rien d'une partie jouee sans. Un seul scenario impose `panic: true`, la fuite. La premiere
+version en imposait quatre, sur la foi du harnais au pas de 0,1 s ; a la cadence du jeu, c'est
+l'inverse qui est vrai — la panique pousse `FleeDanger` au-dessus de tout, et **le combat arme ne se
+voit que sans elle**, sous le reglage livre.
+
+Les grilles sont **sensibles**. Ajouter un cul-de-sac a la longue rue a suffi a changer l'issue de deux
+scenarios qui s'y jouent. Toute retouche se valide en relancant `DemoScenarioTests`, puis la serie
+headless.
+
+### Cooperation entre survivants
+
+Sept scenarios montrent ce qu'un survivant fait pour un autre, ou grace a lui. Six portent une
+consigne, et c'est le propos : chacune compose une **strategie de groupe** a partir de gestes que le
+domaine sait faire et qu'aucun objectif ne reclame. La regle de l'epuration — un reflexe reste au
+survivant, une strategie revient au joueur — n'est pas contournee, elle est appliquee : sans consigne,
+personne ne lance de petard, ne prete d'arme, ne soigne, ne renvoie ni ne rappelle un camarade, et chaque scenario le verifie
+par son contraste.
+
+| Scenario | Consigne | Geste | Canal de l'entraide |
+|---|---|---|---|
+| `diversion` | `require_before(diversion_made, enter:building)` | `ThrowFirecracker` | le fracas lui-meme : Alice, qui n'a rien a lancer, sait que la voie est libre parce qu'elle l'a entendu — ou parce que Bob le lui a dit |
+| `pret_d_arme` | `require_before(armed, enter:building)` | `BorrowWeapon` | la parole : on voit ce qu'un camarade tient, pas ce qu'il a dans son sac |
+| `soin_d_un_camarade` | `require_before(band_tended, enter:building)` | `TendAlly` | la parole : la sante d'un allie se raconte, elle ne se devine pas |
+| `prevenir_avant_de_rentrer` | `require_before(knowledge_shared, ReachExtraction)` | `ShareKnowledge` | aucun code : le schema dormait depuis le livrable 7 |
+| `renvoyer_au_van` | `require_before(ordered(extraction), ReachExtraction)` | `OrderAlly` | la voix : l'ordre part a qui l'entend, et se remplit par la boucle de decision de celui qui le recoit (plus bas) |
+| `rappeler_tout_le_monde` | `require_before(band_ordered(extraction), ReachExtraction)` | `OrderBand` | la voix encore, mais a chacun de ceux qui l'entendent : Bob et Claire laissent leur fouille ensemble (plus bas) |
+| `radio` | — | partage | deux radios portent la voix a quinze cases |
+
+**Trois actions, trois faits, trois reperes.** Les faits sont observes a chaque instantane
+(`SymbolicStateBuilder.CollectCooperation`, `ObservablePredicates`) et jamais reconduits d'un plan a
+l'autre : une diversion finit par s'eteindre (`utility_ai.cooperation.diversion_memory`), une morsure
+defait « le groupe est soigne ». Les reperes sont des cibles de `UtilityContext`, comme `group` ou
+`cover`, et le planificateur les lit par le meme chemin :
+
+* `lender` — l'allie le plus proche qui a **dit** porter une arme de rechange. `EntityBelief` gagne un
+  champ `SpareWeapon`, transporte par `KnowledgeSharing.Talk` avec la sante et la panique ; une chaine
+  vide dit « je n'en ai plus » et efface le renseignement, `null` dit « je ne sais pas » et le laisse.
+  Le pret passe par `Inventory.HandTo`, qui garde l'usure : sans quoi preter serait un moyen de
+  reparer ;
+* `patient` — l'allie le plus proche qu'on **sait** sous `wounded_ratio`. `band_tended` compte aussi
+  soi-meme : « soignez les blesses avant d'entrer » s'adresse au blesse, qui ne passe pas la porte le
+  premier ;
+* `decoy` — ou lancer. La premiere version cherchait le point le plus eloigne a la fois de soi et du
+  but, et le petard partait a l'oppose de la horde, a dix-huit cases de zombies qui ne l'entendaient
+  pas. Il faut qu'il soit **entendu** (`lure_reach`) et qu'il **eloigne** du but : la case a portee de
+  jet la plus eloignee du lieu vise parmi celles que tous les zombies connus entendraient, sinon celles
+  qu'entend le plus proche de la porte.
+
+Une diversion porte son propre bruit, `NoiseAction.Lure`. Le moteur etiquette `Distraction` tout
+bruit d'action qui n'en declare pas — le pas de depart d'un deplacement, une fouille —, et le premier
+essai lisait donc des diversions partout. Elle se retient chez le lanceur, que la perception
+n'entend pas (« on ne sursaute pas a ses propres pas »), et elle **se raconte** : c'est le seul bruit
+que `AgentKnowledge.LearnFrom` transmet.
+
+La radio etait declaree dans `config/items.json` depuis le livrable 11
+(`knowledge.communication_range`, 3) et **personne ne la lisait**. `KnowledgeSharing.RangeBetween`
+prend le plus faible des deux multiplicateurs : une radio n'est utile qu'aux deux bouts. Un echange
+qui n'aurait pas eu lieu a la voix est marque `ByRadio`, et devient l'evenement `PartageRadio`.
+
+**L'ordre entre survivants.** `OrderAlly(?location)` est le quatrieme geste, et avec sa variante collective `OrderBand` (plus bas) le seul qui porte sur
+la decision d'un autre : un survivant envoie un camarade a un lieu, et celui-ci s'y rend **en
+priorite** jusqu'a ce que l'ordre soit resolu. Il ne pilote personne. L'ordre est un `MissionOrder`
+comme celui du joueur, avec deux champs de plus — `Issuer`, qui l'a donne, et `Superseded`, l'ordre
+qu'il a mis de cote — et le camarade l'execute avec sa propre boucle : ses cartes, son A*, ses
+reflexes. Quatre regles le tiennent :
+
+* **qui l'entend l'accepte.** Le plan vise le repere `ally`, l'ordre part a qui est reellement a
+  portee de voix, ou de radio (`KnowledgeSharing.CanTalk`). `Survivor.Obey` refuse de supplanter un
+  ordre plus fort : le rappel du van (`mission.recall_priority`) ne se discute pas entre survivants,
+  et un second ordre de camarade attend que le premier soit resolu — sans quoi deux survivants
+  pourraient se renvoyer le troisieme indefiniment. Personne ne l'accepte, l'action echoue ;
+* **il passe devant les objectifs propres, pas devant les reflexes.** L'entree `obeying` ferme
+  `ExploreUnknownArea`, `SearchForObjective`, `PickUpObjective` et `ReachExtraction` tant qu'il est
+  pendant ; `FleeDanger`, `Hide`, `HealSelf` et `FightZombie` ne l'ont pas. Le poids seul
+  (`utility_ai.cooperation.order_priority`, 0,9) n'y aurait pas suffi : `PickUpObjective` lit aussi
+  `player_priority` et le depasse a courte distance. Il sert a autre chose — faire ceder l'ordre
+  devant le danger, par la courbe quadratique de `personal_safety`, et le placer entre l'ordre du
+  joueur (0,7), qu'il met de cote, et le rappel (1,0), qu'il ne touche pas. La reception fait
+  `UtilitySelector.Reconsider`, comme le rappel, pour deloger un objectif installe ;
+* **il se resout.** `SurvivorAgent.SettleOrder` le clot quand il est rempli — a une case, la regle
+  de `mission_reached`, partagee par `MissionOrder.ReachedFrom` — ou impossible : l'objectif qui le
+  poursuit n'a produit aucun plan, ou l'a vu suspendu faute d'itineraire (`Replanner.Suspended`). Un
+  danger qui fait passer la fuite devant ne le resout pas, il le fait attendre. Clos, il rend la
+  place a l'ordre du joueur qu'il avait mis de cote ; un ordre du joueur, lui, ne se resout pas ;
+* **il se retient aux deux bouts.** `ordered(lieu)` se lit dans `AgentKnowledge.Orders` — chez celui
+  qui l'a donne **et** chez celui qui l'a recu. Les consignes etant collectives, sans le second, le
+  camarade envoye au van sous `require_before(ordered(extraction), enter:building)` devrait a son tour
+  y envoyer quelqu'un avant d'entrer ou que ce soit. Rien ne l'efface : un ordre donne l'a ete, c'est
+  la semantique meme de « avant de ».
+
+La consigne pre-ecrite est « Renvoyez un camarade au van avant de rentrer »
+(`require_before(ordered(extraction), ReachExtraction)`), et le scenario `renvoyer_au_van` la filme.
+Il reprend exactement le placement de `prevenir_avant_de_rentrer`, et c'est voulu : les deux
+consignes se lisent pareil (« dites-le a un camarade avant de rentrer ») et ne font pas la meme
+chose. **Prevenir, c'est dire ce qu'on a vu** — Bob apprend, et continue de fouiller une pharmacie
+vide jusqu'au rappel. **Renvoyer, c'est dire quoi faire** — Bob laisse sa fouille, rentre, et la
+mission se conclut a 20 s au lieu de 96. Une premiere version de la consigne,
+`require_before(ordered(extraction), enter:building)`, envoyait quelqu'un au van avant d'entrer ; elle
+etait sans effet sur la carte livree, dont le lieu de mission est de la categorie `pharmacy`, et
+`Tests/CooperationTests` en garde la variante `enter:pharmacy` pour eprouver l'ordre de bout en bout.
+
+**Rappeler tout le monde.** `OrderBand(?location)` est le meme ordre, donne a **chacun** de ceux qui
+l'entendent et l'acceptent au lieu du premier (`WorldPlanRuntime.Order`, parametre `band`). C'est un
+geste distinct et non un reglage d'`OrderAlly`, parce que le choix entre renvoyer un camarade et
+rappeler le groupe est une decision du joueur : deux consignes, deux faits — `band_ordered(lieu)` se
+retient dans son propre registre (`AgentKnowledge.BandOrders`), et « renvoyez un camarade » ne se
+contente pas d'un rappel general, ni l'inverse. « Tous » veut dire tous ceux qui l'entendent : un
+camarade hors de portee de voix — ou de radio — ne recoit rien, et le plan ne va pas le chercher.
+
+Deux choses le separent d'un ordre simple, et les deux ont ete **mesurees dans le moteur**, pas
+dans le harnais — qui donnait la prise gagnee a 12 s des le premier essai pendant que le moteur ne la
+concluait qu'au rappel du temps imparti :
+
+* **il est instantane** (`duration: 0`). A une seconde comme `OrderAlly`, les deux camarades qu'on est
+  venu trouver faisaient un pas pendant l'appel, `at(agent, ally)` tombait, et le plan invalide courait
+  apres eux jusqu'au rappel. Un seul camarade s'y laisse rattraper ; deux, dont le plus proche change
+  en route, non ;
+* **vers le van, il se tient** (`MissionOrder.Holds`). Un ordre simple s'efface a l'arrivee — on
+  renvoie un camarade, pas en faction, et `Sous_consigne_un_survivant_envoie_un_camarade_au_van_avant_d_entrer`
+  l'exige. Un rappel general au van dit « la mission est finie » : Bob, arrive deux secondes avant
+  Alice, voyait l'ordre s'effacer et repartait fouiller, et la conclusion — tout le monde au van en
+  meme temps — n'arrivait jamais. Tenu, le rappel ne s'efface plus que s'il est impossible, comme celui
+  du temps imparti (`Rappele_au_van_on_y_reste`).
+
+Le scenario `rappeler_tout_le_monde` reprend le placement de `renvoyer_au_van`, Claire en plus : la
+prise se conclut a 10 s au lieu de 97, et `Le_rappel_du_square_atteint_les_deux_camarades` verifie ce
+que l'attente ne peut pas dire — que le rappel a touche Bob **et** Claire, et pas un seul sous un autre
+nom.
+
+**Le plan du quartier.** Les scenarios de cooperation partent avec la carte du terrain
+(`scenario.mapped`, `SurvivorBand.KnowTerrain`) — ni les zombies ni les objets. Sans elle, la premiere
+minute etait une reconnaissance pendant laquelle la horde reperait le groupe, et le petard partait sur
+des zombies deja lances a sa poursuite : la prise filmait un sauve-qui-peut, pas une diversion. Aucune
+mission du camp ne s'en sert. Deux defauts du moteur ne sont apparus qu'avec ce plan (plus bas).
+
+**Une limite, franchement.** La diversion reussit, mais la mission de ce scenario ne l'a pas
+toujours ete : en jeu, le 24 septembre, la prise s'est conclue par une defaite au rappel, le groupe
+entre et fouille pendant que la horde revient. Le 25 septembre, une fois les fuites fantomes levees
+(« Defauts reveles »), elle se gagne a 48 s. Le scenario ne promet toujours que le geste et l'entree,
+pas la victoire — une diversion achete du temps, elle ne le fixe pas, et la carte blanche jouee sous la
+meme consigne se perd encore.
+
+### Strategies combinees
+
+Une consigne seule est un clip ; une strategie de joueur en empile plusieurs. Quatre scenarios
+(`DemoFocus.Combination`, « [combinaison] » a l'ecran) en portent au moins deux — `Validate` refuse
+une combinaison a une seule consigne —, et chacun reprend des gestes que les prises d'entraide
+montrent separement :
+
+| Scenario | Consignes | Ce qui se passe |
+|---|---|---|
+| `armer_puis_diversion` | `armed` et `diversion_made`, avant `enter:building` | Bob, arme et seul a porter un petard, le lance ; Alice n'a de plan qu'une fois le fracas entendu, emprunte l'arme de trop de Bob, et entre |
+| `soigner_et_armer` | `band_tended` et `armed`, avant `enter:building` | deux gestes en sens contraire : Bob prete, Claire panse |
+| `fouiller_puis_rappeler` | `searched(objective_zone)` et `band_ordered(extraction)`, avant `ReachExtraction` | deux consignes sur le retour : la pharmacie fouillee, le groupe rappele, tout le monde au van ; en 32 s sous `astar`, en 94 s sous `gbfs` (97 s sans consigne) : les gestes tiennent, le gain de temps non |
+| `sans_effraction_mais_arme` | `forbid(ForceDoor)` et `armed` avant `enter:building` | une consigne ferme la porte, l'autre impose l'arme : Alice emprunte, puis on casse une vitre |
+
+**Chaque survivant planifie seul, et c'est la limite que ces prises rendent visible.** Une consigne
+est collective, mais un plan est individuel : un survivant n'a de plan que s'il peut remplir lui-meme
+toutes les exigences qu'il ne trouve pas deja vraies. Une cinquieme prise, `grande_manoeuvre`, empilait
+les trois consignes d'entraide avant `enter:building`. Sa premiere version reprenait le
+paquetage de la carte blanche — le petard chez Bob, les bandages chez Claire, les armes de rechange
+chez Bob — et **personne ne bougeait** : Bob ne pouvait pas se soigner, Claire ne pouvait pas faire
+diversion, Alice ne pouvait rien, et aucun ne lance un petard qui ne servirait qu'au plan d'un autre.
+La manoeuvre ne demarre que si l'un d'eux peut tout faire ; les autres attendent que les faits
+deviennent vrais, comme Alice attend le fracas dans `diversion`. Le paquetage livre en tient compte :
+Claire a le pied-de-biche, les bandages et les petards. Coordonner les roles — que l'un fasse
+diversion **pour** qu'un autre entre — serait une planification multi-agents, que le moteur n'a pas.
+
+Deux autres lecons, apprises en la faisant tourner. **Une diversion est une fenetre** :
+`diversion_made` s'oublie avec le bruit (`diversion_memory`), et un groupe chasse de la porte par la
+horde qui revient ne peut plus entrer s'il n'a plus de petard — d'ou les deux. **Un soin se defait** :
+une morsure rend `band_tended` faux, et sans second bandage la consigne ne se remplit plus. Avec deux
+zombies, la prise se perd encore au rappel, le forcage de la porte (bruit 6) les ramenant ; elle se
+gagnait avec un seul.
+
+**Elle est retiree, et la raison est un ecart harnais-moteur qui reste ouvert.** Sous `astar`, elle
+sortait conforme du moteur (victoire a 126 s). Sous `gbfs`, le reglage livre, elle revelait d'abord
+que le harnais ne jouait pas le budget du jeu : une recherche sous trois consignes depasse les 50 ms de
+`planner.max_time_ms`, quinze plans coupes dans une seule prise, pendant que `DemoRun` desserrait son
+horloge a 60 s pour lui seul. `demo.planner_max_time_ms` ferme cet ecart (paragraphe suivant). Mais a
+budget egal, le moteur la perd encore — le zombie prend le groupe a partie des la premiere seconde,
+Bob meurt pendant le soin, `band_tended` devient vrai faute de blesse debout, et Claire finit acculee
+loin du van — la ou le harnais la gagne. Le soin, le pret et la diversion restent montres chacun par
+les prises d'entraide, et deux a deux par les quatre combinaisons.
+
+**Une prise ne joue pas le plafond de temps d'une partie.** `planner.max_time_ms` protege la cadence
+d'une partie, et le livrable 5 le fixe a 50 ms ; il n'a pas bouge. Une prise est une scene tournee,
+qui doit se rejouer a l'identique, et une horloge rend le plan dependant de la machine.
+`demo.planner_max_time_ms` (2 000 ms) est le plafond d'une prise, et `DemoSettings.PlannerFor` le
+donne **aux deux** : `GameRoot` quand il ouvre le mode, `Tests/DemoRun.cs` a la place de ses 60 s
+ecrites en dur. Le plafond de noeuds (`planner.max_nodes`) reste la borne, et il est deterministe.
+
+### Defauts reveles
+
+Dessiner des situations precises, puis les faire tourner, a trouve douze defauts qu'aucune mission
+tiree au hasard n'avait montres. **Sept sont corriges**, parce qu'ils empechaient une partie ordinaire
+de se conclure ou de commencer le bon plan, et un sixieme l'est en partie ; les quatre autres ne le sont pas — le mode n'a pas touche
+a leur logique — et les grilles sont dessinees pour les eviter. Ils sont consignes pour qu'on puisse
+les reprendre, chacun avec la grille qui les reproduit.
+
+Corriges :
+
+* **Le rappel du van perdait contre un objectif sans plan.** `plan_confidence` est la confiance dans
+  le plan *courant* ; un survivant bloque sur `SearchForObjective` que le planificateur ne sait pas
+  resoudre l'a a zero, et `CompletePlayerMission` la lit (plancher 0,3). Le rappel, a la priorite 1,
+  se scorait donc 0,3 contre 0,33 pour la fouille impossible — qui ne lit pas la confiance et que la
+  priorite du rappel dopait (`player_priority`, plancher 0,4). La survivante ne rentrait jamais, et
+  la mission ne se concluait pas. Un ordre neuf remet desormais la confiance a 1 (`Survivor.Mission`) :
+  l'ordre n'a pas encore de plan, l'echec du precedent ne le concerne pas. Vaut pour les ordres du
+  joueur autant que pour le rappel (`Un_ordre_neuf_ne_paie_pas_l_echec_du_plan_precedent`).
+* **Le seuil d'un lieu ferme tombait parfois a l'interieur.** `SymbolicStateBuilder.Doorstep`
+  prenait la case voisine d'une ouverture la plus proche du survivant a vol d'oiseau ; devant une
+  vitre, la case de la rue et celle de la piece sont souvent a egale distance, et l'egalite tombait sur
+  la piece. Le plan « aller a la pharmacie, puis forcer sa porte » commencait par une case derriere la
+  porte a forcer : A* refusait, le plan se suspendait jusqu'a la fin de la mission. Le seuil est
+  maintenant pris parmi les cases **atteignables** par la carte mentale, puis la plus proche
+  (`Le_seuil_d_un_lieu_ferme_est_pris_du_cote_ou_l_on_se_trouve`). Un test du planificateur attendait
+  l'ancien comportement sans le savoir : son runtime ne cherche pas de chemin, et il verifiait que
+  l'on passait par l'interieur de la pharmacie *avant* d'en forcer la porte.
+* **Une cachette hors d'atteinte etait choisie.** Le repere `cover` prenait la piece connue la plus
+  proche, fut-elle derriere une porte verrouillee : `Hide` echouait sans itineraire, et le plan se
+  suspendait « en attente d'une nouvelle information » qui ne venait pas. Le plan du quartier l'a
+  rendu systematique, mais une piece vue a travers une vitre suffisait. `cover` est desormais filtre
+  par l'atteignabilite, comme `objective` (`Une_cachette_hors_d_atteinte_n_en_est_pas_une`).
+* **Un zombie assiegeait le van.** `EntityManager.Sheltered` arretait le coup, pas le regard : le zombie
+  voyait sa proie au van et cognait contre la tole indefiniment. Tant qu'il cognait, il se tenait a
+  l'entree, et le survivant qui rentrait apres les autres le voyait, fuyait, revenait au rappel,
+  fuyait encore — la mission ne se concluait pas. Un survivant au van ne se voit plus du dehors
+  (`EntityManager.InVan`, par le parametre `concealed` de `PerceptionSystem.Observe`) : le zombie perd
+  la piste, fouille les abords, repart errer. La decision du zombie n'apprend toujours rien du van ;
+  c'est son regard qui ne traverse pas la tole. `Un_survivant_au_van_ne_peut_pas_etre_mordu` promettait
+  « il attaque, mais le coup ne porte pas » ; il promet desormais « pas de coup, et pas de siege ».
+* **Les pas d'un camarade comptaient comme une menace.** `UtilityContext` faisait une `Threat` de chaque
+  bruit connu, et la perception ne distinguait pas un camarade d'un inconnu. Sur le square, sans un
+  zombie, trois survivants fuyaient plus de cent fois par prise (« alice est pris a partie ») : une
+  porte ouverte pres d'un camarade lancait une fuite, dont les pas de course relancaient celle des
+  autres ; dans le harnais du MVP, une survivante finissait cachee. Deux regles, dans
+  `PerceptionSystem.Listen`, et deux seulement, parce que la troisieme essayee a echoue :
+  * **un bruit de deplacement** (`Walk`, `Run`, `OpenDoor`) n'est jamais une menace pour un
+    survivant — la regle de `NoiseBelief.IsRemarkable` (« un pas s'oublie ») appliquee a la menace ;
+    les zombies n'en font aucun, un pas entendu est toujours celui du groupe. Les zombies, eux,
+    entendent toujours tous les pas ;
+  * **un fracas dont on voit l'auteur**, et qu'on sait etre un camarade, non plus — sauf le leurre,
+    dont le souvenir fait `diversion_made`. Voir l'auteur est une observation : l'invariant tient ;
+  * l'essai ecarte : attribuer un bruit au camarade qu'on **croit** pres de l'endroit entendu. La
+    position supposee d'un camarade qu'on suit etait a quatre ou cinq cases de la verite — la
+    prediction extrapole sa trajectoire —, et la regle ne reconnaissait presque rien.
+
+  Le defaut en cachait un autre : **le harnais du MVP n'emettait aucun pas.** `GameRoot` et
+  `DemoRun` en avaient chacun leur copie (celle du harnais ignorait la course), `MissionRun` aucune.
+  L'emission vit desormais dans le coeur (`SurvivorBand.EmitFootsteps`, appelee par `Advance` entre
+  le deplacement et la perception, comme dans le jeu) et les trois la deroulent. Les instantanes PDDL
+  ont change en consequence, sans changer de nom ; avec les seuls pas, et avant les deux regles, la
+  capture comptait une cachette (`09-hide`) dans une partie sans un zombie.
+* **Deux consignes sur la meme classe se rescindaient.** Le compilateur scindait chaque schema de
+  deplacement a cheval sur la categorie visee ; une seconde consigne sur `enter:building` rescindait
+  la moitie « dedans » de la premiere. Il en sortait `EnterBuilding_EnterBuilding`, porteur des deux
+  exigences, et un `EnterBuilding` mort, qui exigeait `building(?location)` et sa negation. Le plan
+  etait juste, mais le journal et le PDDL exporte ne nommaient plus le geste — c'est
+  `armer_puis_diversion` qui l'a montre, son attente `EnterBuilding` jamais remplie. Un schema deja
+  d'un seul cote de la categorie n'est plus scinde (`DomainCompiler.SideOf`) : dedans, il recoit
+  l'exigence ; dehors, il n'est pas vise. Son commentaire PDDL cite toutes les consignes qui l'ont
+  touche, dans l'ordre (`Deux_consignes_sur_la_meme_classe_se_composent_sans_rescinder`).
+* **Une vitre brisee refermait le lieu.** `BreakWindow` fait de la vitre du sol, et la carte mentale
+  n'y voit plus d'ouverture : un batiment dont on connaissait la porte verrouillee redevenait
+  « scelle » juste apres qu'on y eut fait un passage. La fouille echouait sur `accessible`, et
+  `sans_effraction_mais_arme` se perdait, les deux vitres de l'entrepot cassees et personne dedans. Le
+  scenario d'origine, `aucune_effraction`, ne le montrait pas : sans le plan du quartier, la porte
+  verrouillee n'etait pas encore connue. `AgentKnowledge.Breaches` retient chaque vitre connue intacte
+  puis vue en sol — par qui l'a cassee, qui la voit, ou qui l'apprend en parlant — et
+  `CollectOpenings` la compte pour une ouverture praticable
+  (`Une_vitre_brisee_rouvre_le_lieu_que_sa_porte_verrouillee_fermait`).
+
+Non corriges :
+
+* **Un objet de mission vu a travers une vitre d'un batiment ferme a clef bloque le survivant.** La
+  vitre laisse passer le regard : `objective_found` devient vrai sans fouille. Le lieu ferme est
+  ramene a son seuil (`SymbolicStateBuilder.Relocate`), donc `at(agent, objective_zone)` est vrai
+  depuis la rue, et `PickUpObjective` — qui ne demande pas `accessible(objective_zone)` — se planifie
+  depuis le trottoir puis echoue chaque seconde. Ajouter cette precondition au domaine ne suffit pas :
+  l'objet repere, la Utility AI ecarte `PickUpObjective` (`objective_reachable = 0`) et
+  `SearchForObjective` est deja satisfait ; le survivant s'arrete, « plus aucun objectif au-dessus du
+  seuil ». Le defaut vaut pour les quartiers generes, qui posent des portes verrouillees et des vitres.
+  Dans les grilles, l'objet vise est toujours dans une piece qu'on ne voit pas de dehors.
+* **Une porte n'est rattachee a un lieu que pres du coin haut-gauche de son rectangle.** La case
+  representative d'un lieu est `GridMap.FindWalkableIn`, la premiere case praticable lue ligne par
+  ligne ; `planner.door_link_radius` (4) se mesure depuis elle. Une porte au bout d'un batiment plus
+  large n'existe pas pour le planificateur. Les grilles contournent la regle (batiments de 6 cases, ou
+  premiere rangee muree sauf au centre) ; les batiments generes les plus grands n'ont pas ete mesures.
+* **`BreakWindow` est dominee par `ForceDoor` partout ou une porte verrouillee est connue** (cout 4
+  contre 3, bruit 8 contre 6, et aucun objet ne l'avantage). `forbid(BreakWindow)` — la consigne
+  pre-ecrite « Ne cassez aucune vitre » — n'a donc **aucun effet observable** seule. Le scenario de
+  consigne filme l'inverse, `forbid(ForceDoor)`, et la conjonction des deux, qui ferme le batiment.
+* **La trousse de la mission soigne celui qui la porte.** `remedy` englobe tout objet de soin, objet
+  de mission compris : une survivante blessee ramasse la trousse, s'en sert (`HealSelf`), et la mission
+  se conclut sur « les medicaments sont definitivement hors d'atteinte ». Les scenarios de combat et de
+  soin vont donc chercher un jerrican.
+* **Desarmee, une survivante ne se bat pas.** `FightZombie` multiplie la poursuite, la sante inversee
+  (plancher 0,55) et `armed` (plancher 0,3) : sans arme, il plafonne a 0,165 en pleine sante, sous la
+  fuite et sous la mission. Sur aucune des vingt combinaisons de placement et de panique essayees, a aucune cadence, une
+  survivante desarmee n'a pousse ni frappe un zombie ; acculee au fond d'un cul-de-sac, elle se laisse
+  devorer, `FleeDanger` choisi sans plan de fuite (« deja atteint, aucune action necessaire »).
+  `PushBackZombie` et `AttackZombie` sont donc au domaine sans qu'aucune prise ne les montre. Le
+  scenario « Sans arme, pas de combat » filme ce reflexe tel qu'il est, a cote du combat arme, et
+  remplace un « Combat a mains nues » qui ne tenait que dans le premier harnais.
+* **Une consigne interdit un schema, pas un geste** — corrige en partie. `enter:<categorie>` et
+  `move:<categorie>` scindent tout schema qui mene a un lieu de cette categorie, mais un **repere**
+  (`objective_spot`, `cover`, `patient`…) n'avait pas de categorie : aller ramasser la trousse apercue
+  dans le kiosque entrait dans le kiosque sans passer par le schema scinde. Les fuites fantomes
+  levees, `regroupement` l'a montre aussitot — le groupe se regroupait, forcait la porte, puis
+  entrait par `MoveToLocation(objective_spot)`. Un repere prend desormais la categorie du lieu ou il
+  tombe, tel que l'agent l'a vu (`AgentKnowledge.ZoneKindAt`, ecrit par la perception et par le plan du
+  quartier) ; `group` en est exclu, sans quoi « regroupez-vous avant d'entrer » demanderait d'etre deja
+  avec le groupe pour le rejoindre dans un batiment. Reste l'autre moitie : `require_after(threat_handled,
+  EscapeLocation)` retire bien `EscapeLocation`, mais la fuite passe alors par
+  `MoveToLocation(away_from_danger)`, un autre schema, et `Explore` entre dans un batiment ouvert sans
+  destination nommee. Le scenario « Reglez la menace avant de fuir » montre cette limite plutot que de
+  la cacher — et ce qui remplace la fuite change d'une prise a l'autre, d'ou une attente qui ne promet
+  que l'absence.
 
 ## Carte de demonstration
 

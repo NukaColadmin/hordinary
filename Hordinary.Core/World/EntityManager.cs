@@ -180,7 +180,7 @@ public sealed class EntityManager : IHorde
     {
         foreach (var zombie in _zombies)
         {
-            _perception.Observe(zombie, _world, now);
+            _perception.Observe(zombie, _world, now, InVan);
             _perception.Listen(zombie, _world, zombie.Rng, now);
             zombie.Knowledge.ForgetFadedNoises(now);
 
@@ -242,6 +242,21 @@ public sealed class EntityManager : IHorde
         && _world.Grid.GetZone(ZoneKind.Extraction) is { } van
         && _world.GetEntity(targetId) is { } target
         && van.Contains(target.Position);
+
+    /// <summary>
+    /// Un survivant dans le van ne se voit pas du dehors. C'est la moitie de l'abri qui manquait :
+    /// le coup s'arretait sur la tole, mais le zombie voyait toujours sa proie derriere et restait a
+    /// cogner — indefiniment. Tant qu'il cognait, il se tenait a l'entree du van, et le camarade qui
+    /// rentrait apres les autres le voyait, fuyait, revenait au rappel, fuyait encore : la mission ne
+    /// se concluait jamais. C'est le mode demonstration qui l'a montre (« Faites diversion avant
+    /// d'entrer », sans sa consigne). Desormais le zombie perd sa proie de vue, fouille les abords
+    /// comme apres n'importe quelle piste froide, puis repart errer.
+    ///
+    /// La decision du zombie n'apprend toujours rien du van : c'est son regard qui ne traverse pas
+    /// la tole, comme il ne traverse pas un mur.
+    /// </summary>
+    private bool InVan(WorldEntity entity)
+        => entity.Kind == EntityKind.Survivor && Sheltered(entity.Id);
 
     private static float Distance(GridPosition a, GridPosition b)
     {

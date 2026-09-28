@@ -1,0 +1,1436 @@
+// Scenarios d'essai du mode demonstration (demo.enabled dans config/game_config.json).
+//
+// A QUOI ILS SERVENT
+// A tourner des clips. Une mission du camp ne garantit rien : le quartier est tire, la horde aussi,
+// et la vitre qu'on voulait filmer n'a peut-etre jamais ete sur le chemin. Un scenario isole UNE
+// consigne du joueur (livrable 15) ou UN geste du survivant, sur un terrain dessine pour que ce
+// geste-la se produise. Rien ne change des regles : un scenario est une mission jouee par le meme
+// groupe, le meme planificateur et le meme suivi de partie ; seuls le terrain et le placement sont
+// ecrits a la main.
+//
+// UNE GRILLE
+//   terrain   une ligne par rangee, les lettres des cartes de test : . sol, # mur, D porte fermee,
+//             L porte verrouillee, o porte ouverte, W fenetre, O obstacle. Un chiffre ou une
+//             minuscule autre que « o » est un REPERE : du sol, que les scenarios citent pour poser
+//             un survivant, un zombie ou un objet. Un repere n'apparait qu'une fois.
+//   zones     la meme taille que le terrain, une lettre par case ; « . » n'appartient a aucun lieu.
+//             Chaque lettre doit dessiner un rectangle plein — un lieu troue est refuse.
+//   legend    ce que chaque lettre designe : un nom et un type (Start, Pharmacy, Building, Street,
+//             Alley, Other). Il faut exactement un Start : c'est le van, depart et retour a la fois,
+//             et le retour (Extraction) s'en deduit. Une ceinture de brouillard est ajoutee autour.
+//
+// DEUX PIEGES DE DESSIN, appris en faisant tourner ces grilles :
+//   * une porte ou une fenetre n'est rattachee a un lieu que si elle est a moins de
+//     planner.door_link_radius (4) cases de sa case representative, qui est la PREMIERE case
+//     praticable du rectangle, lue ligne par ligne depuis le coin haut-gauche. Un grand batiment dont
+//     la porte est loin de ce coin n'a, pour le planificateur, pas de porte du tout ;
+//   * une fenetre laisse passer le regard. Un objet de mission vu a travers une vitre d'un batiment
+//     ferme a clef bloque le survivant (voir « Defauts reveles » dans docs/architecture.md) : l'objet
+//     vise est donc toujours dans une piece qu'on ne voit pas depuis dehors.
+//
+// UN SCENARIO
+//   grid, focus   la grille jouee ; Constraint (une consigne), Action (un geste du survivant),
+//                 Cooperation (ce qu'un survivant fait pour un autre — souvent sous consigne, parce
+//                 que preter, soigner un camarade ou faire diversion n'ont pas d'autre demandeur),
+//                 Combination (au moins deux consignes a la fois : ce qu'elles font ensemble) ou
+//                 Strategy (carte blanche : aucune consigne ecrite, le joueur les donne a l'ecran,
+//                 en francais quand le service de langage est actif ; expect.with decrit alors le
+//                 groupe livre a lui-meme, et une prise jouee sous consignes du joueur n'a pas
+//                 d'attente — son bilan dit ce qui s'est passe).
+//   summary       la situation, en une phrase. watch : ce qu'il faut regarder pendant la prise.
+//   objective     l'objet a rapporter, le nom du lieu vise, et les reperes ou le poser. Un exemplaire
+//                 pose hors du lieu vise est un objet « apercu » (PickUpSpottedObjective).
+//   team          qui part, sur quel repere (absent : il descend du van), avec quoi dans le sac
+//                 (carry — une arme part en main) et dans quel etat (health).
+//   zombies       un repere par zombie ; un repere repete en pose plusieurs.
+//   instructions  les consignes, dans la grammaire fermee du livrable 15. Elles passent les memes
+//                 portillons que celles du joueur. L'ecran de demonstration permet de les retirer :
+//                 c'est le contraste que filme un clip de consigne.
+//   time_limit    temps imparti, en secondes ; absent, celui de mission.time_limit.
+//   panic         force la panique pour cette prise, par-dessus debug.panic_enabled ; absent, la prise
+//                 se joue sous le reglage du fichier livre.
+//   mapped        le groupe part avec le plan du quartier : terrain et lieux sus, zombies et objets
+//                 non. Sans lui, la prise commence par une minute de reconnaissance qui n'est pas ce
+//                 qu'elle filme, et pendant laquelle la horde repere le groupe.
+//   expect        ce que le scenario montre, avec (with) et sans (without) ses consignes : shows doit
+//                 se produire, never ne doit pas. Une entree est un nom d'action du domaine — une
+//                 action scindee par une consigne porte le nom que le compilateur lui donne
+//                 (EnterBuilding) — ou un evenement : Partage, Rappel, Victoire, ZombieATerre.
+//                 with.shows peut rester vide pour une consigne, si with.never interdit un geste que
+//                 without.shows montre : l'absence est alors prouvee par le contraste.
+//                 Tests/DemoScenarioTests.cs deroule chaque scenario jusqu'a son bilan, a la cadence
+//                 du jeu (1/60 s), et verifie ces attentes : un scenario qui cesse de montrer ce qu'il
+//                 annonce, ou qui ne se conclut plus, fait echouer la suite.
+//
+// Les grilles sont sensibles : ajouter un couloir a une rue a suffi a changer l'issue de deux
+// scenarios qui s'y jouent. La cadence aussi : une horde qui s'en mele fait d'un combat une affaire
+// de dixiemes de seconde, et les scenarios avec zombies ont ete choisis parmi ceux qui tiennent de
+// 30 a 75 images par seconde. Toute retouche se valide en relancant DemoScenarioTests.
+{
+  "grids": [
+    {
+      "id": "deux_batiments",
+      "name": "Deux batiments",
+      "description": "Une pharmacie et un entrepot fermes a clef, de part et d'autre de la rue. Chacun a une porte verrouillee et des vitres, et l'objet vise est dans une piece qu'on ne voit pas depuis la rue.",
+      "terrain": [
+        "..............................",
+        "............#########.........",
+        "............####5####.........",
+        "............####.####.........",
+        "............#.......#.........",
+        "............#.......#.........",
+        "............#W#####L#.........",
+        "..............................",
+        "..............................",
+        "..1...........................",
+        "..............................",
+        "..............................",
+        "..............................",
+        "............#L####............",
+        "............#6.#.#............",
+        "............#..#.#............",
+        "............#..#.W............",
+        "............#....W............",
+        "............######............",
+        ".............................."
+      ],
+      "zones": [
+        "..............................",
+        "............PPPPPPPPP.........",
+        "............PPPPPPPPP.........",
+        "............PPPPPPPPP.........",
+        "............PPPPPPPPP.........",
+        "............PPPPPPPPP.........",
+        "............PPPPPPPPP.........",
+        "..............................",
+        ".VVVrrrrrrrrrrrrrrrrrrrrrrrrrr",
+        ".VVVrrrrrrrrrrrrrrrrrrrrrrrrrr",
+        ".VVVrrrrrrrrrrrrrrrrrrrrrrrrrr",
+        "..............................",
+        "..............................",
+        "............EEEEEE............",
+        "............EEEEEE............",
+        "............EEEEEE............",
+        "............EEEEEE............",
+        "............EEEEEE............",
+        "............EEEEEE............",
+        ".............................."
+      ],
+      "legend": {
+        "V": {
+          "name": "Van",
+          "kind": "Start"
+        },
+        "P": {
+          "name": "Pharmacie",
+          "kind": "Pharmacy"
+        },
+        "E": {
+          "name": "Entrepot",
+          "kind": "Building"
+        },
+        "r": {
+          "name": "Rue",
+          "kind": "Street"
+        }
+      }
+    },
+    {
+      "id": "longue_rue",
+      "name": "La longue rue",
+      "description": "Le van a un bout, le garage a l'autre, et rien entre les deux pour se cacher. La porte du garage est simplement fermee : ici, la question n'est pas d'entrer mais d'arriver.",
+      "terrain": [
+        "..................................",
+        "..................................",
+        "..........................#######.",
+        "..........................#5....#.",
+        "..........................#..8..#.",
+        ".1....h3fg...4.....6......D.7...#.",
+        "..........................#.....#.",
+        "..........................#######.",
+        "..................................",
+        ".................................."
+      ],
+      "zones": [
+        "..................................",
+        "..................................",
+        "...rrrrrrrrrrrrrrrrrrrrrrrPPPPPPP.",
+        "...rrrrrrrrrrrrrrrrrrrrrrrPPPPPPP.",
+        "VVVrrrrrrrrrrrrrrrrrrrrrrrPPPPPPP.",
+        "VVVrrrrrrrrrrrrrrrrrrrrrrrPPPPPPP.",
+        "VVVrrrrrrrrrrrrrrrrrrrrrrrPPPPPPP.",
+        "...rrrrrrrrrrrrrrrrrrrrrrrPPPPPPP.",
+        "..................................",
+        ".................................."
+      ],
+      "legend": {
+        "V": {
+          "name": "Van",
+          "kind": "Start"
+        },
+        "P": {
+          "name": "Garage",
+          "kind": "Building"
+        },
+        "r": {
+          "name": "Rue principale",
+          "kind": "Street"
+        }
+      }
+    },
+    {
+      "id": "square",
+      "name": "Le square",
+      "description": "Une place degagee entre trois batiments : assez grande pour que le groupe se disperse, assez ouverte pour qu'on se voie de loin.",
+      "terrain": [
+        "................................",
+        ".######.................#######.",
+        ".#9...#.................#5....#.",
+        ".#....#.................#.....#.",
+        ".#....L........a........D.....#.",
+        ".#....#.................#.....#.",
+        ".######.................#######.",
+        "................................",
+        "...........b.........c..........",
+        "................................",
+        "................................",
+        "......d.................e.......",
+        "................................",
+        "..1.............................",
+        "................................"
+      ],
+      "zones": [
+        "................................",
+        ".KKKKKK.................PPPPPPP.",
+        ".KKKKKK.................PPPPPPP.",
+        ".KKKKKK.................PPPPPPP.",
+        ".KKKKKK.................PPPPPPP.",
+        ".KKKKKK.................PPPPPPP.",
+        ".KKKKKK.................PPPPPPP.",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        "................................",
+        ".VVV............................",
+        ".VVV............................",
+        ".VVV............................"
+      ],
+      "legend": {
+        "V": {
+          "name": "Van",
+          "kind": "Start"
+        },
+        "P": {
+          "name": "Pharmacie",
+          "kind": "Pharmacy"
+        },
+        "K": {
+          "name": "Kiosque",
+          "kind": "Building"
+        }
+      }
+    },
+    {
+      "id": "superette",
+      "name": "La superette",
+      "description": "Une superette fermee a clef au sud, porte a l'est sur une placette ou deux zombies font les cent pas. Le groupe descend du van au nord et les voit d'emblee ; eux ne l'ont pas encore vu. Ici, on n'entre pas en courant : les consignes d'entraide decident a quelles conditions on passe la porte.",
+      "terrain": [
+        "..................................",
+        "..1...............................",
+        "..................................",
+        "..................................",
+        "..................................",
+        "..................................",
+        "..................................",
+        "................a.b.c.............",
+        "..................................",
+        "..................................",
+        "..........######..................",
+        "..........#6...#..................",
+        "..........#....L.....fg...........",
+        "..........#....#..................",
+        "..........######..................",
+        "..................................",
+        "..................................",
+        ".................................."
+      ],
+      "zones": [
+        "VVVV..............................",
+        "VVVV..............................",
+        "VVVV..............................",
+        "..................................",
+        "..................................",
+        "..................................",
+        "....rrrrrrrrrrrrrrrrrrrrrrrrrrrrr.",
+        "....rrrrrrrrrrrrrrrrrrrrrrrrrrrrr.",
+        "....rrrrrrrrrrrrrrrrrrrrrrrrrrrrr.",
+        "..................................",
+        "..........SSSSSS.pppppppppppppppp.",
+        "..........SSSSSS.pppppppppppppppp.",
+        "..........SSSSSS.pppppppppppppppp.",
+        "..........SSSSSS.pppppppppppppppp.",
+        "..........SSSSSS.pppppppppppppppp.",
+        "..................................",
+        "..................................",
+        ".................................."
+      ],
+      "legend": {
+        "V": {
+          "name": "Van",
+          "kind": "Start"
+        },
+        "S": {
+          "name": "Superette",
+          "kind": "Building"
+        },
+        "r": {
+          "name": "Rue",
+          "kind": "Street"
+        },
+        "p": {
+          "name": "Placette",
+          "kind": "Street"
+        }
+      }
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "aucune_effraction",
+      "name": "Ne forcez aucune porte",
+      "grid": "deux_batiments",
+      "focus": "Constraint",
+      "summary": "L'entrepot a une porte verrouillee cote rue et deux vitres a l'arriere.",
+      "watch": "Sans consigne, Alice force la porte qui donne sur la rue. Avec, elle fait le tour du batiment et brise une vitre : le plan change d'action, pas de but.",
+      "objective": {
+        "item": "toolbox",
+        "zone": "Entrepot",
+        "at": [
+          "6"
+        ]
+      },
+      "team": [
+        {
+          "survivor": "alice",
+          "at": "1"
+        }
+      ],
+      "instructions": [
+        "forbid(ForceDoor)"
+      ],
+      "expect": {
+        "with": {
+          "shows": [
+            "BreakWindow",
+            "Victoire"
+          ],
+          "never": [
+            "ForceDoor"
+          ]
+        },
+        "without": {
+          "shows": [
+            "ForceDoor"
+          ],
+          "never": [
+            "BreakWindow"
+          ]
+        }
+      },
+      "zombies": [],
+      "items": []
+    },
+    {
+      "id": "ni_vitre_ni_effraction",
+      "name": "Ni vitre, ni effraction",
+      "grid": "deux_batiments",
+      "focus": "Constraint",
+      "summary": "Deux consignes qui, ensemble, ferment la pharmacie : il n'y a pas d'autre entree.",
+      "watch": "Alice tourne autour d'un batiment ou elle n'a plus le droit d'entrer, puis le van la rappelle. Chaque consigne est acceptable seule ; c'est leur conjonction que le portillon 3 prouve insatisfiable hors ligne.",
+      "objective": {
+        "item": "medikit",
+        "zone": "Pharmacie",
+        "at": [
+          "5"
+        ]
+      },
+      "team": [
+        {
+          "survivor": "alice",
+          "at": "1"
+        }
+      ],
+      "instructions": [
+        "forbid(ForceDoor)",
+        "forbid(BreakWindow)"
+      ],
+      "time_limit": 60,
+      "expect": {
+        "with": {
+          "shows": [
+            "Rappel"
+          ],
+          "never": [
+            "ForceDoor",
+            "BreakWindow",
+            "Victoire"
+          ]
+        },
+        "without": {
+          "shows": [
+            "ForceDoor",
+            "Victoire"
+          ],
+          "never": []
+        }
+      },
+      "zombies": [],
+      "items": []
+    },
+    {
+      "id": "fouiller_avant_de_repartir",
+      "name": "Ne repartez pas sans avoir fouille",
+      "grid": "square",
+      "focus": "Constraint",
+      "summary": "Une trousse traine au milieu du square, une autre est dans la pharmacie.",
+      "watch": "Sans consigne, Alice ramasse la trousse du square et rentre. Avec, elle la ramasse aussi, mais va fouiller la pharmacie avant de reprendre le chemin du van.",
+      "objective": {
+        "item": "medikit",
+        "zone": "Pharmacie",
+        "at": [
+          "5",
+          "a"
+        ]
+      },
+      "team": [
+        {
+          "survivor": "alice",
+          "at": "1"
+        }
+      ],
+      "instructions": [
+        "require_before(searched(objective_zone), ReachExtraction)"
+      ],
+      "expect": {
+        "with": {
+          "shows": [
+            "SearchRoom",
+            "Victoire"
+          ],
+          "never": []
+        },
+        "without": {
+          "shows": [
+            "PickUpSpottedObjective",
+            "Victoire"
+          ],
+          "never": [
+            "SearchRoom"
+          ]
+        }
+      },
+      "zombies": [],
+      "items": []
+    },
+    {
+      "id": "regroupement",
+      "name": "Regroupez-vous avant d'entrer",
+      "grid": "square",
+      "focus": "Constraint",
+      "summary": "Trois survivants deposes aux quatre coins du square ; la trousse est dans le kiosque, ferme a clef.",
+      "watch": "Avec la consigne, se rendre au kiosque passe par EnterBuilding, le schema que la consigne a scinde, et qui exige d'etre avec le groupe : chacun rejoint les autres avant d'y aller.",
+      "objective": {
+        "item": "medikit",
+        "zone": "Kiosque",
+        "at": [
+          "9"
+        ]
+      },
+      "team": [
+        {
+          "survivor": "alice",
+          "at": "d"
+        },
+        {
+          "survivor": "bob",
+          "at": "b"
+        },
+        {
+          "survivor": "claire",
+          "at": "e"
+        }
+      ],
+      "instructions": [
+        "require_before(at(agent, group), enter:building)"
+      ],
+      "expect": {
+        "with": {
+          "shows": [
+            "EnterBuilding"
+          ],
+          "never": []
+        },
+        "without": {
+          "shows": [
+            "Victoire"
+          ],
+          "never": [
+            "EnterBuilding"
+          ]
+        }
+      },
+      "zombies": [],
+      "items": []
+    },
+    {
+      "id": "menace_avant_la_fuite",
+      "name": "Reglez la menace avant de fuir",
+      "grid": "longue_rue",
+      "focus": "Constraint",
+      "summary": "La situation de « Fuir la horde » : Alice au milieu de la rue, trois zombies qui arrivent du garage.",
+      "watch": "Sans consigne, Alice prend la fuite (EscapeLocation, en courant). Avec, ce schema disparait de ses plans ; ce qu'elle fait a la place change d'une prise a l'autre — se terrer, s'eloigner au pas par un simple deplacement, forcer le passage. La consigne interdit un schema, pas le geste de s'eloigner : c'est la limite que ce clip montre.",
+      "objective": {
+        "item": "fuel_can",
+        "zone": "Garage",
+        "at": [
+          "5"
+        ]
+      },
+      "team": [
+        {
+          "survivor": "alice",
+          "at": "4"
+        }
+      ],
+      "zombies": [
+        "6",
+        "6",
+        "6"
+      ],
+      "instructions": [
+        "require_after(threat_handled, EscapeLocation)"
+      ],
+      "expect": {
+        "with": {
+          "shows": [],
+          "never": [
+            "EscapeLocation"
+          ]
+        },
+        "without": {
+          "shows": [
+            "EscapeLocation"
+          ],
+          "never": []
+        }
+      },
+      "items": []
+    },
+    {
+      "id": "effraction",
+      "name": "Forcer une porte",
+      "grid": "deux_batiments",
+      "focus": "Action",
+      "summary": "L'entrepot est ferme a clef. Pas de consigne : le survivant choisit seul.",
+      "watch": "Alice trouve la porte verrouillee, la force (bruit 6), fouille, trouve la caisse a outils et rentre.",
+      "objective": {
+        "item": "toolbox",
+        "zone": "Entrepot",
+        "at": [
+          "6"
+        ]
+      },
+      "team": [
+        {
+          "survivor": "alice",
+          "at": "1"
+        }
+      ],
+      "expect": {
+        "with": {
+          "shows": [
+            "ForceDoor",
+            "Victoire"
+          ],
+          "never": []
+        }
+      },
+      "zombies": [],
+      "items": [],
+      "instructions": []
+    },
+    {
+      "id": "combat_arme",
+      "name": "Combat arme",
+      "grid": "longue_rue",
+      "focus": "Action",
+      "summary": "Bob a une batte de baseball en main ; deux zombies rodent dans le garage ou est le jerrican.",
+      "watch": "Bob entre, les zombies viennent sur lui, et il frappe avec ce qu'il tient (AttackWithWeapon) : l'arme donne la portee et le cout, et les zombies tombent. Puis il rapporte le jerrican.",
+      "objective": {
+        "item": "fuel_can",
+        "zone": "Garage",
+        "at": [
+          "5"
+        ]
+      },
+      "team": [
+        {
+          "survivor": "bob",
+          "at": "h",
+          "carry": [
+            "baseball_bat"
+          ]
+        }
+      ],
+      "zombies": [
+        "7",
+        "7"
+      ],
+      "expect": {
+        "with": {
+          "shows": [
+            "AttackWithWeapon",
+            "ZombieATerre",
+            "Victoire"
+          ],
+          "never": []
+        }
+      },
+      "items": [],
+      "instructions": []
+    },
+    {
+      "id": "sans_arme",
+      "name": "Sans arme, pas de combat",
+      "grid": "longue_rue",
+      "focus": "Action",
+      "summary": "La situation du combat arme, a un detail pres : Alice n'a rien en main.",
+      "watch": "A comparer avec le combat arme. FightZombie pese l'arme (armed, plancher 0,3) : desarmee, le reflexe de combat tombe au tiers, sous la fuite et la mission. Alice ne se bat pas — elle contourne, s'ecarte, et rapporte le jerrican quand la voie le permet.",
+      "objective": {
+        "item": "fuel_can",
+        "zone": "Garage",
+        "at": [
+          "5"
+        ]
+      },
+      "team": [
+        {
+          "survivor": "alice",
+          "at": "h"
+        }
+      ],
+      "zombies": [
+        "7",
+        "7"
+      ],
+      "expect": {
+        "with": {
+          "shows": [
+            "Victoire"
+          ],
+          "never": [
+            "AttackZombie",
+            "AttackWithWeapon"
+          ]
+        }
+      },
+      "items": [],
+      "instructions": []
+    },
+    {
+      "id": "fuite",
+      "name": "Fuir la horde",
+      "grid": "longue_rue",
+      "focus": "Action",
+      "summary": "Alice est seule au milieu de la rue, trois zombies arrivent du garage.",
+      "watch": "La peur monte, l'objectif bascule sur FleeDanger et Alice s'echappe vers le refuge que sa carte mentale designe.",
+      "panic": true,
+      "objective": {
+        "item": "fuel_can",
+        "zone": "Garage",
+        "at": [
+          "5"
+        ]
+      },
+      "team": [
+        {
+          "survivor": "alice",
+          "at": "4"
+        }
+      ],
+      "zombies": [
+        "6",
+        "6",
+        "6"
+      ],
+      "expect": {
+        "with": {
+          "shows": [
+            "EscapeLocation"
+          ],
+          "never": []
+        }
+      },
+      "items": [],
+      "instructions": []
+    },
+    {
+      "id": "soin",
+      "name": "Se soigner",
+      "grid": "longue_rue",
+      "focus": "Action",
+      "summary": "Claire part blessee, a 35 PV, avec un bandage dans son sac.",
+      "watch": "HealSelf passe devant la mission : Claire se soigne avant d'aller chercher le jerrican.",
+      "objective": {
+        "item": "fuel_can",
+        "zone": "Garage",
+        "at": [
+          "5"
+        ]
+      },
+      "team": [
+        {
+          "survivor": "claire",
+          "at": "1",
+          "carry": [
+            "bandage"
+          ],
+          "health": 35
+        }
+      ],
+      "expect": {
+        "with": {
+          "shows": [
+            "HealSelf"
+          ],
+          "never": []
+        }
+      },
+      "zombies": [],
+      "items": [],
+      "instructions": []
+    },
+    {
+      "id": "partage",
+      "name": "Partage d'informations",
+      "grid": "square",
+      "focus": "Action",
+      "summary": "Alice est deposee pres de la pharmacie, Bob et Claire au van. Personne ne sait rien au depart.",
+      "watch": "Quand ils passent a portee de voix, ce que chacun a vu passe aux autres (activer la carte mentale pour le voir).",
+      "objective": {
+        "item": "medikit",
+        "zone": "Pharmacie",
+        "at": [
+          "5"
+        ]
+      },
+      "team": [
+        {
+          "survivor": "alice",
+          "at": "c"
+        },
+        {
+          "survivor": "bob",
+          "at": "1"
+        },
+        {
+          "survivor": "claire"
+        }
+      ],
+      "expect": {
+        "with": {
+          "shows": [
+            "Partage"
+          ],
+          "never": []
+        }
+      },
+      "zombies": [],
+      "items": [],
+      "instructions": []
+    },
+    {
+      "id": "rappel_du_van",
+      "name": "Le van rappelle",
+      "grid": "longue_rue",
+      "focus": "Action",
+      "summary": "Trente secondes pour aller au bout de la rue et en revenir : c'est trop court.",
+      "watch": "Le temps ecoule, le van rappelle tout le monde. Le rappel est un ordre, pas une suggestion : il deloge l'objectif en cours. Celui qui rentre avec le jerrican rend encore la mission gagnable.",
+      "objective": {
+        "item": "fuel_can",
+        "zone": "Garage",
+        "at": [
+          "5"
+        ]
+      },
+      "team": [
+        {
+          "survivor": "alice",
+          "at": "1"
+        },
+        {
+          "survivor": "bob"
+        }
+      ],
+      "time_limit": 30,
+      "expect": {
+        "with": {
+          "shows": [
+            "Rappel"
+          ],
+          "never": []
+        }
+      },
+      "zombies": [],
+      "items": [],
+      "instructions": []
+    },
+    {
+      "id": "diversion",
+      "name": "Faites diversion avant d'entrer",
+      "grid": "superette",
+      "focus": "Cooperation",
+      "summary": "Deux zombies trainent devant la porte de la superette. Bob a un petard dans son sac, Alice n'a rien.",
+      "watch": "La consigne fait de la diversion la condition d'entree. Bob, le seul a pouvoir la faire, lance son petard loin de la porte ; Alice n'a aucun moyen de la remplir et attend — c'est le fracas qu'elle entend, et non un message, qui lui dit que la voie est libre. Sans consigne, personne ne lance rien : lancer un petard n'est pas un reflexe.",
+      "mapped": true,
+      "time_limit": 120,
+      "objective": {
+        "item": "fuel_can",
+        "zone": "Superette",
+        "at": [
+          "6"
+        ]
+      },
+      "team": [
+        {
+          "survivor": "alice",
+          "at": "a"
+        },
+        {
+          "survivor": "bob",
+          "at": "b",
+          "carry": [
+            "firecracker"
+          ]
+        }
+      ],
+      "zombies": [
+        "f",
+        "g"
+      ],
+      "instructions": [
+        "require_before(diversion_made, enter:building)"
+      ],
+      "expect": {
+        "with": {
+          "shows": [
+            "ThrowFirecracker",
+            "EnterBuilding"
+          ],
+          "never": []
+        },
+        "without": {
+          "shows": [],
+          "never": [
+            "ThrowFirecracker"
+          ]
+        }
+      },
+      "items": []
+    },
+    {
+      "id": "pret_d_arme",
+      "name": "Personne n'entre desarme",
+      "grid": "superette",
+      "focus": "Cooperation",
+      "summary": "Bob part avec une batte et un pied-de-biche, Alice les mains vides.",
+      "watch": "Alice sait que Bob porte une arme de trop parce qu'ils se sont parle au van : on voit ce qu'un camarade tient, pas ce qu'il a dans son sac. La consigne lui interdit d'entrer desarmee ; elle va trouver Bob, qui lui passe sa batte (BorrowWeapon), puis elle entre. Sans consigne, personne ne prete rien.",
+      "mapped": true,
+      "time_limit": 120,
+      "objective": {
+        "item": "fuel_can",
+        "zone": "Superette",
+        "at": [
+          "6"
+        ]
+      },
+      "team": [
+        {
+          "survivor": "alice",
+          "at": "a"
+        },
+        {
+          "survivor": "bob",
+          "at": "b",
+          "carry": [
+            "baseball_bat",
+            "crowbar"
+          ]
+        }
+      ],
+      "instructions": [
+        "require_before(armed, enter:building)"
+      ],
+      "expect": {
+        "with": {
+          "shows": [
+            "BorrowWeapon",
+            "EnterBuilding",
+            "Victoire"
+          ],
+          "never": []
+        },
+        "without": {
+          "shows": [],
+          "never": [
+            "BorrowWeapon"
+          ]
+        }
+      },
+      "zombies": [],
+      "items": []
+    },
+    {
+      "id": "soin_d_un_camarade",
+      "name": "Soignez les blesses avant d'entrer",
+      "grid": "superette",
+      "focus": "Cooperation",
+      "summary": "Bob part blesse, a 30 PV, sans rien pour se soigner. Claire, secouriste, a deux bandages.",
+      "watch": "Claire apprend que Bob est blesse en lui parlant — la sante d'un camarade se raconte, elle ne se devine pas. La consigne vaut pour les deux : Bob n'entre pas tant qu'il est blesse, Claire n'entre pas tant qu'elle ne l'a pas soigne. Elle le rejoint, le panse (TendAlly), et les deux passent la porte. Sans consigne, personne ne soigne personne : HealAlly a ete retiree parce que porter secours est une strategie.",
+      "mapped": true,
+      "time_limit": 120,
+      "objective": {
+        "item": "fuel_can",
+        "zone": "Superette",
+        "at": [
+          "6"
+        ]
+      },
+      "team": [
+        {
+          "survivor": "claire",
+          "at": "a",
+          "carry": [
+            "bandage",
+            "bandage"
+          ]
+        },
+        {
+          "survivor": "bob",
+          "at": "c",
+          "health": 30
+        }
+      ],
+      "instructions": [
+        "require_before(band_tended, enter:building)"
+      ],
+      "expect": {
+        "with": {
+          "shows": [
+            "TendAlly",
+            "EnterBuilding"
+          ],
+          "never": []
+        },
+        "without": {
+          "shows": [],
+          "never": [
+            "TendAlly"
+          ]
+        }
+      },
+      "zombies": [],
+      "items": []
+    },
+    {
+      "id": "radio",
+      "name": "L'eclaireur et la radio",
+      "grid": "longue_rue",
+      "focus": "Cooperation",
+      "summary": "Alice part en eclaireur vers le garage, Bob reste du cote du van. Chacun a une radio dans son sac.",
+      "watch": "A la voix, on se parle a cinq cases ; avec deux radios, a quinze. Ce qu'Alice decouvre au bout de la rue arrive a Bob sans qu'aucun des deux ne se deplace : le journal le dit « par radio ». Une radio seule ne relie personne — c'est au paquetage d'en confier deux.",
+      "objective": {
+        "item": "fuel_can",
+        "zone": "Garage",
+        "at": [
+          "5"
+        ]
+      },
+      "team": [
+        {
+          "survivor": "alice",
+          "at": "6",
+          "carry": [
+            "radio"
+          ]
+        },
+        {
+          "survivor": "bob",
+          "at": "1",
+          "carry": [
+            "radio"
+          ]
+        }
+      ],
+      "expect": {
+        "with": {
+          "shows": [
+            "PartageRadio",
+            "Victoire"
+          ],
+          "never": []
+        }
+      },
+      "zombies": [],
+      "items": [],
+      "instructions": []
+    },
+    {
+      "id": "prevenir_avant_de_rentrer",
+      "name": "Prevenez un camarade avant de rentrer",
+      "grid": "square",
+      "focus": "Cooperation",
+      "summary": "Alice est deposee pres de la pharmacie, Bob au milieu du square. Chacun a le plan du quartier.",
+      "watch": "Une strategie sans une ligne de code. ShareKnowledge dort dans le domaine depuis le livrable 7 : le partage se fait tout seul a portee de voix, et aller expres dire ce qu'on a vu n'etait demande par personne. La consigne le reveille : Alice ramasse la trousse, va trouver Bob pour le lui dire (ShareKnowledge), puis rentre. Sans consigne, elle rentre droit.",
+      "mapped": true,
+      "objective": {
+        "item": "medikit",
+        "zone": "Pharmacie",
+        "at": [
+          "5"
+        ]
+      },
+      "team": [
+        {
+          "survivor": "alice",
+          "at": "c"
+        },
+        {
+          "survivor": "bob",
+          "at": "d"
+        }
+      ],
+      "time_limit": 90,
+      "instructions": [
+        "require_before(knowledge_shared, ReachExtraction)"
+      ],
+      "expect": {
+        "with": {
+          "shows": [
+            "ShareKnowledge",
+            "Victoire"
+          ],
+          "never": []
+        },
+        "without": {
+          "shows": [
+            "Victoire"
+          ],
+          "never": [
+            "ShareKnowledge"
+          ]
+        }
+      },
+      "zombies": [],
+      "items": []
+    },
+    {
+      "id": "renvoyer_au_van",
+      "name": "Renvoyez un camarade au van avant de rentrer",
+      "grid": "square",
+      "focus": "Cooperation",
+      "summary": "Le placement de « Prevenez un camarade avant de rentrer » : Alice est deposee pres de la pharmacie, Bob au milieu du square. Chacun a le plan du quartier.",
+      "watch": "Le pendant de la prise precedente : prevenir, c'est dire ce qu'on a vu ; renvoyer, c'est dire quoi faire. Alice ramasse la trousse, va trouver Bob et lui ordonne de rentrer (OrderAlly) ; Bob laisse sa fouille, obeit, et l'ordre s'efface une fois au van. Sans consigne, Alice rentre seule et Bob fouille une pharmacie vide jusqu'au rappel.",
+      "mapped": true,
+      "objective": {
+        "item": "medikit",
+        "zone": "Pharmacie",
+        "at": [
+          "5"
+        ]
+      },
+      "team": [
+        {
+          "survivor": "alice",
+          "at": "c"
+        },
+        {
+          "survivor": "bob",
+          "at": "d"
+        }
+      ],
+      "time_limit": 90,
+      "instructions": [
+        "require_before(ordered(extraction), ReachExtraction)"
+      ],
+      "expect": {
+        "with": {
+          "shows": [
+            "OrderAlly",
+            "Victoire"
+          ],
+          "never": []
+        },
+        "without": {
+          "shows": [
+            "Victoire"
+          ],
+          "never": [
+            "OrderAlly"
+          ]
+        }
+      },
+      "zombies": [],
+      "items": []
+    },
+    {
+      "id": "rappeler_tout_le_monde",
+      "name": "Rappelez tout le monde au van avant de rentrer",
+      "grid": "square",
+      "focus": "Cooperation",
+      "summary": "Le placement de « Renvoyez un camarade au van », avec Claire en plus : Alice est deposee pres de la pharmacie, Bob et Claire au milieu du square. Chacun a le plan du quartier.",
+      "watch": "Renvoyer un camarade, c'est un ordre a un seul ; rappeler tout le monde, c'est le meme ordre a chacun de ceux qui l'entendent. Alice ramasse la trousse, va trouver le plus proche et rappelle le groupe (OrderBand) : Bob et Claire laissent leur fouille ensemble, et le canal [Action] du journal les nomme tous les deux. Sans consigne, Alice rentre seule et les deux autres fouillent jusqu'au rappel.",
+      "mapped": true,
+      "objective": {
+        "item": "medikit",
+        "zone": "Pharmacie",
+        "at": [
+          "5"
+        ]
+      },
+      "team": [
+        {
+          "survivor": "alice",
+          "at": "c"
+        },
+        {
+          "survivor": "bob",
+          "at": "d"
+        },
+        {
+          "survivor": "claire",
+          "at": "b"
+        }
+      ],
+      "time_limit": 90,
+      "instructions": [
+        "require_before(band_ordered(extraction), ReachExtraction)"
+      ],
+      "expect": {
+        "with": {
+          "shows": [
+            "OrderBand",
+            "Victoire"
+          ],
+          "never": [
+            "OrderAlly"
+          ]
+        },
+        "without": {
+          "shows": [
+            "Victoire"
+          ],
+          "never": [
+            "OrderBand"
+          ]
+        }
+      },
+      "zombies": [],
+      "items": []
+    },
+    {
+      "id": "armer_puis_diversion",
+      "name": "Armez-vous, puis faites diversion avant d'entrer",
+      "grid": "superette",
+      "focus": "Combination",
+      "summary": "Deux zombies devant la porte de la superette. Bob a un petard, une batte et un pied-de-biche ; Alice n'a rien.",
+      "watch": "Deux consignes sur la meme porte, qui se composent : personne n'entre ni desarme ni avant le fracas. Bob, arme et seul a avoir un petard, le lance loin de la porte (ThrowFirecracker) ; Alice, qui n'a rien, va emprunter a Bob son arme de trop (BorrowWeapon) — elle n'a de plan qu'une fois la diversion faite, parce qu'elle ne peut pas la faire elle-meme. Puis tous deux entrent. Sans consigne, ni petard ni pret.",
+      "mapped": true,
+      "time_limit": 120,
+      "objective": {
+        "item": "fuel_can",
+        "zone": "Superette",
+        "at": [
+          "6"
+        ]
+      },
+      "team": [
+        {
+          "survivor": "alice",
+          "at": "a"
+        },
+        {
+          "survivor": "bob",
+          "at": "b",
+          "carry": [
+            "firecracker",
+            "baseball_bat",
+            "crowbar"
+          ]
+        }
+      ],
+      "zombies": [
+        "f",
+        "g"
+      ],
+      "instructions": [
+        "require_before(armed, enter:building)",
+        "require_before(diversion_made, enter:building)"
+      ],
+      "expect": {
+        "with": {
+          "shows": [
+            "BorrowWeapon",
+            "ThrowFirecracker",
+            "EnterBuilding"
+          ],
+          "never": []
+        },
+        "without": {
+          "shows": [],
+          "never": [
+            "BorrowWeapon",
+            "ThrowFirecracker"
+          ]
+        }
+      },
+      "items": []
+    },
+    {
+      "id": "soigner_et_armer",
+      "name": "Soignez les blesses et armez-vous avant d'entrer",
+      "grid": "superette",
+      "focus": "Combination",
+      "summary": "Bob part blesse, a 30 PV, avec une batte et un pied-de-biche. Claire a deux bandages et les mains vides.",
+      "watch": "Deux gestes en sens contraire entre les memes survivants : Bob passe a Claire son arme de trop (BorrowWeapon), Claire panse Bob (TendAlly). La consigne vaut pour les deux — Bob n'entre pas blesse, Claire n'entre ni desarmee ni avant de l'avoir soigne. Sans consigne, ni soin ni pret.",
+      "mapped": true,
+      "time_limit": 120,
+      "objective": {
+        "item": "fuel_can",
+        "zone": "Superette",
+        "at": [
+          "6"
+        ]
+      },
+      "team": [
+        {
+          "survivor": "claire",
+          "at": "a",
+          "carry": [
+            "bandage",
+            "bandage"
+          ]
+        },
+        {
+          "survivor": "bob",
+          "at": "c",
+          "carry": [
+            "baseball_bat",
+            "crowbar"
+          ],
+          "health": 30
+        }
+      ],
+      "zombies": [],
+      "instructions": [
+        "require_before(band_tended, enter:building)",
+        "require_before(armed, enter:building)"
+      ],
+      "expect": {
+        "with": {
+          "shows": [
+            "TendAlly",
+            "BorrowWeapon",
+            "EnterBuilding",
+            "Victoire"
+          ],
+          "never": []
+        },
+        "without": {
+          "shows": [],
+          "never": [
+            "TendAlly",
+            "BorrowWeapon"
+          ]
+        }
+      },
+      "items": []
+    },
+    {
+      "id": "fouiller_puis_rappeler",
+      "name": "Fouillez la pharmacie, puis rappelez tout le monde",
+      "grid": "square",
+      "focus": "Combination",
+      "summary": "Une trousse au milieu du square, une autre dans la pharmacie. Alice est deposee pres de la pharmacie, Bob et Claire au milieu du square, et chacun a le plan du quartier.",
+      "watch": "Deux consignes sur le retour, pas sur l'entree : personne ne rentre sans que la pharmacie ait ete fouillee (SearchRoom) ni sans avoir rappele le groupe (OrderBand). Claire ramasse la trousse du square, Alice celle de la pharmacie ; la fouille faite, chacune rappelle les autres, et tout le monde rentre ensemble en une trentaine de secondes. Sans consigne, pas de rappel : chacun rentre quand il a fini.",
+      "mapped": true,
+      "time_limit": 90,
+      "objective": {
+        "item": "medikit",
+        "zone": "Pharmacie",
+        "at": [
+          "5",
+          "a"
+        ]
+      },
+      "team": [
+        {
+          "survivor": "alice",
+          "at": "c"
+        },
+        {
+          "survivor": "bob",
+          "at": "d"
+        },
+        {
+          "survivor": "claire",
+          "at": "b"
+        }
+      ],
+      "zombies": [],
+      "instructions": [
+        "require_before(searched(objective_zone), ReachExtraction)",
+        "require_before(band_ordered(extraction), ReachExtraction)"
+      ],
+      "expect": {
+        "with": {
+          "shows": [
+            "SearchRoom",
+            "OrderBand",
+            "Victoire"
+          ],
+          "never": []
+        },
+        "without": {
+          "shows": [
+            "Victoire"
+          ],
+          "never": [
+            "OrderBand"
+          ]
+        }
+      },
+      "items": []
+    },
+    {
+      "id": "sans_effraction_mais_arme",
+      "name": "N'entrez pas desarme, et ne forcez aucune porte",
+      "grid": "deux_batiments",
+      "focus": "Combination",
+      "summary": "L'entrepot a une porte verrouillee cote rue et deux vitres a l'arriere. Alice part les mains vides, Bob descend du van avec une batte et un pied-de-biche.",
+      "watch": "Une consigne ferme un chemin, l'autre en ouvre un detour : la porte est interdite, et personne n'entre desarme. Alice emprunte a Bob son arme de trop (BorrowWeapon) avant d'entrer ; comme la porte lui est interdite, on fait le tour et on brise une vitre (BreakWindow). Sans consigne, pas de pret, et la porte cede.",
+      "mapped": true,
+      "time_limit": 120,
+      "objective": {
+        "item": "toolbox",
+        "zone": "Entrepot",
+        "at": [
+          "6"
+        ]
+      },
+      "team": [
+        {
+          "survivor": "alice",
+          "at": "1"
+        },
+        {
+          "survivor": "bob",
+          "carry": [
+            "baseball_bat",
+            "crowbar"
+          ]
+        }
+      ],
+      "zombies": [],
+      "instructions": [
+        "forbid(ForceDoor)",
+        "require_before(armed, enter:building)"
+      ],
+      "expect": {
+        "with": {
+          "shows": [
+            "BorrowWeapon",
+            "BreakWindow",
+            "Victoire"
+          ],
+          "never": [
+            "ForceDoor"
+          ]
+        },
+        "without": {
+          "shows": [
+            "ForceDoor"
+          ],
+          "never": [
+            "BorrowWeapon"
+          ]
+        }
+      },
+      "items": []
+    },
+    {
+      "id": "carte_blanche",
+      "name": "Carte blanche : vos consignes, traduites par l'IA",
+      "grid": "superette",
+      "focus": "Strategy",
+      "summary": "Tout ce que les prises d'entraide separent, reuni : deux zombies devant la porte, Bob blesse avec un petard, une batte et un pied-de-biche, Alice les mains vides, Claire et ses deux bandages. Aucune consigne n'est ecrite : c'est a vous de les donner.",
+      "watch": "Ecrivez une strategie en francais a l'ecran de demonstration (« Faites diversion avant d'entrer », « Que personne n'entre sans arme ») : le service de langage la traduit, les portillons la verifient, et la prise la joue. Service coupe, la saisie attend la grammaire fermee, et les consignes pre-ecrites restent la. Sans consigne, le groupe se debrouille seul — c'est la prise que la suite verifie.",
+      "mapped": true,
+      "time_limit": 120,
+      "objective": {
+        "item": "fuel_can",
+        "zone": "Superette",
+        "at": [
+          "6"
+        ]
+      },
+      "team": [
+        {
+          "survivor": "alice",
+          "at": "a"
+        },
+        {
+          "survivor": "bob",
+          "at": "b",
+          "carry": [
+            "firecracker",
+            "baseball_bat",
+            "crowbar"
+          ],
+          "health": 40
+        },
+        {
+          "survivor": "claire",
+          "at": "c",
+          "carry": [
+            "bandage",
+            "bandage"
+          ]
+        }
+      ],
+      "zombies": [
+        "f",
+        "g"
+      ],
+      "expect": {
+        "with": {
+          "shows": [
+            "Partage",
+            "Victoire"
+          ],
+          "never": [
+            "ThrowFirecracker",
+            "BorrowWeapon",
+            "TendAlly",
+            "ShareKnowledge",
+            "OrderAlly",
+            "OrderBand"
+          ]
+        }
+      },
+      "items": [],
+      "instructions": []
+    }
+  ]
+}

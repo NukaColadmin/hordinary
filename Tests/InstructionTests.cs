@@ -228,6 +228,48 @@ public class InstructionTests
     }
 
     /// <summary>
+    /// Deux consignes sur la meme classe se composent au lieu de se rescinder. Avant, la seconde
+    /// scindait a nouveau la moitie « dedans » de la premiere : il en sortait
+    /// <c>EnterBuilding_EnterBuilding</c>, qui portait les deux exigences, et un <c>EnterBuilding</c>
+    /// mort, qui exigeait a la fois <c>building(?location)</c> et sa negation — c'est la prise
+    /// « Armez-vous, puis faites diversion » qui l'a montre, son journal ne nommant jamais le geste
+    /// annonce.
+    /// </summary>
+    [Fact]
+    public void Deux_consignes_sur_la_meme_classe_se_composent_sans_rescinder()
+    {
+        var compiled = DomainCompiler.Compile(Domain,
+        [
+            Parse("require_before(armed, enter:building)"),
+            Parse("require_before(diversion_made, enter:building)"),
+        ]);
+        Assert.True(compiled.Accepted, compiled.ToString());
+
+        var category = new PddlAtom("building", "?location");
+        var inside = compiled.Domain.Actions.Where(action => action.Precondition.Literals.Contains(category)).ToList();
+
+        // Une seule moitie « dedans » par schema de deplacement, sous son nom court pour le premier.
+        Assert.Contains(inside, action => action.Name == "EnterBuilding");
+        Assert.DoesNotContain(compiled.Domain.Actions, action => action.Name.Contains("EnterBuilding_EnterBuilding", StringComparison.Ordinal));
+
+        foreach (var action in inside)
+        {
+            Assert.Contains(new PddlAtom("armed"), action.Precondition.Literals);
+            Assert.Contains(new PddlAtom("diversion_made"), action.Precondition.Literals);
+            Assert.Contains("require_before(armed, enter:building)", action.GeneratedBy);
+            Assert.Contains("require_before(diversion_made, enter:building)", action.GeneratedBy);
+        }
+
+        // Aucune moitie morte : pas de schema qui exige une categorie et son contraire.
+        Assert.DoesNotContain(compiled.Domain.Actions, action =>
+            action.Precondition.Literals.Contains(category) && action.Precondition.Literals.Contains(new PddlNegation(category)));
+
+        // Et autant de schemas qu'avec une seule consigne : la seconde n'en ajoute aucun.
+        var single = DomainCompiler.Compile(Domain, [Parse("require_before(armed, enter:building)")]);
+        Assert.Equal(single.Domain.Actions.Count, compiled.Domain.Actions.Count);
+    }
+
+    /// <summary>
     /// « A doit poser P » quand A ne touche pas a P : P devient une precondition. Ce qui surprend pour
     /// une contrainte dite « apres » ne l'est pas — une action qui ne touche pas a P le laisse vrai
     /// apres si et seulement s'il l'etait avant.
@@ -678,6 +720,29 @@ public class InstructionTests
         Assert.True(entries[2].Accepted);
         Assert.Single(instructions.Active);
         Assert.All(entries, entry => Assert.NotEmpty(entry.Reason));
+    }
+
+    /// <summary>
+    /// Le service s'allume pour une session, par la ligne de commande ou l'environnement, sans qu'on
+    /// ecrive <c>true</c> dans le fichier versionne — et rien ne l'eteint quand le fichier l'allume.
+    /// </summary>
+    [Fact]
+    public void Le_service_s_allume_pour_une_session_sans_toucher_au_fichier()
+    {
+        Assert.False(Settings.Enabled);
+
+        Assert.True(Settings.LocallyEnabled(["--demo", InstructionSettings.Argument], null).Enabled);
+        Assert.True(Settings.LocallyEnabled([], "1").Enabled);
+        Assert.True(Settings.LocallyEnabled([], " On ").Enabled);
+        Assert.Same(Settings, Settings.LocallyEnabled([], null));
+        Assert.Same(Settings, Settings.LocallyEnabled(["--ia=non"], "0"));
+
+        var lit = Settings.LocallyEnabled([InstructionSettings.Argument], null);
+        Assert.Equal(Settings.Endpoint, lit.Endpoint);
+        Assert.Equal(Settings.TimeoutMs, lit.TimeoutMs);
+
+        var shipped = new InstructionSettings { Enabled = true };
+        Assert.Same(shipped, shipped.LocallyEnabled([], "0"));
     }
 
     /// <summary>

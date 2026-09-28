@@ -1,5 +1,5 @@
 ; Instantane : objectif « ExploreUnknownArea », agent en (1,-7).
-; 12 objets connus, 28 faits, 1 actions instanciees.
+; 12 objets connus, 29 faits, 1 actions instanciees.
 ; Ce que l'agent n'a jamais percu n'y figure pas : c'est voulu.
 
 (define (problem exploreunknownarea)
@@ -24,6 +24,7 @@
     (at agent group)
     (at agent ruelle)
     (at agent start)
+    (band_tended)
     (door_closed door_6_m2)
     (door_of door_6_m2 objective_zone)
     (extraction extraction)

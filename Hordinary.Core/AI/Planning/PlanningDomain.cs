@@ -71,6 +71,15 @@ public sealed class PlanningDomain
     /// </summary>
     public PlanningPlaces Places { get; init; } = new();
 
+    /// <summary>
+    /// Ce que chaque symbole nommable veut dire, dans les mots d'un joueur (section <c>glossary</c>).
+    /// Il ne sert ni a la recherche ni a l'export : il voyage jusqu'au service de langage par le
+    /// digest, parce qu'un nom et un type ne disent pas le sens — <c>band_tended</c> ne dit pas « les
+    /// blesses sont panses ». Il est ici, a cote des symboles qu'il definit, plutot que dans le prompt
+    /// du service, ou il deviendrait un second vocabulaire sans rien pour le tenir a jour.
+    /// </summary>
+    public Dictionary<string, string> Glossary { get; init; } = [];
+
     public static PlanningDomain Empty { get; } = new();
 
     /// <summary>Actions reellement en jeu, dans l'ordre du fichier.</summary>

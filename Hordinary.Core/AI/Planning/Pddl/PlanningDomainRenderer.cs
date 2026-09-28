@@ -30,6 +30,7 @@ public static class PlanningDomainRenderer
                 Kinds = [.. domain.LocationKinds],
                 Landmarks = [.. domain.Landmarks],
             },
+            Glossary = new Dictionary<string, string>(domain.Glossary, StringComparer.Ordinal),
         };
     }
 

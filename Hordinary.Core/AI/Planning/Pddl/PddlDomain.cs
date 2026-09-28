@@ -72,6 +72,14 @@ public sealed class PddlDomain
     public IReadOnlyList<string> Landmarks { get; init; } = [];
 
     /// <summary>
+    /// La definition de chaque symbole nommable, telle que <c>config/planner_domain.json</c> la donne.
+    /// Elle n'est jamais rendue en PDDL et n'entre donc pas dans l'empreinte du domaine : changer le
+    /// sens d'un mot ne change pas ce qu'une contrainte compilee veut dire, seulement la facon dont le
+    /// service la traduit. Son seul lecteur est <see cref="Instructions.DomainDigest"/>.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> Glossary { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>
     /// Les symboles qu'un fait peut nommer, avec leur type : les constantes declarees et les reperes.
     ///
     /// <para>
@@ -144,6 +152,7 @@ public sealed class PddlDomain
             Goals = Goals,
             LocationKinds = LocationKinds,
             Landmarks = Landmarks,
+            Glossary = Glossary,
         };
 
     public override string ToString() => $"{Name} — {Actions.Count} actions, {Predicates.Count} predicats";

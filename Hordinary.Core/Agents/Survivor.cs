@@ -106,8 +106,71 @@ public sealed class Survivor : IPerceivingAgent
     /// </summary>
     public ObjectiveSite? ObjectiveZone { get; set; }
 
-    /// <summary>Ordre courant du joueur, ou <c>null</c> si le survivant est livre a lui-meme.</summary>
-    public MissionOrder? Mission { get; set; }
+    /// <summary>
+    /// Ordre courant du joueur, ou <c>null</c> si le survivant est livre a lui-meme.
+    ///
+    /// Un ordre neuf remet <see cref="PlanConfidence"/> a 1. La confiance est celle du plan
+    /// <b>courant</b>, et l'ordre n'en a pas encore : sans cela, un survivant bloque sur un objectif
+    /// que le planificateur ne sait pas resoudre (confiance a 0) scorait l'ordre au plancher de
+    /// <c>plan_confidence</c> — 0,3 — pendant que l'objectif sans plan, qui ne la lit pas, restait
+    /// devant. Le rappel du van, a la priorite 1, perdait ainsi contre une fouille impossible, et la
+    /// mission ne se concluait jamais. Si le plan de l'ordre echoue a son tour, la confiance retombe
+    /// comme pour n'importe quel plan.
+    /// </summary>
+    public MissionOrder? Mission
+    {
+        get => _mission;
+        set
+        {
+            _mission = value;
+            if (value is not null) PlanConfidence = 1f;
+        }
+    }
+
+    private MissionOrder? _mission;
+
+    /// <summary>
+    /// Emis quand un camarade vient de donner un ordre que le survivant accepte. C'est par la que
+    /// l'agent fait reconsiderer sa decision sur-le-champ : le corps sait qu'on lui a parle, pas
+    /// comment on decide.
+    /// </summary>
+    public event Action<MissionOrder>? Ordered;
+
+    /// <summary>
+    /// Recoit l'ordre d'un camarade (action <c>OrderAlly</c>). On ne supplante qu'un ordre plus
+    /// faible : le rappel du van, plus fort, ne se discute pas entre survivants, et un second ordre
+    /// de camarade n'ecrase pas le premier avant qu'il ne soit resolu — sans quoi deux survivants
+    /// pourraient se renvoyer le troisieme indefiniment.
+    ///
+    /// L'ordre du joueur, lui, est plus faible et se trouve mis de cote, pas perdu :
+    /// <see cref="MissionOrder.Superseded"/> le rendra une fois l'ordre du camarade resolu.
+    /// </summary>
+    /// <returns>Faux si l'ordre est refuse ; rien n'a change.</returns>
+    public bool Obey(MissionOrder order)
+    {
+        ArgumentNullException.ThrowIfNull(order);
+
+        if (!Alive) return false;
+        if (Mission is { } current && current.Priority >= order.Priority) return false;
+
+        Mission = order with { Superseded = Mission };
+        Ordered?.Invoke(Mission);
+        return true;
+    }
+
+    /// <summary>
+    /// Clot l'ordre de camarade en cours — rempli ou impossible — et rend la place a l'ordre qu'il
+    /// avait mis de cote. Sans effet sur un ordre du joueur, qui ne se resout pas : il reste pose
+    /// jusqu'au suivant.
+    /// </summary>
+    /// <returns>L'ordre clos, ou <c>null</c> s'il n'y avait aucun ordre de camarade.</returns>
+    public MissionOrder? Settle()
+    {
+        if (Mission is not { FromAlly: true } order) return null;
+
+        Mission = order.Superseded;
+        return order;
+    }
 
     /// <summary>
     /// Consignes permanentes du joueur (livrable 8) : bruit interdit, zones ou ne pas aller. A la

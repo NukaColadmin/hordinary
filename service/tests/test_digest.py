@@ -164,3 +164,21 @@ def test_tout_type_annonce_par_un_predicat_est_un_type_declare(digest):
     assert used <= declared
 
     assert {obj.type for obj in digest.objects} <= declared
+
+
+def test_chaque_symbole_du_digest_a_sa_definition(digest):
+    """Le sens de chaque nom voyage avec lui, et rien d'autre n'est defini.
+
+    Miroir de `InstructionServiceTests.Chaque_symbole_nommable_a_sa_definition`, sur le fichier que ce
+    service lit reellement : un digest regenere sans glossaire ramenerait le modele a deviner
+    `band_tended` sur son seul nom, et aucun autre test d'ici ne le verrait.
+    """
+    names = (
+        {p.name for p in digest.predicates}
+        | set(digest.actions)
+        | set(digest.location_kinds)
+        | {obj.name for obj in digest.objects}
+    )
+
+    assert {name for name in names if not digest.meaning(name)} == set()
+    assert set(digest.glossary) <= names

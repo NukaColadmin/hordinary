@@ -182,6 +182,16 @@ public static class SymbolicStateBuilder
         // instantane. Les reconduire d'un plan a l'autre ferait survivre la categorie d'un lieu que
         // le survivant a cesse de connaitre.
         "building", "street", "alley", "pharmacy", "extraction", "start",
+
+        // L'entraide. Les trois se relisent a chaque instantane : l'arme en main se voit, la sante
+        // du groupe se raconte, une diversion s'entend — et les trois se dementent. Reconduire
+        // « diversion en cours » d'un plan a l'autre la ferait durer apres le retour de la horde ;
+        // reconduire « le groupe est soigne » ignorerait la morsure suivante.
+        //
+        // « ordered » ne se dement pas — un ordre donne l'a ete —, mais il se lit dans la memoire
+        // (AgentKnowledge.Orders) et c'est elle qui fait foi : le reconduire depuis l'effet du plan
+        // ferait croire l'ordre donne alors que personne ne l'a accepte. « band_ordered » de meme.
+        "armed", "band_tended", "diversion_made", "ordered", "band_ordered",
     };
 
     /// <param name="carried">
@@ -276,6 +286,7 @@ public static class SymbolicStateBuilder
         CollectItems(context, locations, objects, facts);
         CollectSearches(knowledge, facts);
         CollectAllies(context, objects, danger);
+        CollectCooperation(context, facts);
         CollectThreats(context, objects, facts);
         CollectHeavy(context, objects, facts);
 
@@ -334,10 +345,36 @@ public static class SymbolicStateBuilder
         {
             if (kinds.TryGetValue(location.Name, out var kind) && KindNameOf(kind) is { } category)
                 facts.Add($"{category}({location.Name})");
+            else if (LandmarkCategory(location, context.Self.Knowledge) is { } landmark)
+                facts.Add($"{landmark}({location.Name})");
         }
 
         return locations;
     }
+
+    /// <summary>
+    /// La categorie d'un repere recalcule — la ou la trousse a ete apercue, la cachette, le blesse —,
+    /// prise du lieu ou il tombe tel que l'agent l'a vu (<see cref="AgentKnowledge.ZoneKindAt"/>).
+    /// C'est ce qui fait qu'« avant d'entrer dans un batiment, regroupez-vous » couvre aussi « aller
+    /// ramasser la trousse apercue dans le kiosque » : sans elle, le repere n'avait pas de categorie,
+    /// le schema scinde par la consigne ne le visait pas, et le groupe entrait par la.
+    ///
+    /// <para>
+    /// Le repere <c>group</c> n'en recoit pas : rejoindre le groupe, c'est ce que la consigne de
+    /// regroupement demande, et le groupe tombe souvent dans le batiment ou il vient d'entrer — y
+    /// aller demanderait alors d'etre deja avec lui. La consigne serait insatisfiable par construction.
+    /// </para>
+    /// </summary>
+    private static string? LandmarkCategory(PlanningObject location, AgentKnowledge knowledge)
+    {
+        if (location.Name.Equals(GroupLandmark, StringComparison.OrdinalIgnoreCase)) return null;
+        if (location.Position is not { } cell) return null;
+
+        return knowledge.ZoneKindAt(cell) is { } kind ? KindNameOf(kind) : null;
+    }
+
+    /// <summary>Le repere du groupe, qu'aucune categorie ne vise (<see cref="LandmarkCategory"/>).</summary>
+    private const string GroupLandmark = "group";
 
     /// <summary>
     /// Les lieux que le survivant a vus de ses yeux et que sa categorie ne suffit pas a nommer : les
@@ -521,7 +558,8 @@ public static class SymbolicStateBuilder
     /// garde — le plus proche, dans la limite de <see cref="PlannerSettings.DoorLinkRadius"/>.
     /// Rattacher une porte a tous les lieux alentour ferait passer une rue pour une piece verrouillee.
     ///
-    /// Un lieu reste <c>accessible</c> tant qu'une de ses ouvertures connues n'est pas verrouillee.
+    /// Un lieu reste <c>accessible</c> tant qu'une de ses ouvertures connues n'est pas verrouillee —
+    /// une vitre brisee comptant pour une ouverture (<see cref="AgentKnowledge.Breaches"/>).
     /// C'est cette precondition qui oblige le planificateur a intercaler une action adaptee —
     /// <c>ForceDoor</c> ou <c>BreakWindow</c> — avant de pouvoir fouiller une piece fermee a clef.
     ///
@@ -572,6 +610,13 @@ public static class SymbolicStateBuilder
             else passable.Add(guarded.Name);
         }
 
+        // Une vitre brisee n'est plus une ouverture de la carte mentale, c'est du sol — mais c'est un
+        // passage, et le lieu qu'elle gardait n'est plus scelle par sa seule porte verrouillee.
+        foreach (var breach in knowledge.Breaches)
+        {
+            if (NearestLocation(places, breach, settings.DoorLinkRadius) is { } guarded) passable.Add(guarded.Name);
+        }
+
         var doorsteps = new Dictionary<string, GridPosition>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var location in locations)
@@ -594,9 +639,16 @@ public static class SymbolicStateBuilder
     }
 
     /// <summary>
-    /// Le pas de porte d'un lieu ferme : la case franchissable, voisine d'une de ses ouvertures, la
-    /// plus proche de <paramref name="from"/>. Prendre la plus proche revient a prendre celle du
+    /// Le pas de porte d'un lieu ferme : la case franchissable, voisine d'une de ses ouvertures, du
     /// cote ou l'on se trouve — on force une porte depuis la rue, pas depuis la piece.
+    ///
+    /// « Du cote ou l'on se trouve » veut dire <b>atteignable</b> depuis <paramref name="from"/> par
+    /// la carte mentale, puis la plus proche. La seule distance ne suffisait pas : devant une vitre,
+    /// la case de la rue et celle de la piece sont a egale distance a vol d'oiseau d'un survivant
+    /// qui arrive de biais, l'egalite tombait sur l'interieur, et le plan « aller a la pharmacie,
+    /// puis forcer sa porte » commencait par une case derriere la porte qu'il fallait forcer — A*
+    /// refusait, et le plan se suspendait jusqu'a la fin de la mission. Sans candidate atteignable
+    /// (une carte mentale encore trouee, par exemple), on retombe sur la plus proche.
     ///
     /// Les candidates sont cherchees dans la carte mentale : un seuil jamais observe ne serait pas
     /// un endroit ou le survivant sait aller.
@@ -605,8 +657,7 @@ public static class SymbolicStateBuilder
     {
         if (openings is null) return null;
 
-        GridPosition? best = null;
-        int shortest = int.MaxValue;
+        var candidates = new List<GridPosition>();
 
         foreach (var opening in openings)
         {
@@ -617,15 +668,59 @@ public static class SymbolicStateBuilder
                 if (!knowledge.HasObserved(neighbour)) continue;
                 if (!knowledge.MentalMap.IsWalkable(neighbour)) continue;
 
-                int distance = neighbour.ChebyshevDistanceTo(from);
-                if (distance >= shortest) continue;
-
-                shortest = distance;
-                best = neighbour;
+                candidates.Add(neighbour);
             }
         }
 
+        if (candidates.Count == 0) return null;
+
+        var reachable = Reachable(knowledge.MentalMap, from);
+        var pool = candidates.Where(reachable.Contains).ToList();
+        if (pool.Count == 0) pool = candidates;
+
+        GridPosition? best = null;
+        int shortest = int.MaxValue;
+
+        foreach (var candidate in pool)
+        {
+            int distance = candidate.ChebyshevDistanceTo(from);
+            if (distance >= shortest) continue;
+
+            shortest = distance;
+            best = candidate;
+        }
+
         return best;
+    }
+
+    /// <summary>
+    /// Les cases que la carte mentale laisse atteindre depuis <paramref name="from"/>, pas a pas. Un
+    /// parcours en largeur et non A* : il ne sert qu'a savoir de quel cote d'une ouverture on se
+    /// trouve, et ne tourne que lorsqu'un lieu connu est ferme.
+    /// </summary>
+    private static HashSet<GridPosition> Reachable(GridMap map, GridPosition from)
+    {
+        var seen = new HashSet<GridPosition>();
+        if (!map.Contains(from)) return seen;
+
+        var queue = new Queue<GridPosition>();
+        seen.Add(from);
+        queue.Enqueue(from);
+
+        while (queue.Count > 0)
+        {
+            var cell = queue.Dequeue();
+
+            foreach (var offset in GridPosition.OrthogonalOffsets)
+            {
+                var next = cell + offset;
+                if (!map.IsWalkable(next) || !seen.Add(next)) continue;
+
+                queue.Enqueue(next);
+            }
+        }
+
+        return seen;
     }
 
     private static PlanningObject? NearestLocation(List<PlanningObject> locations, GridPosition cell, int radius)
@@ -682,7 +777,7 @@ public static class SymbolicStateBuilder
     private static void CollectInventory(UtilityContext context, List<PlanningObject> objects, List<string> facts)
     {
         var inventory = context.Self.Inventory;
-        var declared = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "objective", "remedy" };
+        var declared = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "objective", "remedy", "noisemaker" };
 
         // « remedy » est a l'objet qui soigne ce que « objective » est a celui de la mission : un nom
         // symbolique que le domaine peut employer sans jamais nommer une trousse. Tant que toute
@@ -694,6 +789,16 @@ public static class SymbolicStateBuilder
             facts.Add($"has({PlanningProblem.Agent}, remedy)");
             facts.Add("usable(remedy)");
         }
+
+        // « noisemaker » est au petard ce que « remedy » est au bandage : le domaine lance un objet
+        // bruyant sans savoir lequel, et un futur fichier peut en ajouter un autre sans y toucher.
+        if (inventory.NoiseMakerId is not null)
+        {
+            objects.Add(new PlanningObject("noisemaker", PlanningObjectTypes.Item, context.Self.Position));
+            facts.Add($"has({PlanningProblem.Agent}, noisemaker)");
+        }
+
+        if (inventory.IsArmed) facts.Add("armed");
 
         foreach (string itemId in inventory.ItemIds.Order(StringComparer.Ordinal))
         {
@@ -819,6 +924,54 @@ public static class SymbolicStateBuilder
             objects.Add(new PlanningObject(ally.Id, PlanningObjectTypes.Ally, ally.Value));
             danger[ally.Id] = context.DangerAt(ally.Value);
         }
+    }
+
+    /// <summary>
+    /// Trois faits d'entraide qui se lisent dans la memoire et non dans le sac.
+    ///
+    /// <para>
+    /// <c>band_tended</c> : personne n'est blesse, soi compris, parmi ceux dont on connait l'etat.
+    /// Soi compris, parce que « soignez les blesses avant d'entrer » s'adresse aussi au blesse — il
+    /// ne passe pas la porte le premier, il attend qu'on s'occupe de lui. Un allie qui n'a rien dit de
+    /// sa sante ne compte pas : on ne soigne pas ce qu'on devine.
+    /// </para>
+    ///
+    /// <para>
+    /// <c>diversion_made</c> : un leurre (<see cref="NoiseAction.Lure"/>) a ete <b>entendu</b> il y a moins de
+    /// <see cref="CooperationSettings.DiversionMemory"/> secondes. C'est ce qui fait de la diversion un
+    /// geste de groupe : celui qui porte le petard le lance, les autres l'entendent, et c'est le fracas
+    /// lui-meme — pas un message — qui leur dit que la voie est libre.
+    /// </para>
+    ///
+    /// <para>
+    /// <c>ordered(lieu)</c> : un camarade a ete envoye a ce lieu par un ordre — donne ou recu
+    /// (<see cref="AgentKnowledge.Orders"/>). Le fait est pose meme si le lieu n'est plus un objet de
+    /// l'instantane : il dit ce qui a ete fait, pas ou l'on peut aller.
+    /// </para>
+    ///
+    /// <para>
+    /// <c>band_ordered(lieu)</c> : tout le groupe a portee a ete rappele a ce lieu
+    /// (<see cref="AgentKnowledge.BandOrders"/>), par la meme regle.
+    /// </para>
+    /// </summary>
+    private static void CollectCooperation(UtilityContext context, List<string> facts)
+    {
+        var cooperation = context.Settings.Cooperation;
+
+        bool selfWounded = context.Self.HealthRatio < cooperation.WoundedRatio;
+        if (!selfWounded && context.Patient() is null) facts.Add("band_tended");
+
+        bool heard = context.Self.Knowledge.KnownNoises.Values.Any(noise =>
+            noise.Action == NoiseAction.Lure
+            && context.Now - noise.LastObservedAt <= cooperation.DiversionMemory);
+
+        if (heard) facts.Add("diversion_made");
+
+        foreach (string place in context.Self.Knowledge.Orders.Keys.Order(StringComparer.Ordinal))
+            facts.Add($"ordered({place})");
+
+        foreach (string place in context.Self.Knowledge.BandOrders.Keys.Order(StringComparer.Ordinal))
+            facts.Add($"band_ordered({place})");
     }
 
     /// <summary>

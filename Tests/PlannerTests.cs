@@ -410,6 +410,106 @@ public class PlannerTests
         Assert.True(state.Holds("accessible(start)"));
     }
 
+    /// <summary>
+    /// Un lieu ferme a clef se ramene a son seuil — et le seuil est du cote ou l'on se trouve.
+    ///
+    /// Ici, Alice arrive par le nord-est : la case de la pharmacie derriere la vitre est plus pres
+    /// d'elle, a vol d'oiseau, que celle de la rue devant cette meme vitre. Choisi a la distance
+    /// seule, le seuil tombait a l'interieur, et « aller a la pharmacie, puis forcer sa porte »
+    /// commencait par une case derriere la porte a forcer : A* refusait, le plan se suspendait.
+    /// C'est le mode demonstration qui l'a trouve (« Ni vitre, ni effraction », sans ses consignes).
+    /// </summary>
+    [Fact]
+    public void Le_seuil_d_un_lieu_ferme_est_pris_du_cote_ou_l_on_se_trouve()
+    {
+        string[] rows =
+        [
+            "###########",
+            "#.........#",
+            "#..#####..#",
+            "#..#PPP#..#",
+            "#..WPPP#..#",
+            "#..##L##..#",
+            "#........E#",
+            "###########",
+        ];
+
+        var map = TestMaps.Parse(rows);
+        var knowledge = new AgentKnowledge("alice", map.Width, map.Height, map.Origin, DeliveredConfig.Knowledge);
+
+        foreach (var cell in map.AllPositions())
+            knowledge.ObserveCell(cell, map.GetCell(cell), map.IsIndoor(cell), 0d);
+
+        knowledge.RememberLocation("Pharmacie", ZoneKind.Pharmacy, PharmacyCell, 0d, KnowledgeSource.Inference);
+        knowledge.RememberLocation("Extraction", ZoneKind.Extraction, ExtractionCell, 0d, KnowledgeSource.Inference);
+
+        var alice = new Survivor("alice", "Alice", knowledge, settings: DeliveredConfig.Survivor, catalogue: DemoMap.Items)
+        {
+            Position = new GridPosition(6, 1),
+            ObjectiveZone = new ObjectiveSite("Pharmacie", ZoneKind.Pharmacy),
+        };
+
+        var snapshot = SymbolicStateBuilder.Observe(Context(alice), Limits);
+        Assert.False(snapshot.State.Holds("accessible(objective_zone)"));
+
+        var threshold = snapshot.Objects.Single(item => item.Name == "objective_zone").Position!.Value;
+
+        // Devant la vitre, cote rue : la plus proche des cases qu'Alice peut atteindre.
+        Assert.Equal(new GridPosition(2, 4), threshold);
+        Assert.NotEqual(CellType.Pharmacy, map.GetCell(threshold));
+    }
+
+    /// <summary>
+    /// Une vitre brisee devient du sol, et la carte mentale n'y voit plus d'ouverture. Sans le
+    /// souvenir de la breche, le lieu dont on connait la porte verrouillee redevenait « scelle »
+    /// juste apres qu'on y avait fait un passage : la fouille echouait sur <c>accessible</c>, et la
+    /// prise « N'entrez pas desarme, et ne forcez aucune porte » se perdait, les deux vitres cassees
+    /// et personne a l'interieur.
+    /// </summary>
+    [Fact]
+    public void Une_vitre_brisee_rouvre_le_lieu_que_sa_porte_verrouillee_fermait()
+    {
+        string[] rows =
+        [
+            "###########",
+            "#.........#",
+            "#..#####..#",
+            "#..#PPP#..#",
+            "#..WPPP#..#",
+            "#..##L##..#",
+            "#........E#",
+            "###########",
+        ];
+
+        var map = TestMaps.Parse(rows);
+        var knowledge = new AgentKnowledge("alice", map.Width, map.Height, map.Origin, DeliveredConfig.Knowledge);
+
+        foreach (var cell in map.AllPositions())
+            knowledge.ObserveCell(cell, map.GetCell(cell), map.IsIndoor(cell), 0d);
+
+        knowledge.RememberLocation("Pharmacie", ZoneKind.Pharmacy, PharmacyCell, 0d, KnowledgeSource.Inference);
+        knowledge.RememberLocation("Extraction", ZoneKind.Extraction, ExtractionCell, 0d, KnowledgeSource.Inference);
+
+        var alice = new Survivor("alice", "Alice", knowledge, settings: DeliveredConfig.Survivor, catalogue: DemoMap.Items)
+        {
+            Position = new GridPosition(2, 4),
+            ObjectiveZone = new ObjectiveSite("Pharmacie", ZoneKind.Pharmacy),
+        };
+
+        Assert.False(SymbolicStateBuilder.Observe(Context(alice), Limits).State.Holds("accessible(objective_zone)"));
+
+        // Ce que fait WorldPlanRuntime.BreakWindow : la vitre devient du sol, et qui l'a cassee le voit.
+        var window = new GridPosition(3, 4);
+        knowledge.ObserveCell(window, CellType.Floor, indoor: false, 1d);
+
+        Assert.Contains(window, knowledge.Breaches);
+        Assert.True(SymbolicStateBuilder.Observe(Context(alice), Limits).State.Holds("accessible(objective_zone)"));
+
+        // Un sol toujours connu pour du sol n'est pas une breche : il faut avoir vu la vitre avant.
+        knowledge.ObserveCell(new GridPosition(1, 1), CellType.Floor, indoor: false, 2d);
+        Assert.Single(knowledge.Breaches);
+    }
+
     [Fact]
     public void Un_etat_symbolique_est_immuable_et_son_empreinte_ne_depend_pas_de_l_ordre()
     {
@@ -632,8 +732,12 @@ public class PlannerTests
         Assert.Equal(PlanStatus.Completed, plan.Status);
         Assert.Equal(Steps(plan), completed);
 
-        // Le plan s'est traduit en gestes concrets, pas seulement en faits.
-        Assert.Contains(PharmacyCell, runtime.Visited);
+        // Le plan s'est traduit en gestes concrets, pas seulement en faits. « Aller a la pharmacie »
+        // mene devant sa porte, cote rue : le lieu est ferme, il est donc son seuil. Ce test a
+        // longtemps attendu PharmacyCell, l'interieur — derriere la porte qu'il fallait forcer — parce
+        // que ce runtime ne cherche pas de chemin et que l'egalite de distance tombait de ce cote-la.
+        Assert.Contains(DoorCell + new GridPosition(0, 1), runtime.Visited);
+        Assert.DoesNotContain(PharmacyCell, runtime.Visited);
         Assert.Contains("door_open(door_5_5)", runtime.Flags);
         Assert.Contains("objective", runtime.Taken);
 

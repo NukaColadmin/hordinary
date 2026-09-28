@@ -81,6 +81,33 @@ docker run --rm -v "<dossier>:/data" hordinary-val -v \
 Le `-v` de VAL n'est pas décoratif : sans lui, un plan refusé pour violation de contrainte rend
 « `Plan failed to execute` » et rien de plus.
 
+Les mêmes, par [`compose.yaml`](../../compose.yaml) à la racine, qui porte les montages et le nom
+d'image que les tests attendent :
+
+```bash
+docker compose --profile outils pull downward
+docker compose --profile outils build val
+
+docker compose --profile outils run --rm downward --plan-file /tmp/plan.txt \
+    /benchmarks/domain.pddl /benchmarks/snapshots/10-completeplayermission.pddl \
+    --search "astar(lmcut())"
+
+docker compose --profile outils run --rm val -v \
+    /data/missions/<id>/domain.declared.pddl /data/missions/<id>/problem.pddl \
+    /data/missions/<id>/plan.txt
+```
+
+VAL y voit la racine du dépôt en lecture seule, parce que les trois fichiers qu'il réclame ne vivent
+pas au même endroit : les artefacts versionnés sont ici, ceux d'une partie jouée dans
+`missions/<id>/`. `HORDINARY_VAL_DATA` pointe ailleurs quand ils sont réunis dans un dossier à part.
+
+**Sous Git Bash, préfixer par `MSYS_NO_PATHCONV=1`** — ou lancer depuis PowerShell. MSYS réécrit tout
+argument qui ressemble à un chemin POSIX : `/benchmarks/domain.pddl` part au conteneur sous la forme
+`C:/Program Files/Git/benchmarks/domain.pddl`, et Fast Downward s'arrête sur
+« `Could not read file` », pour un montage pourtant correct. Le piège vaut pour toutes les lignes
+ci-dessus, `docker run` comme `docker compose run`, et il ne se voit pas : le conteneur démarre, seul
+le fichier manque.
+
 `Tests/SatisfiabilityTests.cs` cherche le planificateur dans cet ordre : la variable
 `HORDINARY_FAST_DOWNWARD`, le PATH, puis l'image Docker (`HORDINARY_FAST_DOWNWARD_IMAGE` pour en
 désigner une autre). Les tests d'intégration ne sont pas marqués `Skip` : ils **changent de question**

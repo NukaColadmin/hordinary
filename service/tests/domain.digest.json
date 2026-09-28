@@ -1,5 +1,5 @@
 {
-  "domain_hash": "sha256:c3253325e92744cff8b48bc3f14d3bcb767c3a31ab97409675b0c809903037af",
+  "domain_hash": "sha256:ba87bc6b58f471c68c74eeb674ae459560850a1ba5d334ca0c30b2915db7d8e1",
   "types": [
     "ally",
     "door",
@@ -23,6 +23,10 @@
       ]
     },
     {
+      "name": "armed",
+      "params": []
+    },
+    {
       "name": "at",
       "params": [
         "object",
@@ -30,10 +34,24 @@
       ]
     },
     {
+      "name": "band_ordered",
+      "params": [
+        "location"
+      ]
+    },
+    {
+      "name": "band_tended",
+      "params": []
+    },
+    {
       "name": "building",
       "params": [
         "location"
       ]
+    },
+    {
+      "name": "diversion_made",
+      "params": []
     },
     {
       "name": "door_barricaded",
@@ -155,6 +173,12 @@
     },
     {
       "name": "observed",
+      "params": [
+        "location"
+      ]
+    },
+    {
+      "name": "ordered",
       "params": [
         "location"
       ]
@@ -296,7 +320,12 @@
     "EquipWeapon",
     "AttackWithWeapon",
     "PushHeavyObject",
-    "BarricadeDoor"
+    "BarricadeDoor",
+    "ThrowFirecracker",
+    "BorrowWeapon",
+    "TendAlly",
+    "OrderAlly",
+    "OrderBand"
   ],
   "location_kinds": [
     "building",
@@ -324,6 +353,10 @@
       "type": "location"
     },
     {
+      "name": "decoy",
+      "type": "location"
+    },
+    {
       "name": "extraction",
       "type": "location"
     },
@@ -336,8 +369,16 @@
       "type": "location"
     },
     {
+      "name": "lender",
+      "type": "location"
+    },
+    {
       "name": "mission",
       "type": "location"
+    },
+    {
+      "name": "noisemaker",
+      "type": "item"
     },
     {
       "name": "objective",
@@ -352,6 +393,10 @@
       "type": "location"
     },
     {
+      "name": "patient",
+      "type": "location"
+    },
+    {
       "name": "remedy",
       "type": "item"
     },
@@ -360,5 +405,104 @@
       "type": "item"
     }
   ],
-  "active_constraints": []
+  "active_constraints": [],
+  "glossary": {
+    "AttackWithWeapon": "attaquer un zombie avec l\u0027arme qu\u0027on tient : frapper ou tirer",
+    "AttackZombie": "frapper un zombie au contact, a mains nues",
+    "BarricadeDoor": "barricader, condamner une porte",
+    "BorrowWeapon": "emprunter l\u0027arme de rechange d\u0027un camarade",
+    "BreakWindow": "casser une vitre pour entrer",
+    "DropItem": "poser, lacher un objet qu\u0027on porte",
+    "EquipWeapon": "prendre une arme en main",
+    "EscapeLocation": "fuir un lieu ou rodent des zombies",
+    "Explore": "explorer, aller voir ce qu\u0027il y a au-dela de ce qu\u0027on connait",
+    "ForceDoor": "forcer, enfoncer une porte verrouillee",
+    "HealSelf": "se soigner soi-meme",
+    "Hide": "aller se cacher dans un abri connu",
+    "LocateObjective": "decouvrir, en fouillant le lieu de la mission, ou se trouve ce qu\u0027on est venu chercher",
+    "MoveToLocation": "aller a un lieu connu",
+    "Observe": "s\u0027arreter pour observer un lieu",
+    "OpenDoor": "ouvrir une porte fermee mais pas verrouillee",
+    "OrderAlly": "ordonner a un camarade d\u0027aller a un lieu, l\u0027y envoyer",
+    "OrderBand": "rappeler tout le monde, ordonner a tout le groupe d\u0027aller a un lieu",
+    "PickUpItem": "ramasser un objet",
+    "PickUpObjective": "ramasser ce que la mission envoie chercher, sur le lieu de la mission",
+    "PickUpSpottedObjective": "ramasser ce que la mission envoie chercher, apercu ailleurs que sur le lieu de la mission",
+    "PushBackZombie": "repousser un zombie au contact, sans le blesser",
+    "PushHeavyObject": "pousser un objet lourd, meuble ou caisse",
+    "ReachExtraction": "rentrer au van avec ce qu\u0027on est venu chercher : le retour a la base",
+    "SearchRoom": "fouiller un lieu",
+    "ShareKnowledge": "aller dire a un camarade ce qu\u0027on a vu, lui transmettre ce qu\u0027on sait",
+    "TendAlly": "soigner, panser un camarade blesse",
+    "ThrowFirecracker": "lancer un petard au loin pour attirer les zombies ailleurs : faire diversion",
+    "UseItem": "se servir d\u0027un objet qu\u0027on porte",
+    "Wait": "attendre sur place",
+    "accessible": "on peut entrer dans ce lieu : porte ouverte ou vitre cassee",
+    "agent": "le survivant qui agit ; chaque consigne vaut pour chacun",
+    "alley": "une ruelle",
+    "ally": "le camarade le plus proche",
+    "armed": "le survivant tient une arme en etat de servir",
+    "at": "at(X, lieu) : X se trouve a ce lieu ; at(agent, lieu) : le survivant y est",
+    "away_from_danger": "un point hors de portee du danger",
+    "band_ordered": "band_ordered(lieu) : tout le groupe a portee a recu l\u0027ordre d\u0027aller a ce lieu",
+    "band_tended": "aucun blesse du groupe, soi compris, n\u0027attend de soins",
+    "building": "un batiment",
+    "cover": "la cachette connue la plus proche",
+    "decoy": "l\u0027endroit ou lancer un petard : a portee d\u0027oreille des zombies, loin du lieu vise",
+    "diversion_made": "une diversion vient de se faire entendre : les zombies sont attires ailleurs",
+    "door_barricaded": "la porte est barricadee",
+    "door_closed": "la porte est fermee, sans etre verrouillee",
+    "door_locked": "la porte est verrouillee",
+    "door_of": "la porte donne sur ce lieu",
+    "door_open": "la porte est ouverte",
+    "equipped": "cet objet est en main, equipe",
+    "escaped": "le survivant a fui le danger",
+    "explored": "le survivant a explore la zone qu\u0027il visait",
+    "extracted": "le survivant est rentre au van avec ce qu\u0027il etait venu chercher",
+    "extraction": "le van, point d\u0027extraction : la ou l\u0027on rentre",
+    "extraction_known": "le survivant sait ou est le van",
+    "frontier": "le bord de ce qu\u0027on connait, a explorer",
+    "group": "la ou se tient le groupe ; y etre, c\u0027est etre regroupe avec les autres",
+    "has": "has(X, objet) : X porte cet objet ; has(agent, objet) : le survivant l\u0027a sur lui",
+    "healed": "healed(agent) : le survivant s\u0027est soigne lui-meme",
+    "heavy_at": "un objet lourd encombre ce lieu",
+    "hidden": "le survivant est cache",
+    "inventory_full": "le sac du survivant est plein",
+    "item_at": "cet objet se trouve a ce lieu",
+    "knowledge_shared": "le survivant a transmis ce qu\u0027il sait a un camarade",
+    "known": "le survivant sait ou est ce lieu",
+    "lender": "le camarade qui a dit porter une arme de rechange",
+    "mass_ok": "assez de survivants sont la pour pousser cet objet lourd",
+    "mission": "le lieu designe par l\u0027ordre du joueur",
+    "noisemaker": "un objet qui fait du bruit, comme un petard",
+    "objective": "ce que la mission envoie chercher",
+    "objective_collected": "ce que la mission envoie chercher a ete ramasse",
+    "objective_found": "on sait ou se trouve ce que la mission envoie chercher",
+    "objective_spot": "l\u0027endroit ou l\u0027on a apercu ce que la mission cherche, hors du lieu de la mission",
+    "objective_zone": "le lieu de la mission, ou chercher",
+    "observed": "ce lieu a ete observe",
+    "ordered": "ordered(lieu) : un camarade a recu l\u0027ordre d\u0027aller a ce lieu",
+    "patient": "le camarade blesse le plus proche",
+    "pharmacy": "une pharmacie",
+    "pushed": "cet objet lourd a ete pousse",
+    "pushed_back": "ce zombie a ete repousse",
+    "remedy": "de quoi soigner : bandage, trousse",
+    "searched": "ce lieu a ete fouille",
+    "searched_in_vain": "ce lieu a ete fouille sans y trouver ce que la mission cherche",
+    "shared_with": "le survivant a parle a ce camarade",
+    "start": "le point de depart de la mission",
+    "street": "une rue",
+    "threat_down": "ce zombie est a terre",
+    "threat_handled": "la menace au contact est reglee : zombie repousse ou abattu",
+    "toolbox": "une caisse a outils",
+    "usable": "cet objet est en etat de servir",
+    "used": "cet objet a servi",
+    "waited": "le survivant a attendu",
+    "window_broken": "la vitre est cassee",
+    "window_intact": "la vitre est intacte",
+    "window_of": "la vitre donne sur ce lieu",
+    "zombie_adjacent": "ce zombie est au contact",
+    "zombie_in_range": "ce zombie est a portee de l\u0027arme en main",
+    "zombie_near": "des zombies rodent pres de ce lieu"
+  }
 }

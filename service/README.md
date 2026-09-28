@@ -59,6 +59,20 @@ docker run --rm -p 8001:8001 -e OPENROUTER_API_KEY hordinary-service
 dans l'image ni dans une ligne de commande.** Une image se pousse et se met en cache ; une clé qui y
 entre est publiée avec elle.
 
+Ou par [`compose.yaml`](../compose.yaml), à la racine, qui lance de la même façon les outillages
+conteneurisés du projet — ce service, son harnais d'évaluation, Fast Downward et VAL :
+
+```bash
+docker compose up -d service                                  # 127.0.0.1:8001
+docker compose --profile evals run --rm evals --dry-run       # le harnais, sans réseau
+```
+
+Deux différences avec la ligne `docker run` ci-dessus, et les deux sont voulues. Le port est publié
+sur **`127.0.0.1` et non `0.0.0.0`** : ce service porte une clé et appelle un fournisseur facturé à
+l'appel, donc l'offrir au réseau local revient à offrir la facture. Et le harnais monte
+`service/evals/`, que le `.dockerignore` tient hors de l'image : sans ce montage, le rapport d'un
+passage payant s'écrirait dans le conteneur et disparaîtrait avec lui.
+
 L'image sert le service ; elle n'emporte pas le dépôt. Les trois tests qui comparent le digest au
 `tools/pddl/domain.pddl` du jeu s'y annoncent donc comme ignorés, avec leur raison — c'est le passage
 depuis le dépôt qui fait foi (58 contre 55 + 3).
@@ -153,7 +167,7 @@ elle est traitée comme une **ablation à publier**, pas comme un acquis (voir c
 
 ```bash
 cd service
-python -m pytest tests/ -q          # 58 tests, ~0,5 s
+python -m pytest tests/ -q          # 62 tests, ~0,5 s
 ```
 
 Aucun n'ouvre de connexion et aucun ne demande de clé : le fournisseur est un `ScriptedProvider` à qui
@@ -165,7 +179,7 @@ Ce que ces tests ne vérifient pas : que le modèle traduit bien. Cela ne se tes
 
 ## Évaluation
 
-Soixante-six phrases de joueur dans `evals/utterances.jsonl`, chacune avec son attendu — une
+Soixante-quatorze phrases de joueur dans `evals/utterances.jsonl`, chacune avec son attendu — une
 contrainte exacte, ou un refus avec sa famille. Le corpus contient des phrases ambiguës, des phrases
 hors sujet, des préférences déguisées en règles, une injection, et des formulations que la grammaire
 ne peut pas exprimer. Un corpus qui ne contient que des cas faciles ne mesure rien.
@@ -180,6 +194,9 @@ python -m evals.run --model deepseek/deepseek-v4.1-flash
 python -m evals.run --model x --model y --model z               # la comparaison
 python -m evals.run --model x --no-digest                       # ablation 1
 python -m evals.run --model x --few-shot 4                      # ablation 2
+python -m evals.run --model x --no-glossary                     # ablation 3 : sans les définitions
+python -m evals.run --corpus evals/heldout.jsonl --no-glossary # les phrases tenues à l'écart, sans puis avec
+python -m evals.run --no-glossary --repeat 3                    # trois tirages : le modèle n'est pas déterministe
 ```
 
 La mesure à mettre en avant est le **taux de faux acceptés** — une contrainte plausible mais fausse —
@@ -253,7 +270,7 @@ tableau. Elle a déjà tué un passage entièrement réussi.
 }
 ```
 
-Deux écarts au contrat de la spécification, tous deux nécessaires et documentés :
+Trois écarts au contrat de la spécification, tous nécessaires et documentés :
 
 * **`domain_digest.objects`** — le portillon 1 refuse tout objet qu'il ne connaît pas, et l'exemple
   canonique du livrable cite `group`, qui est un repère de `config/planner_domain.json` et non un type
@@ -261,7 +278,13 @@ Deux écarts au contrat de la spécification, tous deux nécessaires et document
   grammaire exige pourtant l'exactitude ;
 * **`constraint.factor`** — sans lui, `penalize(A, k)` était intraduisible : « évitez de forcer les
   portes » n'a pas de sens sans un `k`. Les bornes restent celles du jeu
-  (`instructions.min_penalty` / `max_penalty`), donc le laisser libre ici ne libère rien.
+  (`instructions.min_penalty` / `max_penalty`), donc le laisser libre ici ne libère rien ;
+* **`domain_digest.glossary`** — le sens de chaque symbole, dans les mots d'un joueur, pris dans la
+  section `glossary` de `config/planner_domain.json`. Le nom et le type disent où un symbole se met,
+  pas ce qu'il désigne : sans lui, « Soignez les blessés avant d'entrer » — le libellé même d'une
+  consigne pré-écrite — était refusée faute de rien qui la relie à `band_tended`. Le champ est un
+  **ajout** : absent, le digest se lit comme avant, et le nœud `context` rend la mise en page des
+  passages publiés.
 
 Le service ne renvoie jamais autre chose que ces deux formes. Un test le vérifie grossièrement
 (`test_le_contrat_de_sortie_ne_porte_jamais_de_pddl`), exprès : il attrape le jour où quelqu'un

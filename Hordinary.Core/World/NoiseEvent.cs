@@ -19,6 +19,15 @@ public enum NoiseAction
     /// mais rien ne garantit qu'un futur enregistrement fera de meme.
     /// </summary>
     BarricadeDoor,
+
+    /// <summary>
+    /// Un petard lance expres pour attirer la horde ailleurs (<c>ThrowFirecracker</c>). Il sonne
+    /// comme une <see cref="Distraction"/>, mais porte son propre nom pour une raison precise : le
+    /// moteur etiquette <see cref="Distraction"/> tout bruit d'action qui n'en declare pas — le pas
+    /// de depart d'un deplacement, une fouille —, et <c>diversion_made</c> ne doit pas se lire dans
+    /// le bruit d'une porte qu'on pousse. Ajoute en dernier, comme <see cref="BarricadeDoor"/>.
+    /// </summary>
+    Lure,
 }
 
 /// <summary>

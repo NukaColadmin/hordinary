@@ -1,4 +1,5 @@
 using Hordinary.AI.Navigation;
+using Hordinary.AI.Utility;
 using Hordinary.Agents;
 using Hordinary.World;
 
@@ -32,6 +33,12 @@ public sealed class WorldPlanRuntime : IPlanRuntime
     private readonly IHorde? _horde;
     private readonly ItemCatalogue _catalogue;
 
+    /// <summary>Sous ce rapport de sante, un camarade est un patient (<c>utility_ai.cooperation</c>).</summary>
+    private readonly float _woundedRatio;
+
+    /// <summary>Poids d'un ordre donne a un camarade (<c>utility_ai.cooperation.order_priority</c>).</summary>
+    private readonly float _orderPriority;
+
     private bool _blocked;
 
     /// <param name="band">
@@ -56,7 +63,8 @@ public sealed class WorldPlanRuntime : IPlanRuntime
         IReadOnlyList<Survivor>? band = null,
         KnowledgeSharing? sharing = null,
         IHorde? horde = null,
-        ItemCatalogue? catalogue = null)
+        ItemCatalogue? catalogue = null,
+        CooperationSettings? cooperation = null)
     {
         _survivor = survivor ?? throw new ArgumentNullException(nameof(survivor));
         _world = world ?? throw new ArgumentNullException(nameof(world));
@@ -67,6 +75,9 @@ public sealed class WorldPlanRuntime : IPlanRuntime
         _sharing = sharing ?? new KnowledgeSharing();
         _horde = horde;
         _catalogue = catalogue ?? ItemCatalogue.Empty;
+        var tuning = cooperation ?? new CooperationSettings();
+        _woundedRatio = tuning.WoundedRatio;
+        _orderPriority = tuning.OrderPriority;
     }
 
     /// <summary>Cellule reellement occupee par le corps du survivant, pas celle que le plan supposait.</summary>
@@ -241,6 +252,10 @@ public sealed class WorldPlanRuntime : IPlanRuntime
         "healed" => Heal(Subject(fact)),
         "shared_with" => ShareWith(Subject(fact)),
         "pushed_back" => PushBack(Subject(fact)),
+        "armed" => Borrow(where),
+        "band_tended" => Tend(where),
+        "ordered" => Order(Subject(fact), where, band: false),
+        "band_ordered" => Order(Subject(fact), where, band: true),
         // Fouiller, observer : rien a changer dans le monde, la perception fait le reste.
         _ => true,
     };
@@ -484,9 +499,19 @@ public sealed class WorldPlanRuntime : IPlanRuntime
     /// diversion de celui qui la provoque : la diversion sur place faisait du bruit sous ses propres
     /// pieds, et attirait donc la horde sur soi.
     ///
-    /// Aucun plan ne demande plus cela : <c>ThrowFirecracker</c> a ete retiree du domaine au livrable
-    /// 15, en meme temps que l'objectif <c>CreateDistraction</c>. Se sacrifier pour degager un allie
-    /// n'est pas un reflexe, c'est une strategie — elle revient au joueur, et le moteur reste pret.
+    /// <para>
+    /// Il faut avoir de quoi lancer : le premier objet porte qui declare <c>emit_noise</c>, consomme
+    /// au passage. <c>ThrowFirecracker</c> ne vient au plan que par une consigne du joueur — se
+    /// sacrifier pour degager un allie n'est pas un reflexe — mais un petard qu'on lance sans le
+    /// sortir du sac serait un petard inepuisable.
+    /// </para>
+    ///
+    /// <para>
+    /// Le lanceur retient sa propre diversion. La perception ignore les bruits qu'on produit soi-meme
+    /// (« on ne sursaute pas a ses propres pas »), et <c>diversion_made</c> se lit dans la memoire des
+    /// bruits : sans cette ligne, le seul survivant du groupe a ne pas savoir que la diversion a eu
+    /// lieu serait celui qui l'a faite.
+    /// </para>
     /// </summary>
     public bool ThrowNoise(string target, float amount)
     {
@@ -497,8 +522,21 @@ public sealed class WorldPlanRuntime : IPlanRuntime
             return false;
         }
 
-        EmitNoise(amount, where, nameof(NoiseAction.Distraction));
-        Log($"{_survivor.Name} cree une diversion en {where} depuis {AgentCell}");
+        if (_survivor.Inventory.NoiseMakerId is not { } thrown || !_survivor.RemoveFromInventory(thrown))
+        {
+            Log($"{_survivor.Name} n'a rien a lancer");
+            return false;
+        }
+
+        var noise = _world.Noises.EmitRaw(where, amount, _world.Time, _survivor.Id, NoiseAction.Lure);
+
+        if (noise is not null)
+        {
+            _survivor.Knowledge.RememberNoise(noise.Id, where, amount, _world.Time, action: NoiseAction.Lure);
+            Log($"bruit : {noise}");
+        }
+
+        Log($"{_survivor.Name} lance {thrown} en {where} depuis {AgentCell}");
 
         WorldChanged?.Invoke($"diversion en {where}");
         return true;
@@ -791,6 +829,177 @@ public sealed class WorldPlanRuntime : IPlanRuntime
 
         return found;
     }
+
+    // --- Entraide ------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Emprunter l'arme de rechange d'un camarade. Le plan visait le repere <c>lender</c> — ou le
+    /// survivant <b>croyait</b> trouver quelqu'un qui en a une ; le geste, lui, se fait avec qui est
+    /// reellement a portee de bras et porte reellement une arme en trop. S'il n'y a personne, ou plus
+    /// rien a preter, l'action echoue et la replanification repart d'une croyance corrigee.
+    /// </summary>
+    private bool Borrow(GridPosition? where)
+    {
+        if (_survivor.Inventory.IsArmed) return true;
+
+        var lender = Nearby(where).FirstOrDefault(ally => ally.Inventory.SpareWeapon is not null);
+
+        if (lender?.Inventory.SpareWeapon is not { } weapon)
+        {
+            Log($"{_survivor.Name} cherche a emprunter une arme, mais personne a portee n'en a une de trop");
+            foreach (var ally in Nearby(where)) Acquaint(ally, _survivor);
+            return false;
+        }
+
+        if (!lender.Inventory.HandTo(_survivor.Inventory, weapon))
+        {
+            Log($"{_survivor.Name} n'a plus la place de prendre {weapon}");
+            return false;
+        }
+
+        _survivor.Inventory.EquipWeapon(weapon);
+
+        // Ce que chacun sait de l'autre vient de changer, et les deux l'ont vu : on vient de se passer
+        // une arme de la main a la main.
+        Acquaint(lender, _survivor);
+        Acquaint(_survivor, lender);
+
+        Log($"{lender.Name} prete {weapon} a {_survivor.Name}");
+        WorldChanged?.Invoke($"{weapon} pretee a {_survivor.Name}");
+        return true;
+    }
+
+    /// <summary>
+    /// Soigner le camarade blesse le plus mal en point a portee, avec ce qu'on porte. Le patient
+    /// designe par le plan est une croyance ; le soin se fait sur qui est la. Le montant suit la
+    /// regle de <see cref="Heal"/> : celui du remede, a defaut celui de la fiche du soignant.
+    /// </summary>
+    private bool Tend(GridPosition? where)
+    {
+        var patient = Nearby(where)
+            .Where(ally => ally.HealthRatio < _woundedRatio)
+            .OrderBy(ally => ally.HealthRatio)
+            .FirstOrDefault();
+
+        if (patient is null)
+        {
+            Log($"{_survivor.Name} vient soigner, mais personne a portee n'est blesse");
+            foreach (var ally in Nearby(where)) Acquaint(ally, _survivor);
+            return false;
+        }
+
+        if (!Heal(patient.Id)) return false;
+
+        Acquaint(patient, _survivor);
+        Acquaint(_survivor, patient);
+        return true;
+    }
+
+    /// <summary>
+    /// Donner un ordre a un camarade : « va au van », « va a la superette ». Le plan visait le repere
+    /// <c>ally</c> ; l'ordre, lui, part a qui l'entend reellement — portee de voix, ou de radio si les
+    /// deux en portent une (<see cref="KnowledgeSharing.CanTalk"/>) — et l'accepte.
+    ///
+    /// <para>
+    /// L'ordre ne pilote personne : il pose un <see cref="MissionOrder"/> chez le camarade, que sa
+    /// propre boucle de decision executera — ses propres cartes, son propre A*, ses propres reflexes.
+    /// Ce qui le fait passer devant ses objectifs a lui est l'entree <c>obeying</c>, et ce qui l'efface
+    /// une fois rempli est <see cref="Survivor.Settle"/>. Rien ici ne touche au plan d'un autre.
+    /// </para>
+    ///
+    /// <para>
+    /// Personne ne l'accepte si chacun a portee est deja sous un ordre plus fort — le rappel du van,
+    /// ou l'ordre d'un autre camarade pas encore rempli. L'action echoue alors, et la replanification
+    /// repart de la.
+    /// </para>
+    /// </summary>
+    /// <param name="place">Le nom du lieu, tel que le plan le cite : c'est aussi le fait retenu.</param>
+    /// <param name="where">La case du lieu, figee par le probleme au moment du plan.</param>
+    /// <param name="band">
+    /// Vrai pour <c>OrderBand</c> : l'ordre part a chaque camarade qui l'entend et l'accepte, pas au
+    /// premier. Il suffit qu'un seul obeisse pour que le rappel soit donne — ceux qui avaient deja un
+    /// ordre plus fort le gardent, comme pour un ordre simple. Vers le van, il se tient une fois rempli
+    /// (<see cref="MissionOrder.Holds"/>).
+    /// </param>
+    /// <summary>Le nom du van dans le domaine : un rappel general vers lui se tient.</summary>
+    private const string Extraction = "extraction";
+
+    private bool Order(string place, GridPosition? where, bool band)
+    {
+        if (where is not { } destination)
+        {
+            Log(band
+                ? $"{_survivor.Name} veut rappeler tout le monde a {place}, mais ne sait pas ou c'est"
+                : $"{_survivor.Name} veut envoyer quelqu'un a {place}, mais ne sait pas ou c'est");
+            return false;
+        }
+
+        var order = new MissionOrder($"ordre de {_survivor.Name} : aller a {place}", destination, _orderPriority)
+        {
+            Issuer = _survivor.Id,
+            Holds = band && place.Equals(Extraction, StringComparison.OrdinalIgnoreCase),
+        };
+
+        var listeners = _band
+            .Where(ally => ally.Alive && !ReferenceEquals(ally, _survivor))
+            .Where(ally => _sharing.CanTalk(_survivor, ally))
+            .OrderBy(ally => ally.Position.ChebyshevDistanceTo(AgentCell))
+            .ThenBy(ally => ally.Id, StringComparer.Ordinal)
+            .ToList();
+
+        // Un ordre part au premier qui l'accepte ; un rappel, a chacun. Le meme MissionOrder sert a
+        // tous : Obey en fait une copie par camarade, avec ce que celui-ci mettait de cote.
+        var recipients = band
+            ? listeners.Where(ally => ally.Obey(order)).ToList()
+            : listeners.Where(ally => ally.Obey(order)).Take(1).ToList();
+
+        if (recipients.Count == 0)
+        {
+            string wanted = band ? $"rappeler tout le monde a {place}" : $"envoyer quelqu'un a {place}";
+
+            Log(listeners.Count == 0
+                ? $"{_survivor.Name} veut {wanted}, mais personne n'est a portee de voix"
+                : $"{_survivor.Name} veut {wanted}, mais chacun a deja un ordre plus fort");
+            return false;
+        }
+
+        _survivor.Knowledge.RememberOrder(place, _world.Time, band);
+        foreach (var recipient in recipients) recipient.Knowledge.RememberOrder(place, _world.Time, band);
+
+        string names = string.Join(", ", recipients.Select(recipient => recipient.Name));
+
+        Log(band
+            ? $"{_survivor.Name} rappelle tout le monde a {place} : {names}"
+            : $"{_survivor.Name} ordonne a {names} d'aller a {place}");
+        return true;
+    }
+
+    /// <summary>
+    /// Les camarades debout a portee de bras, les plus proches de <paramref name="where"/> d'abord —
+    /// la ou le plan croyait les trouver. Un pret ou un soin se font au contact, pas a la voix.
+    /// </summary>
+    private IEnumerable<Survivor> Nearby(GridPosition? where)
+        => _band
+            .Where(ally => ally.Alive && !ReferenceEquals(ally, _survivor))
+            .Where(ally => ally.Position.ChebyshevDistanceTo(AgentCell) <= _settings.PickUpRadius + 1)
+            .OrderBy(ally => where is { } cell ? ally.Position.ChebyshevDistanceTo(cell) : 0)
+            .ThenBy(ally => ally.Id, StringComparer.Ordinal);
+
+    /// <summary>
+    /// <paramref name="listener"/> apprend ce que <paramref name="speaker"/> est devenu : sa sante et
+    /// ce qu'il lui reste a preter. C'est le <see cref="KnowledgeSharing.Talk"/> d'un echange au
+    /// contact, reduit a ce que l'echange a change — sans quoi l'emprunteur croirait son preteur encore
+    /// muni, et reviendrait lui demander une arme qu'il vient de recevoir.
+    /// </summary>
+    private void Acquaint(Survivor speaker, Survivor listener)
+        => listener.Knowledge.RememberEntity(
+            speaker.Id,
+            EntityKind.Survivor,
+            speaker.Position,
+            _world.Time,
+            health: speaker.HealthRatio,
+            panic: speaker.Panic,
+            spareWeapon: speaker.Inventory.SpareWeapon ?? string.Empty);
 
     private void Log(string message) => Logged?.Invoke(message);
 

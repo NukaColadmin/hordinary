@@ -39,9 +39,11 @@ public sealed class UtilityContext
     private readonly Func<GridPosition, bool>? _reachable;
 
     private GridPosition? _cover;
+    private GridPosition? _decoy;
     private GridPosition? _refuge;
     private Frontier? _frontier;
     private bool _coverSearched;
+    private bool _decoySearched;
     private bool _frontierSearched;
     private bool _refugeSearched;
 
@@ -50,6 +52,7 @@ public sealed class UtilityContext
     {
         "self", "danger", "away_from_danger", "cover", "frontier", "mission",
         "ally", "group", "objective", "objective_zone", "pharmacy", "extraction", "start",
+        "lender", "patient", "decoy",
     };
 
     public Survivor Self { get; }
@@ -285,6 +288,9 @@ public sealed class UtilityContext
         "frontier" => BestFrontier?.Cell,
         "ally" => NearestAlly()?.Value,
         "group" => GroupCentre(),
+        "lender" => Lender()?.Value,
+        "patient" => Patient()?.Value,
+        "decoy" => Decoy(),
         "objective" => NearestObjective(),
         "objective_zone" => ObjectiveZoneCell(),
         "pharmacy" => LocationOf(ZoneKind.Pharmacy),
@@ -301,6 +307,107 @@ public sealed class UtilityContext
     {
         if (_threats.Count == 0) return null;
         return _threats.OrderBy(threat => Distance(Self.Position, threat.Position)).First().Position;
+    }
+
+    // --- Entraide -----------------------------------------------------------------------------
+
+    /// <summary>
+    /// L'allie le plus proche qui a dit porter une arme de rechange. Ce n'est pas une observation : on
+    /// voit ce qu'un camarade tient, pas ce qu'il a dans le sac. Le repere n'existe donc que pour qui
+    /// a parle avec lui — et disparait des qu'il a dit ne plus rien avoir a preter.
+    /// </summary>
+    public EntityBelief? Lender()
+        => _allies
+            .Where(ally => ally.CanLend)
+            .OrderBy(ally => Distance(Self.Position, ally.Value))
+            .ThenBy(ally => ally.Id, StringComparer.Ordinal)
+            .FirstOrDefault();
+
+    /// <summary>
+    /// L'allie le plus proche qu'on sait blesse — sous <see cref="CooperationSettings.WoundedRatio"/>.
+    /// Meme regle que pour <see cref="AllyHealth"/> : la sante d'un allie se raconte, elle ne se
+    /// devine pas, et un camarade qui n'a rien dit n'est le patient de personne.
+    /// </summary>
+    public EntityBelief? Patient()
+        => _allies
+            .Where(ally => ally.HealthRatio is { } health && health < Settings.Cooperation.WoundedRatio)
+            .OrderBy(ally => Distance(Self.Position, ally.Value))
+            .ThenBy(ally => ally.Id, StringComparer.Ordinal)
+            .FirstOrDefault();
+
+    /// <summary>
+    /// Ou lancer un petard : la case connue, praticable et a l'air libre, a portee de jet, la plus
+    /// eloignee du lieu de la mission — et, si l'on sait des zombies quelque part, parmi celles que
+    /// le plus proche de ce lieu entendrait (<see cref="CooperationSettings.LureReach"/>).
+    ///
+    /// <para>
+    /// La seconde condition est tout le geste. La premiere version cherchait le point le plus
+    /// eloigne a la fois de soi et du lieu vise, et le petard partait a l'oppose de la horde : un
+    /// fracas a dix-huit cases de deux zombies qui ne l'entendaient pas, et qui gardaient la porte.
+    /// Un leurre ne vaut que s'il est entendu, et il ne sert que s'il emmene la horde plus loin de la
+    /// porte qu'elle n'en etait. Sans zombie connu, le jet part a l'aveugle, le plus
+    /// loin possible du but : c'est la consigne qui l'exige, pas la situation.
+    /// </para>
+    ///
+    /// <para>
+    /// Le repere n'existe que pour qui porte de quoi le lancer. Sans cette condition, chaque
+    /// instantane de chaque survivant declarerait un leurre que personne ne peut poser, et les
+    /// exports PDDL en porteraient un objet mort de plus.
+    /// </para>
+    /// </summary>
+    private GridPosition? Decoy()
+    {
+        if (_decoySearched) return _decoy;
+        _decoySearched = true;
+
+        if (Self.Inventory.NoiseMakerId is null) return _decoy = null;
+
+        var cooperation = Settings.Cooperation;
+        var objective = ObjectiveZoneCell() ?? Self.Position;
+
+        // Les zombies a detourner : tous ceux qu'on croit connaitre, les plus proches du lieu vise
+        // d'abord. Pas de rayon autour du lieu — la case qui le represente en est le coin, pas la
+        // porte, et un zombie qui garde l'entree peut en etre a douze cases.
+        var guards = Self.Knowledge.BelievedEntities(Now)
+            .Where(belief => belief.Kind == EntityKind.Zombie)
+            .Select(belief => Self.Knowledge.PredictedPositionOf(belief, Now))
+            .OrderBy(position => Distance(position, objective))
+            .ToList();
+
+        // Un leurre que tous entendent, s'il en existe un ; sinon, celui qu'entend le plus proche de
+        // la porte — c'est lui qui la garde.
+        _decoy = FarthestThrow(objective, guards) ?? FarthestThrow(objective, guards.Take(1).ToList());
+        return _decoy;
+    }
+
+    /// <summary>
+    /// La case a portee de jet la plus eloignee de <paramref name="objective"/> parmi celles que
+    /// chaque zombie de <paramref name="guards"/> entendrait, ou <c>null</c> s'il n'y en a aucune.
+    /// L'ordre de parcours est fixe — a egalite, la premiere case lue l'emporte — pour qu'a graine
+    /// egale le petard tombe au meme endroit.
+    /// </summary>
+    private GridPosition? FarthestThrow(GridPosition objective, IReadOnlyList<GridPosition> guards)
+    {
+        var cooperation = Settings.Cooperation;
+        float best = float.NegativeInfinity;
+        GridPosition? chosen = null;
+
+        foreach (var belief in Self.Knowledge.KnownCells.Values
+                     .OrderBy(belief => belief.Position.Y)
+                     .ThenBy(belief => belief.Position.X))
+        {
+            if (belief.Indoor || !belief.Value.IsKnownWalkable()) continue;
+            if (Distance(Self.Position, belief.Position) > cooperation.ThrowRange) continue;
+            if (guards.Any(guard => Distance(guard, belief.Position) > cooperation.LureReach)) continue;
+
+            float away = Distance(objective, belief.Position);
+            if (away <= best) continue;
+
+            best = away;
+            chosen = belief.Position;
+        }
+
+        return chosen;
     }
 
     private GridPosition? GroupCentre()
@@ -344,13 +451,23 @@ public sealed class UtilityContext
 
     // --- Cellules choisies dans la carte mentale ---------------------------------------------
 
-    /// <summary>Cellule connue, praticable et a l'interieur la plus proche : de quoi se mettre a l'abri.</summary>
+    /// <summary>
+    /// Cellule connue, praticable, a l'interieur et <b>atteignable</b> la plus proche : de quoi se
+    /// mettre a l'abri.
+    ///
+    /// L'atteignabilite manquait, et c'est le plan du quartier du mode demonstration qui l'a montre :
+    /// la piece la plus proche etait l'interieur d'une superette fermee a clef, <c>Hide</c> visait une
+    /// case derriere la porte, A* refusait, et le plan se suspendait « en attente d'une nouvelle
+    /// information » qui ne venait pas. Le cas n'est pas propre a la demonstration : une piece vue a
+    /// travers la vitre d'un batiment verrouille est une cachette tout aussi inaccessible.
+    /// </summary>
     private GridPosition? Cover()
     {
         if (_coverSearched) return _cover;
         _coverSearched = true;
 
-        _cover = NearestKnownCell(belief => belief.Indoor && belief.Value.IsKnownWalkable());
+        _cover = NearestKnownCell(belief =>
+            belief.Indoor && belief.Value.IsKnownWalkable() && CanReach(belief.Position));
         return _cover;
     }
 

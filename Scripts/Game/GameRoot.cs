@@ -68,6 +68,7 @@ public partial class GameRoot : Node2D
     [Export] public string CampPath { get; set; } = "res://config/camp.json";
     [Export] public string MapGenPath { get; set; } = "res://config/mapgen.json";
     [Export] public string InstructionPresetsPath { get; set; } = "res://config/instruction_presets.json";
+    [Export] public string DemoScenariosPath { get; set; } = "res://config/demo_scenarios.json";
 
     /// <summary>Noms des TileMapLayer, du fond vers le premier plan.</summary>
     [Export] public string[] LayerNames { get; set; } = ["Ground", "Wall-Door", "Window", "Objects"];
@@ -187,8 +188,62 @@ public partial class GameRoot : Node2D
     /// <summary>Ce que le joueur a confie a chacun au depart. Il dit aussi ce qui doit revenir.</summary>
     private CampLoadout? _loadout;
 
-    /// <summary>Ce que la victoire a rapporte, garde pour l'annoncer au camp au retour.</summary>
-    private IReadOnlyList<MissionReward> _awarded = [];
+    /// <summary>
+    /// Le bilan de la sortie, dresse au verdict et complete au reglement puis a la journee. Il est
+    /// garde pour l'annoncer au camp au retour, une fois la scene videe.
+    /// </summary>
+    private MissionReport? _report;
+
+    // --- Mode demonstration ---------------------------------------------------------------------
+
+    /// <summary>Les grilles et scenarios d'essai (<c>config/demo_scenarios.json</c>).</summary>
+    private DemoCatalogue _demo = DemoCatalogue.Empty;
+
+    /// <summary>L'ecran de choix du mode demonstration, qui remplace l'ecran de camp.</summary>
+    private DemoScreen? _demoScreen;
+
+    /// <summary>
+    /// Le scenario en cours, ou <c>null</c> pour une mission du camp. C'est ce qui distingue une prise
+    /// d'une sortie : ni peage, ni journee, ni entrepot — une prise ne consomme rien, pour que la
+    /// suivante soit la meme.
+    /// </summary>
+    private DemoStage? _stage;
+
+    /// <summary>Si les consignes du scenario s'appliquent : le contraste que filme un clip de consigne.</summary>
+    private bool _stageInstructions = true;
+
+    /// <summary>Le dernier scenario joue, que l'ecran represente d'emblee pour la prise suivante.</summary>
+    private string? _lastScenario;
+
+    /// <summary>
+    /// Les consignes du joueur pour une carte blanche, chacune avec la phrase qui l'a produite ; vide
+    /// pour tout autre scenario. La phrase est gardee parce que c'est elle que le joueur reconnaitra
+    /// au bilan, et la contrainte parce que c'est elle qui a ete jouee.
+    /// </summary>
+    private IReadOnlyList<(string Constraint, string Said)> _playerInstructions = [];
+
+    /// <summary>
+    /// Consignes d'une carte blanche lancee d'office (<c>--consigne=</c>, repetable). Elles sont
+    /// ecrites dans la grammaire fermee et ne passent pas par le service de langage : une prise en
+    /// headless doit se rejouer sans reseau, et a l'identique.
+    /// </summary>
+    private readonly List<string> _commandLineInstructions = [];
+
+    /// <summary>Scenario a lancer sans passer par l'ecran — une fois (<c>demo.autostart</c> ou <c>--demo=</c>).</summary>
+    private string? _autostart;
+
+    /// <summary>Vrai si la partie se joue en mode demonstration, par la configuration ou la ligne de commande.</summary>
+    private bool _demoMode;
+
+    /// <summary>
+    /// Fermer le jeu apres le bilan de la prise lancee d'office (<c>--quitter</c>). C'est ce qui permet
+    /// de derouler les douze scenarios en headless l'un apres l'autre : sans lui, chaque prise finie
+    /// attendrait sur l'ecran de choix jusqu'au <c>--quit-after</c>.
+    /// </summary>
+    private bool _quitAfterStage;
+
+    /// <summary>Ce que la prise a montre — actions menees a bien et evenements —, compare a l'attente au bilan.</summary>
+    private readonly List<string> _happened = [];
 
     /// <summary>
     /// Tout ce que <see cref="Begin"/> a ajoute a la scene : corps, van, meubles, overlays, panneaux.
@@ -259,6 +314,24 @@ public partial class GameRoot : Node2D
         Trace.UseChannels(_config.Debug.ConsoleChannels);
         Trace.Print($"[Config] configuration lue depuis {GameConfigPath}.");
 
+        var instructions = _config.Instructions.LocallyEnabled(
+            OS.GetCmdlineUserArgs(), System.Environment.GetEnvironmentVariable(InstructionSettings.EnvironmentVariable));
+
+        if (!ReferenceEquals(instructions, _config.Instructions))
+        {
+            _config = _config with { Instructions = instructions };
+            Trace.Print($"[Config] service de langage allume pour cette session ({InstructionSettings.Argument} ou {InstructionSettings.EnvironmentVariable}).");
+        }
+
+        var debug = _config.Debug.LocallyObserved(OS.GetCmdlineUserArgs());
+
+        if (!ReferenceEquals(debug, _config.Debug))
+        {
+            _config = _config with { Debug = debug };
+            Trace.Enabled = debug.ShowsConsole;
+            Trace.Print($"[Config] touches et panneaux de l'observateur ouverts pour cette session ({DebugSettings.ObserverArgument}).");
+        }
+
         _legend = LoadJson(TileLegendPath, TileLegend.FromJson, new TileLegend(), "legende des tuiles");
         _tileSize = _legend.TileSize;
         _painter = new MapPainter(_legend);
@@ -322,6 +395,8 @@ public partial class GameRoot : Node2D
             Trace.Error($"[Zone] {exception.Message}");
         }
 
+        LoadDemo();
+
         CreateCamera();
 
         LogMapSummary();
@@ -351,9 +426,22 @@ public partial class GameRoot : Node2D
             _campScreen = null!;
         }
 
+        if (_demoScreen is not null && IsInstanceValid(_demoScreen))
+        {
+            RemoveChild(_demoScreen);
+            _demoScreen.QueueFree();
+            _demoScreen = null;
+        }
+
         if (_roster.Survivors.Count == 0)
         {
             Trace.Error("[Agent] Aucun survivant charge : la partie n'a personne a jouer.");
+            return;
+        }
+
+        if (_demoMode)
+        {
+            ShowDemo(debrief);
             return;
         }
 
@@ -471,6 +559,17 @@ public partial class GameRoot : Node2D
         if (mission.IsGenerated) GenerateDistrict(mission);
 
         PlaceSupplies(mission);
+
+        Launch(mission, team);
+    }
+
+    /// <summary>
+    /// Tout ce qui suit la carte, et qu'une mission du camp partage avec une prise de demonstration :
+    /// les consignes, le groupe, la horde, l'affichage et le suivi de partie. Les deux ne different
+    /// que par ce qui precede — le peage et les caisses d'un cote, la grille et ses reperes de l'autre.
+    /// </summary>
+    private void Launch(MissionDefinition mission, IReadOnlyList<SurvivorProfile> team)
+    {
         ShowItems();
         ShowTerrain();
 
@@ -512,6 +611,7 @@ public partial class GameRoot : Node2D
 
         WatchMission();
         ApplyDebugSettings();
+        ApplyStage();
         Follow();
         UpdatePerception();
 
@@ -526,6 +626,17 @@ public partial class GameRoot : Node2D
     private void WatchMission()
     {
         _tracker.Finished += verdict => Trace.Print($"[Partie] {verdict} (t = {verdict.At:0.0} s).");
+
+        _tracker.Finished += verdict =>
+        {
+            if (verdict.Outcome == MissionOutcome.Victory) _happened.Add(DemoEvents.Victory);
+        };
+
+        _tracker.Recalling += _ => _happened.Add(DemoEvents.Recall);
+
+        // Le bilan avant le reglement, et l'ordre des abonnements le garantit : Settle y inscrit ce
+        // qui rentre au camp, il faut donc qu'il existe deja.
+        _tracker.Finished += _ => _report = MissionReport.Of(_tracker, _band, _loadout);
         _tracker.Finished += Settle;
 
         // Le compte a rebours du retour au camp. Il est arme ici et non dans <see cref="Settle"/>,
@@ -555,23 +666,30 @@ public partial class GameRoot : Node2D
         if (_ledger is null) return;
 
         var awarded = _ledger.Grant(verdict);
-        _awarded = awarded;
         _hud.Awarded = awarded;
 
         if (verdict.Outcome != MissionOutcome.Victory)
         {
             if (_mission.Rewards.Count > 0) Trace.Print("[Camp] Mission perdue : aucune recompense attribuee.");
 
-            RecoverLoan();
+            var recovered = RecoverLoan();
+            if (_report is not null) _report = _report with { Returned = recovered };
             return;
         }
+
+        var returned = new List<string>();
+        var left = new List<string>();
 
         // Ce que le groupe rapporte rentre au stock, et seulement maintenant. Vider les sacs plus tot
         // ferait redescendre les compteurs d'une mission de ravitaillement au moment precis ou elle
         // se remplit ; le verdict est rendu, il ne bougera plus, et les jerricans peuvent sortir.
         foreach (var survivor in _band.Survivors.Where(survivor => survivor.Alive))
         {
+            var carried = survivor.Inventory.Enumerate().ToList();
             var refused = _camp.Deposit(survivor, _items);
+
+            returned.AddRange(MissionReport.Without(carried, refused));
+            left.AddRange(refused);
 
             if (refused.Count > 0)
             {
@@ -582,6 +700,8 @@ public partial class GameRoot : Node2D
         }
 
         Trace.Print($"[Camp] Stock au retour : {_camp}.");
+
+        if (_report is not null) _report = _report with { Returned = returned, Left = left, Awarded = awarded };
 
         if (awarded.Count == 0) return;
 
@@ -603,17 +723,306 @@ public partial class GameRoot : Node2D
     /// Ceux qui ne sont pas rentres ne rendent rien, et c'est la que le pret coute : un sac reste
     /// dehors reste dehors.
     /// </summary>
-    private void RecoverLoan()
+    /// <returns>Ce qui est reellement rentre a l'entrepot, pour le bilan.</returns>
+    private IReadOnlyList<string> RecoverLoan()
     {
-        if (_loadout is null) return;
+        if (_loadout is null) return [];
 
         var home = _tracker.Home.Where(survivor => survivor.Alive).ToList();
         var recovered = home.SelectMany(_loadout.Recover).ToList();
 
-        if (recovered.Count == 0) return;
+        if (recovered.Count > 0)
+        {
+            Trace.Print($"[Camp] Materiel prete rendu a l'entrepot : {string.Join(", ", recovered)}.");
+        }
 
-        Trace.Print($"[Camp] Materiel prete rendu a l'entrepot : {string.Join(", ", recovered)}.");
+        return recovered;
     }
+
+    // --- Mode demonstration ---------------------------------------------------------------------
+
+    /// <summary>
+    /// Lit le catalogue des scenarios d'essai et decide si la partie se joue en mode demonstration.
+    ///
+    /// Deux entrees, et la ligne de commande l'emporte : <c>demo.enabled</c> pour un poste qui ne
+    /// sert qu'a tourner, et <c>-- --demo=&lt;scenario&gt;</c> pour lancer une prise sans cliquer —
+    /// c'est ce qui rend un scenario jouable en headless, donc verifiable dans le moteur.
+    /// <c>--sans-consignes</c> joue la prise sans ses consignes.
+    /// </summary>
+    private void LoadDemo()
+    {
+        _demo = LoadJson(DemoScenariosPath, DemoCatalogue.FromJson, DemoCatalogue.Empty, "scenarios de demonstration");
+
+        // Les objets et le roster ne sont connus qu'ici : un scenario qui confie un objet inexistant
+        // doit se voir au lancement, pas a l'instant ou le sac resterait vide.
+        try
+        {
+            _demo.Validate(_items, _roster);
+        }
+        catch (Exception exception)
+        {
+            Trace.Error($"[Demo] {exception.Message}");
+            _demo = DemoCatalogue.Empty;
+        }
+
+        _demoMode = _config.Demo.Enabled;
+        _autostart = string.IsNullOrWhiteSpace(_config.Demo.Autostart) ? null : _config.Demo.Autostart.Trim();
+
+        foreach (string argument in OS.GetCmdlineUserArgs())
+        {
+            if (argument == "--demo")
+            {
+                _demoMode = true;
+            }
+            else if (argument.StartsWith("--demo=", StringComparison.Ordinal))
+            {
+                _autostart = argument["--demo=".Length..];
+            }
+            else if (argument == "--sans-consignes")
+            {
+                _stageInstructions = false;
+            }
+            else if (argument == "--quitter")
+            {
+                _quitAfterStage = true;
+            }
+            else if (argument.StartsWith("--consigne=", StringComparison.Ordinal))
+            {
+                _commandLineInstructions.Add(argument["--consigne=".Length..].Trim());
+            }
+        }
+
+        if (_autostart is not null) _demoMode = true;
+        if (!_demoMode) return;
+
+        if (_demo.Scenarios.Count == 0)
+        {
+            Trace.Error($"[Demo] Mode demonstration demande, mais {DemoScenariosPath} n'a aucun scenario : l'ecran de camp sert de repli.");
+            _demoMode = false;
+            return;
+        }
+
+        Trace.Print($"[Demo] Mode demonstration : {_demo.Grids.Count} grille(s), {_demo.Scenarios.Count} scenario(s).");
+
+        // Une prise joue les limites du planificateur que le harnais verifie, et non celles d'une
+        // partie : voir DemoSettings.PlannerMaxTimeMs.
+        var planner = _config.Demo.PlannerFor(_config.Planner);
+
+        if (!ReferenceEquals(planner, _config.Planner))
+        {
+            _config = _config with { Planner = planner };
+            Trace.Print($"[Demo] Plafond de temps du planificateur porte a {planner.MaxTimeMs} ms pour les prises (demo.planner_max_time_ms).");
+        }
+    }
+
+    /// <summary>
+    /// L'ecran de choix, a la place de l'ecran de camp. Un scenario a lancer d'office l'est ici, une
+    /// seule fois : la prise finie, l'ecran reste, et c'est au joueur de relancer.
+    /// </summary>
+    private void ShowDemo(string? debrief)
+    {
+        var names = _roster.Survivors
+            .GroupBy(profile => profile.Id, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First().Name, StringComparer.OrdinalIgnoreCase);
+
+        _demoScreen = new DemoScreen { Name = "Demo" };
+        AddChild(_demoScreen);
+
+        // Le domaine, les consignes pre-ecrites et le service de langage : ce qu'il faut a une carte
+        // blanche pour recevoir les consignes du joueur, par le meme panneau qu'au camp.
+        _demoScreen.Configure(
+            _demo, names, debrief, _lastScenario, _stageInstructions,
+            _pddl, _presets, _config.Instructions, Translator());
+
+        _demoScreen.ScenarioChosen += BeginDemo;
+
+        if (_autostart is not { } id) return;
+        _autostart = null;
+
+        if (_demo.Find(id) is not { } scenario)
+        {
+            Trace.Error($"[Demo] Scenario « {id} » inconnu. Scenarios : {string.Join(", ", _demo.Scenarios.Select(known => known.Id))}.");
+            return;
+        }
+
+        _demoScreen.Visible = false;
+
+        if (scenario.TakesPlayerInstructions)
+        {
+            BeginDemo(scenario, _commandLineInstructions.Count > 0, [.. _commandLineInstructions.Select(text => (text, text))]);
+            return;
+        }
+
+        BeginDemo(scenario, _stageInstructions && scenario.Instructions.Count > 0, []);
+    }
+
+    /// <summary>
+    /// Une prise : la grille du scenario remplace la carte, chacun part de son repere avec ce que le
+    /// scenario lui confie, et la horde se pose sur les siens. Ensuite, c'est une mission comme une
+    /// autre — <see cref="Launch"/> est le meme pour les deux.
+    ///
+    /// Ce qui est ecarte l'est volontairement : aucun peage (<see cref="MissionRewardService"/>), aucun
+    /// entrepot debite — le paquetage est compose sur un stock qui n'a que lui —, et aucune journee au
+    /// retour. Une prise ne consomme rien, sans quoi la troisieme ne serait plus la premiere.
+    /// </summary>
+    /// <param name="player">Les consignes du joueur, pour une carte blanche ; ignorees pour tout autre scenario.</param>
+    private void BeginDemo(DemoScenario scenario, bool withInstructions, IReadOnlyList<(string Constraint, string Said)> player)
+    {
+        var border = _mapgen.Border.Find("fog")
+            ?? _mapgen.Border.Kinds.FirstOrDefault()
+            ?? new BorderKind { Id = "fog", Name = "Brouillard", Tile = "3:0,0" };
+
+        DemoStage stage;
+        CampLoadout loadout;
+        List<SurvivorProfile> team;
+
+        try
+        {
+            stage = _demo.Stage(scenario, border);
+            loadout = stage.Loadout(_items, _config.Inventory);
+            team =
+            [
+                .. scenario.Team.Select(member => _roster.Find(member.Survivor)
+                    ?? throw new InvalidOperationException($"survivant « {member.Survivor} » absent de {SurvivorsPath}")),
+            ];
+        }
+        catch (Exception exception)
+        {
+            Trace.Error($"[Demo] « {scenario.Id} » ne peut pas etre mis en place : {exception.Message}");
+            if (_demoScreen is not null && IsInstanceValid(_demoScreen)) _demoScreen.Visible = true;
+            return;
+        }
+
+        _stage = stage;
+        _lastScenario = scenario.Id;
+
+        // La case « consignes » de l'ecran n'a rien a voir avec une carte blanche : la garder telle
+        // quelle, pour que la prise d'apres, sur un autre scenario, la retrouve comme on l'avait laissee.
+        if (!scenario.TakesPlayerInstructions) _stageInstructions = withInstructions;
+
+        _playerInstructions = scenario.TakesPlayerInstructions ? player : [];
+
+        _mission = stage.Mission;
+        _loadout = loadout;
+        _ledger = null;
+        _pendingInstructions = scenario.TakesPlayerInstructions
+            ? [.. _playerInstructions.Select(entry => entry.Constraint)]
+            : withInstructions ? scenario.Instructions : [];
+        _happened.Clear();
+
+        string instructions = scenario.TakesPlayerInstructions
+            ? _playerInstructions.Count == 0
+                ? "carte blanche, sans consigne du joueur"
+                : $"carte blanche, consignes du joueur : {string.Join(" · ", _playerInstructions.Select(Said))}"
+            : scenario.Instructions.Count == 0
+                ? "sans consigne"
+                : withInstructions
+                    ? $"consignes : {string.Join(" · ", scenario.Instructions)}"
+                    : $"consignes RETIREES ({string.Join(" · ", scenario.Instructions)})";
+
+        Trace.Print($"[Demo] {scenario.Name} sur « {stage.Grid.Name} », graine {scenario.Seed}, {instructions}.");
+
+        if (scenario.Expected(withInstructions, _playerInstructions.Count) is { } expected) Trace.Print($"[Demo] Attendu : {expected}.");
+
+        UseDistrict(stage.District);
+        Launch(stage.Mission, team);
+    }
+
+    /// <summary>
+    /// Ce que le scenario impose par-dessus les reglages de debug, et ce que le bilan ne doit pas
+    /// compter.
+    ///
+    /// Le pret est oublie une fois remis : le paquetage d'une prise vient d'un stock ecrit pour elle,
+    /// et « pret non rendu » au bilan parlerait d'un entrepot qui n'existe pas.
+    /// </summary>
+    private void ApplyStage()
+    {
+        if (_stage is not { } stage) return;
+
+        _loadout = null;
+
+        // Avant la premiere passe de perception : le plan du quartier est ce qu'on sait en
+        // descendant du van, pas ce qu'on apprend en route.
+        if (stage.Scenario.Mapped)
+            Trace.Print($"[Demo] Plan du quartier remis au groupe : {_band.KnowTerrain()} cases, zombies et objets exclus.");
+
+        if (stage.Scenario.Panic is { } panic)
+        {
+            _band.PanicEnabled = panic;
+            Trace.Print($"[Demo] Panique {(panic ? "active" : "coupee")} pour ce scenario (par-dessus debug.panic_enabled).");
+        }
+    }
+
+    /// <summary>
+    /// Le bilan d'une prise : celui d'une mission, et en tete le verdict qui compte pour un clip — la
+    /// prise a-t-elle montre ce que le scenario annonce ? L'attente est la meme que celle que
+    /// <c>Tests/DemoScenarioTests.cs</c> exige ; un ecart ici est une prise a refaire, ou un scenario
+    /// que la suite aurait deja du signaler.
+    /// </summary>
+    private string DemoDebrief(DemoStage stage)
+    {
+        var scenario = stage.Scenario;
+        var report = _report ?? MissionReport.Of(_tracker, _band);
+
+        // Ce qui a ete joue, et non ce qui a ete demande : une consigne que la compilation a refusee
+        // sur cette carte n'a rien change, et la prise se juge alors comme le groupe livre a lui-meme.
+        var played = _instructions?.Active ?? [];
+        string verdict;
+
+        if (scenario.TakesPlayerInstructions && played.Count > 0)
+        {
+            verdict = $"PRISE LIBRE — aucune attente ecrite pour vos consignes. Deroule : {string.Join(", ", DemoEvents.Chronicle(_happened))}.";
+        }
+        else if (scenario.Expected(_stageInstructions, played.Count) is not { } expected)
+        {
+            verdict = "PRISE — aucune attente ecrite pour ce scenario sans ses consignes.";
+        }
+        else
+        {
+            var failures = expected.Failures(_happened);
+
+            verdict = failures.Count == 0
+                ? $"PRISE CONFORME — {expected}."
+                : $"PRISE NON CONFORME — {string.Join(" ; ", failures)}.";
+        }
+
+        var lines = new List<string>(report.Lines());
+        lines.Insert(Math.Min(1, lines.Count), verdict);
+
+        if (scenario.Instructions.Count > 0)
+        {
+            lines.Insert(
+                Math.Min(2, lines.Count),
+                _stageInstructions ? "Consignes appliquees." : "Consignes retirees pour cette prise.");
+        }
+
+        if (scenario.TakesPlayerInstructions)
+        {
+            var refused = _playerInstructions
+                .Where(entry => !played.Any(constraint => constraint.Text.Equals(entry.Constraint, StringComparison.OrdinalIgnoreCase)))
+                .Select(Said)
+                .ToList();
+
+            var told = new List<string>
+            {
+                played.Count == 0
+                    ? "Carte blanche jouee sans consigne : le groupe s'est debrouille seul."
+                    : $"Vos consignes : {string.Join("  ·  ", played.Select(constraint => Said((constraint.Text, constraint.Utterance ?? constraint.Text))))}",
+            };
+
+            if (refused.Count > 0) told.Add($"Refusees sur cette carte, donc sans effet : {string.Join("  ·  ", refused)}");
+
+            lines.InsertRange(Math.Min(2, lines.Count), told);
+        }
+
+        foreach (string line in lines) Trace.Print($"[Demo] {line}");
+
+        return string.Join("\n", lines);
+    }
+
+    /// <summary>Une consigne du joueur telle qu'il l'a dite, et ce qu'elle est devenue quand ce n'est pas la meme chose.</summary>
+    private static string Said((string Constraint, string Said) entry)
+        => entry.Said.Equals(entry.Constraint, StringComparison.Ordinal) ? entry.Constraint : $"« {entry.Said} » → {entry.Constraint}";
 
     // --- Retour au camp -------------------------------------------------------------------------
 
@@ -656,30 +1065,49 @@ public partial class GameRoot : Node2D
     {
         _started = false;
 
-        var day = _camp.ResolveDay(_band.Survivors);
-        Trace.Print($"[Camp] {day}");
-        Trace.Print($"[Camp] Stock apres la journee : {_camp}.");
+        string debrief;
 
-        string debrief = DebriefText(day);
+        // Une prise de demonstration ne fait pas passer de journee : le camp n'a rien mange pendant
+        // qu'on tournait, et la prise suivante doit trouver le meme monde.
+        if (_stage is { } stage)
+        {
+            debrief = DemoDebrief(stage);
+
+            if (_quitAfterStage)
+            {
+                Trace.Print("[Demo] Prise terminee, fermeture demandee (--quitter).");
+                GetTree().Quit();
+                return;
+            }
+        }
+        else
+        {
+            var day = _camp.ResolveDay(_band.Survivors);
+            Trace.Print($"[Camp] {day}");
+            Trace.Print($"[Camp] Stock apres la journee : {_camp}.");
+
+            debrief = DebriefText(day);
+        }
 
         ClearMission();
         ShowSetup(debrief);
     }
 
     /// <summary>
-    /// Ce que le camp affiche en tete au retour : l'issue, ce qu'elle a rapporte, ce que la journee
-    /// a coute. Le jeu n'a toujours pas d'ecran de resultat separe — c'est l'ecran suivant qui porte
-    /// le verdict, la ou le joueur en voit deja les consequences sur les reserves.
+    /// Ce que le camp affiche en tete au retour : le bilan de la sortie (<see cref="MissionReport"/>),
+    /// clos sur la journee. Le jeu n'a toujours pas d'ecran de resultat separe — c'est l'ecran suivant
+    /// qui porte le verdict, la ou le joueur en voit deja les consequences sur les reserves.
+    ///
+    /// Le bilan part aussi au journal : c'est la seule facon de le lire en headless, ou personne ne
+    /// regarde l'ecran de camp.
     /// </summary>
     private string DebriefText(CampDay day)
     {
-        var lines = new List<string> { $"SORTIE PRECEDENTE — {_mission.Name} : {_tracker.Verdict}" };
+        var report = (_report ?? MissionReport.Of(_tracker, _band, _loadout)).Closing(day, _camp);
 
-        if (_awarded.Count > 0) lines.Add($"Recompenses versees : {string.Join(", ", _awarded)}");
+        foreach (string line in report.Lines()) Trace.Print($"[Camp] {line}");
 
-        lines.Add(day.ToString());
-
-        return string.Join("\n", lines);
+        return report.ToString();
     }
 
     /// <summary>
@@ -708,7 +1136,9 @@ public partial class GameRoot : Node2D
         _objectives = null;
         _ledger = null;
         _loadout = null;
-        _awarded = [];
+        _report = null;
+        _stage = null;
+        _happened.Clear();
 
         _lastPath = null;
         _running = false;
@@ -818,6 +1248,17 @@ public partial class GameRoot : Node2D
             foreach (var refused in generator.Rejected) Trace.Warn($"[Carte] Quartier refuse — {refused}.");
         }
 
+        UseDistrict(district);
+    }
+
+    /// <summary>
+    /// Substitue un quartier a la carte dessinee : le monde, les meubles, les objets au sol, la
+    /// peinture et le cadrage. Un quartier genere et une grille de demonstration passent tous deux
+    /// par ici — la grille est un <see cref="GeneratedDistrict"/> ecrit a la main, et rien en aval
+    /// n'apprend la difference.
+    /// </summary>
+    private void UseDistrict(GeneratedDistrict district)
+    {
         _district = district;
         _map = district.Map;
         _world = new WorldState(_map, _config.Noise);
@@ -1072,7 +1513,14 @@ public partial class GameRoot : Node2D
 
         foreach (string text in _pendingInstructions)
         {
-            var entry = instructions.Add(text, context);
+            // La phrase d'une carte blanche suit sa contrainte jusqu'au journal et au bilan ; les autres
+            // consignes n'en ont pas d'autre que leur texte.
+            string? said = _playerInstructions
+                .Where(player => player.Constraint.Equals(text, StringComparison.OrdinalIgnoreCase))
+                .Select(player => player.Said)
+                .FirstOrDefault();
+
+            var entry = instructions.Add(text, context, said);
 
             if (!entry.Accepted)
             {
@@ -1135,7 +1583,9 @@ public partial class GameRoot : Node2D
         for (int i = 0; i < team.Count; i++)
         {
             var profile = team[i];
-            var start = starts[i];
+
+            // Un scenario de demonstration pose chacun sur son repere ; sans repere, on descend du van.
+            var start = _stage?.StartOf(profile.Id) ?? starts[i];
             var agent = _band.Enlist(profile, start, _goals, _domain);
 
             // Le survivant sait ce qu'on l'envoie chercher, et ou : c'est la mission qui le dit, et
@@ -1149,6 +1599,10 @@ public partial class GameRoot : Node2D
             // une arme confiee lui vient en main. C'est le seul moment ou l'entrepot est debite —
             // composer un paquetage ne coutait rien, comme consulter une offre.
             var handed = _loadout?.HandOver(agent.Survivor) ?? [];
+
+            // La blessure qu'un scenario de soin annonce, apres le paquetage : on part blesse, pas
+            // desarme.
+            _stage?.Prepare(agent.Survivor);
 
             if (handed.Count > 0)
             {
@@ -1176,7 +1630,11 @@ public partial class GameRoot : Node2D
 
         _band.Sharing.Exchanged += exchange =>
         {
-            if (exchange.Learned > 0) Trace.Print($"[Partage] {exchange}.");
+            if (exchange.Learned <= 0) return;
+
+            Trace.Print($"[Partage] {exchange}.");
+            _happened.Add(DemoEvents.Sharing);
+            if (exchange.ByRadio) _happened.Add(DemoEvents.RadioSharing);
         };
     }
 
@@ -1213,6 +1671,10 @@ public partial class GameRoot : Node2D
 
         agent.Executor.ActionFailed += (action, failure)
             => Trace.Print($"[Plan] {who} : echec de {action.Name} — {failure.Reason} ({failure.Kind}).");
+
+        // Ce que la prise a montre, par nom de schema et par forme liee : c'est ce que les attentes
+        // d'un scenario de demonstration citent, et ce que Tests/DemoRun.cs enregistre de la meme facon.
+        agent.Executor.ActionCompleted += action => _happened.AddRange(DemoEvents.Of(action.Schema.Name, action.Name));
 
         agent.Executor.PlanFinished += plan
             => Trace.Print($"[Plan] {who} : {plan.Goal} — {plan.Status}"
@@ -1267,6 +1729,8 @@ public partial class GameRoot : Node2D
 
         _entities.Removed += zombie =>
         {
+            _happened.Add(DemoEvents.ZombieDown);
+
             if (!_zombieNodes.Remove(zombie.Id, out var node)) return;
             node.QueueFree();
         };
@@ -1299,6 +1763,7 @@ public partial class GameRoot : Node2D
 
         victim.Knowledge.RememberEntity(zombie.Id, EntityKind.Zombie, zombie.Position, _world.Time);
         victim.TakeDamage(_config.Zombies.AttackDamage);
+        _happened.Add(DemoEvents.Bite);
 
         Trace.Print(
             $"[Combat] {zombie.Id} frappe {victim.Name} : sante {victim.Health:0}, " +
@@ -1530,35 +1995,16 @@ public partial class GameRoot : Node2D
     }
 
     /// <summary>
-    /// Se deplacer fait du bruit (specification section 18.1). Franchir une porte fermee, c'est
-    /// l'ouvrir : le bareme le facture deux fois plus cher qu'un pas. Le bareme vaut pour tout le
-    /// monde — courir s'entend, quel que soit celui qui court.
+    /// Les pas du groupe (<see cref="SurvivorBand.EmitFootsteps"/>, que le harnais deroule aussi). Le
+    /// jeu n'y ajoute que le journal : les pas ne meritent pas une ligne, ouvrir une porte si.
     /// </summary>
     private void EmitFootsteps()
     {
-        foreach (var agent in _band.Standing)
+        foreach (var (agent, noise) in _band.EmitFootsteps(_running))
         {
-            var cell = agent.Follower.CurrentCell;
-
-            // Un bruit par case franchie, pas un par frame.
-            if (_footprints.TryGetValue(agent.Survivor.Id, out var previous) && previous == cell) continue;
-            _footprints[agent.Survivor.Id] = cell;
-
-            var action = _map.GetCell(cell) == CellType.DoorClosed
-                ? NoiseAction.OpenDoor
-                : _running ? NoiseAction.Run : NoiseAction.Walk;
-
-            float level = _config.Noise.LevelOf(action);
-            var noise = _world.Noises.EmitRaw(cell, level, _world.Time, agent.Survivor.Id, action);
-
-            // Les pas ne meritent pas une ligne de journal ; ouvrir une porte, si.
-            if (action == NoiseAction.OpenDoor && noise is not null)
-                Trace.Print($"[Bruit] {agent.Survivor.Name} : {noise}.");
+            if (noise.Action == NoiseAction.OpenDoor) Trace.Print($"[Bruit] {agent.Survivor.Name} : {noise}.");
         }
     }
-
-    /// <summary>Derniere case ou chaque survivant a pose le pied, pour ne sonner qu'aux changements.</summary>
-    private readonly Dictionary<string, GridPosition> _footprints = [];
 
     /// <summary>
     /// Une passe de perception (5 a 10 fois par seconde, cf. section A) : chaque survivant regarde

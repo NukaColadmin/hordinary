@@ -195,9 +195,11 @@ public class ZombieTests
         manager.Think(2d);
         manager.Think(4d);
 
-        // Le zombie decide toujours d'attaquer : il ne sait pas ou est le van, et on ne le lui
-        // apprend pas. C'est le monde qui refuse le coup.
-        Assert.Equal(ZombieState.Attack, zombie.State);
+        // Le zombie ne sait pas ou est le van, et on ne le lui apprend pas : il ne voit simplement
+        // personne a l'interieur. Pas de coup, et pas de siege — il ne reste pas a cogner contre la
+        // tole en barrant l'entree a ceux qui rentrent apres.
+        Assert.NotEqual(ZombieState.Attack, zombie.State);
+        Assert.Null(zombie.Knowledge.GetEntity("alice"));
         Assert.Equal(0, blows);
         Assert.True(manager.Sheltered("alice"));
 

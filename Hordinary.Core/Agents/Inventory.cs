@@ -113,6 +113,16 @@ public sealed class Inventory(ItemCatalogue catalogue, InventorySettings? settin
     public bool HasHealingItem => HealingItemId is not null;
 
     /// <summary>
+    /// Le premier objet porte qui fait du bruit la ou il tombe — un petard —, ou <c>null</c>. Meme
+    /// regle que pour le soin : le catalogue dit lequel declare <c>emit_noise</c>, et le domaine
+    /// parle d'un <c>noisemaker</c> sans jamais nommer le petard.
+    /// </summary>
+    public string? NoiseMakerId => _stacks
+        .Select(stack => stack.ItemId)
+        .FirstOrDefault(itemId => _catalogue.Find(itemId) is { } definition
+            && definition.Effects.Any(effect => effect.Verb == EffectVerb.EmitNoise));
+
+    /// <summary>
     /// Tous les objets, un identifiant par exemplaire — ce que la mort laisse tomber au sol, et ce
     /// qu'un debrief enumere.
     /// </summary>
@@ -202,6 +212,26 @@ public sealed class Inventory(ItemCatalogue catalogue, InventorySettings? settin
         return false;
     }
 
+    /// <summary>
+    /// Passer un objet a quelqu'un d'autre, de la main a la main. Il garde son usure : une batte
+    /// fendue pretee reste fendue, alors que <see cref="Add"/> seul la rendrait neuve — et un pret
+    /// deviendrait un moyen de reparer. Echoue, sans rien changer d'un cote ni de l'autre, si le sac
+    /// qui recoit n'a plus de place.
+    /// </summary>
+    public bool HandTo(Inventory receiver, string itemId)
+    {
+        ArgumentNullException.ThrowIfNull(receiver);
+
+        if (ReferenceEquals(receiver, this) || !Carries(itemId)) return false;
+        if (!receiver.Add(itemId)) return false;
+
+        if (_durability.TryGetValue(itemId, out int wear)) receiver._durability[itemId] = wear;
+        if (_ammo.TryGetValue(itemId, out int rounds)) receiver._ammo[itemId] = rounds;
+
+        Remove(itemId);
+        return true;
+    }
+
     /// <summary>Vide le sac et renvoie ce qu'il contenait : ce qu'un corps laisse derriere lui.</summary>
     public IReadOnlyList<string> DropAll()
     {
@@ -264,6 +294,30 @@ public sealed class Inventory(ItemCatalogue catalogue, InventorySettings? settin
         if (changed) EquipmentChanged?.Invoke();
         return changed;
     }
+
+    /// <summary>
+    /// Une arme portee en plus de celle qu'on a en main, et qui frappe encore : ce qu'on peut preter
+    /// sans se desarmer. <c>null</c> s'il n'y en a pas. Une arme cassee ne compte pas — la preter ne
+    /// rendrait personne arme.
+    /// </summary>
+    public string? SpareWeapon => _stacks
+        .Select(stack => stack.ItemId)
+        .Where(id => _catalogue.Find(id) is { IsWeapon: true })
+        .Where(id => !string.Equals(id, EquippedWeapon, StringComparison.OrdinalIgnoreCase))
+        .Where(CanAttackWith)
+        .OrderBy(id => id, StringComparer.Ordinal)
+        .FirstOrDefault();
+
+    /// <summary>
+    /// Ce que l'equipement fait d'une caracteristique du porteur : le produit des multiplicateurs que
+    /// les objets equipes declarent pour elle (<see cref="ItemDefinition.StatMultiplier"/>). Un objet au
+    /// fond du sac ne compte pas — une radio eteinte ne porte pas la voix.
+    /// </summary>
+    public float StatMultiplier(string stat)
+        => EquippedItems.Aggregate(1f, (factor, item) => factor * item.StatMultiplier(stat));
+
+    /// <summary>Vrai si l'arme en main frappe encore : ce que <c>armed</c> dit au planificateur.</summary>
+    public bool IsArmed => EquippedWeapon is { } weapon && CanAttackWith(weapon);
 
     public bool IsEquipped(string itemId)
         => string.Equals(EquippedWeapon, itemId, StringComparison.OrdinalIgnoreCase)

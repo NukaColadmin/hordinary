@@ -21,6 +21,10 @@ public sealed class AgentKnowledge
     private readonly Dictionary<string, NoiseBelief> _noises = [];
     private readonly Dictionary<string, SearchBelief> _searches = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, IntentBelief> _intents = [];
+    private readonly Dictionary<string, double> _orders = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, double> _bandOrders = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<GridPosition, ZoneKind> _zoneKinds = [];
+    private readonly HashSet<GridPosition> _breaches = [];
 
     public string AgentId { get; }
     public KnowledgeSettings Settings { get; }
@@ -95,11 +99,24 @@ public sealed class AgentKnowledge
         if (!MentalMap.Contains(position)) return false;
         if (_cells.TryGetValue(position, out var known) && known.LastObservedAt > time) return false;
 
+        if (known is { Value: CellType.Window } && type == CellType.Floor) _breaches.Add(position);
+
         _cells[position] = new CellBelief(position, type, indoor, Clamp(confidence), time, source);
         MentalMap.SetCell(position, type);
         MentalMap.SetIndoor(position, indoor);
         return true;
     }
+
+    /// <summary>
+    /// Les vitres qu'on a connues intactes et qu'on sait brisees. Une vitre brisee devient du sol
+    /// (<c>WorldPlanRuntime.BreakWindow</c>) : la carte mentale n'y voit plus d'ouverture, et un
+    /// batiment dont on connaissait la porte verrouillee redevenait « scelle » juste apres qu'on y
+    /// eut fait un passage — la fouille qui suivait echouait sur <c>accessible</c>, et la prise
+    /// « N'entrez pas desarme, et ne forcez aucune porte » se perdait les deux vitres cassees. Le
+    /// souvenir tient au changement observe (fenetre, puis sol), donc il vaut pour qui a casse la
+    /// vitre, pour qui la voit brisee apres l'avoir connue, et pour qui l'apprend en parlant.
+    /// </summary>
+    public IReadOnlyCollection<GridPosition> Breaches => _breaches;
 
     public float ConfidenceIn(CellBelief belief, double now)
         => belief.ConfidenceAt(now, DecayRateFor(belief));
@@ -131,7 +148,8 @@ public sealed class AgentKnowledge
         float confidence = 1f,
         Vector2? heading = null,
         float? health = null,
-        float? panic = null)
+        float? panic = null,
+        string? spareWeapon = null)
     {
         _entities.TryGetValue(id, out var known);
         if (known is not null && known.LastObservedAt > time) return false;
@@ -141,7 +159,8 @@ public sealed class AgentKnowledge
         _entities[id] = new EntityBelief(
             id, kind, position, Clamp(confidence), time, source, course,
             health ?? known?.HealthRatio,
-            panic ?? known?.Panic);
+            panic ?? known?.Panic,
+            spareWeapon ?? known?.SpareWeapon);
 
         return true;
     }
@@ -366,6 +385,76 @@ public sealed class AgentKnowledge
         return true;
     }
 
+    // --- Lieux, case par case -------------------------------------------------------------
+
+    /// <summary>
+    /// La categorie du lieu auquel appartient une case que l'agent a vue — ou qu'on lui a decrite par
+    /// le plan du quartier. <c>null</c> pour une case jamais vue, ou hors de tout lieu.
+    ///
+    /// <para>
+    /// Un lieu n'est retenu que par une case (<see cref="KnownLocations"/>) : c'est ce qu'il faut pour
+    /// s'y rendre, pas pour savoir si une autre case en fait partie. Or une consigne du joueur porte
+    /// sur la <b>nature</b> de l'endroit ou l'on va (« avant d'entrer dans un batiment ») et pas sur son
+    /// nom : aller ramasser la trousse apercue dans le kiosque, c'est entrer dans le kiosque, meme si
+    /// le plan dit « objective_spot » et non « kiosque ». Sans cette memoire, le repere n'avait pas de
+    /// categorie, et la consigne ne le couvrait pas (« une consigne interdit un schema, pas un geste »).
+    /// </para>
+    /// </summary>
+    public ZoneKind? ZoneKindAt(GridPosition cell) => _zoneKinds.TryGetValue(cell, out var kind) ? kind : null;
+
+    /// <summary>
+    /// Retient qu'une case appartient a un lieu de cette categorie. Un lieu clos l'emporte sur un lieu
+    /// a ciel ouvert quand deux se recouvrent : la piece est dans la rue, pas l'inverse.
+    /// </summary>
+    public void RememberZoneKind(GridPosition cell, ZoneKind kind)
+    {
+        if (_zoneKinds.TryGetValue(cell, out var known) && !known.IsOpenAir() && kind.IsOpenAir()) return;
+        _zoneKinds[cell] = kind;
+    }
+
+    // --- Ordres ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// Les lieux ou un camarade a ete envoye par un ordre (action <c>OrderAlly</c>), avec l'instant de
+    /// l'ordre. C'est le fait <c>ordered(lieu)</c> de l'etat symbolique.
+    ///
+    /// Les deux bouts s'en souviennent : celui qui a donne l'ordre, et celui qui l'a recu. Le second
+    /// compte autant que le premier, parce que les consignes du joueur sont collectives — sans lui, le
+    /// camarade envoye au van sous « require_before(ordered(extraction), ...) » devrait a son tour y
+    /// envoyer quelqu'un avant de faire quoi que ce soit, et les deux se renverraient l'ordre.
+    ///
+    /// Un ordre donne l'a ete pour la mission : rien ne l'efface, et c'est la semantique meme de
+    /// « avant de » — le fait a ete vrai a un moment, et il le reste pour la suite.
+    /// </summary>
+    public IReadOnlyDictionary<string, double> Orders => _orders;
+
+    /// <summary>
+    /// Les lieux ou tout le groupe a portee a ete rappele (action <c>OrderBand</c>) : le fait
+    /// <c>band_ordered(lieu)</c>. Meme regle qu'<see cref="Orders"/>, aux deux bouts et pour la
+    /// mission — sans quoi chacun des rappeles, sous une consigne collective, rappellerait les autres
+    /// a son tour.
+    ///
+    /// Un registre a part, et non une entree de plus dans <see cref="Orders"/> : renvoyer un camarade
+    /// n'est pas rappeler tout le monde, et une consigne qui demande l'un ne doit pas se contenter de
+    /// l'autre.
+    /// </summary>
+    public IReadOnlyDictionary<string, double> BandOrders => _bandOrders;
+
+    /// <summary>
+    /// Retient qu'un ordre d'aller a <paramref name="place"/> a ete donne ou recu — a un camarade, ou
+    /// a tout le groupe quand <paramref name="band"/> est vrai.
+    /// </summary>
+    public bool RememberOrder(string place, double time, bool band = false)
+    {
+        if (string.IsNullOrWhiteSpace(place)) return false;
+
+        var orders = band ? _bandOrders : _orders;
+        if (orders.TryGetValue(place, out double known) && known >= time) return false;
+
+        orders[place] = time;
+        return true;
+    }
+
     // --- Intentions -----------------------------------------------------------------------
 
     public IntentBelief? GetIntent(string id) => _intents.TryGetValue(id, out var belief) ? belief : null;
@@ -510,7 +599,7 @@ public sealed class AgentKnowledge
             if (RememberEntity(
                     incoming.Id, incoming.Kind, incoming.Value, incoming.LastObservedAt,
                     incoming.Source, incoming.Confidence, incoming.Heading,
-                    incoming.HealthRatio, incoming.Panic))
+                    incoming.HealthRatio, incoming.Panic, incoming.SpareWeapon))
             {
                 learned++;
             }
@@ -555,6 +644,19 @@ public sealed class AgentKnowledge
             {
                 learned++;
             }
+        }
+
+        // « J'ai lance un petard vers l'est » : un leurre se raconte, parce que c'est une information
+        // que celui qui l'a fait est seul a avoir de premiere main — il ne s'entend pas lui-meme — et
+        // que ceux qui etaient trop loin pour l'entendre en ont besoin pour savoir que la voie se
+        // libere. Les autres bruits ne se transmettent pas : un fracas d'il y a vingt secondes ne dit
+        // rien qu'une carte de chaleur ne dise deja.
+        foreach (var belief in other.KnownNoises.Values)
+        {
+            if (belief.Action != NoiseAction.Lure || _noises.ContainsKey(belief.Id)) continue;
+
+            _noises[belief.Id] = belief with { Confidence = belief.Confidence * trust, Source = Hearsay };
+            learned++;
         }
 
         // « Je m'occupe du nord » : sans cette ligne, la penalite de duplication n'aurait rien a lire

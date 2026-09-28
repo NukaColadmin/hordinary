@@ -105,10 +105,13 @@ public static class UtilityInputs
             // « L'ordre est rempli » : sans cette entree, un survivant arrive a destination
             // continuerait a scorer haut un objectif qu'il a deja atteint, et le planificateur lui
             // rendrait indefiniment un plan de zero action au lieu de le laisser passer a la suite.
-            ["mission_reached"] = context => context.Self.Mission?.Destination is { } destination
-                && context.Self.Position.ChebyshevDistanceTo(destination) <= 1
-                    ? 1f
-                    : 0f,
+            ["mission_reached"] = context => context.Self.Mission?.ReachedFrom(context.Self.Position) == true ? 1f : 0f,
+
+            // « Un camarade m'a dit d'y aller. » Tant qu'un ordre de camarade est pendant, les
+            // objectifs propres du survivant se ferment sur cette entree ; ses reflexes, non. C'est
+            // ce qui fait passer l'ordre devant sans en faire un pilotage : on n'obeit pas a un
+            // camarade en restant plante devant un zombie.
+            ["obeying"] = context => context.Self.Mission?.FromAlly == true ? 1f : 0f,
         };
 
     /// <summary>

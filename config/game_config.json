@@ -93,7 +93,26 @@
     "noise_danger_weight": 0.5,
     "loud_noise_intensity": 6,
     "flee_travel_penalty": 0.25,
-    "player_order_priority": 0.7
+    "player_order_priority": 0.7,
+
+    // L'entraide (UtilityAiSettings.Cooperation). Cinq gestes s'en servent — soigner un camarade,
+    // lancer un petard, emprunter une arme, donner un ordre, rappeler le groupe — et aucun ne se
+    // declenche de lui-meme :
+    // c'est une consigne du joueur qui les rend necessaires. wounded_ratio dit sous quelle sante un
+    // survivant est un blesse (le repere « patient », le fait « band_tended ») ; throw_range, jusqu'ou
+    // porte un jet (le repere « decoy ») ; diversion_memory, combien de secondes une diversion
+    // entendue compte comme en cours — au-dela, la horde a eu le temps de revenir. lure_reach borne le
+    // jet du cote des zombies connus : un leurre qu'ils n'entendent pas ne les emmene nulle part.
+    // order_priority est le poids d'un ordre de camarade chez qui le recoit : au-dessus d'un ordre du
+    // joueur (player_order_priority), qu'il met de cote le temps d'etre rempli, et au-dessous du
+    // rappel du van (mission.recall_priority), qu'il ne supplante jamais.
+    "cooperation": {
+      "wounded_ratio": 0.5,
+      "throw_range": 14,
+      "lure_reach": 8,
+      "diversion_memory": 25,
+      "order_priority": 0.9
+    }
   },
 
   "planner": {
@@ -211,7 +230,7 @@
     }
   },
 
-  "//instructions": "Instructions tactiques en langage naturel (livrable 15). enabled ne commande QUE la traduction d'une phrase libre par un modele de langage : les contraintes, les quatre portillons et le compilateur de domaine tournent sans lui, sur les instructions pre-ecrites de config/instruction_presets.json. Livre a false, comme le reste de ce qui demande le reseau. max_active_constraints borne le nombre de contraintes simultanees — chacune reecrit le domaine, et au-dela d'une poignee plus personne ne sait ce qu'il autorise encore. min_penalty et max_penalty bornent le multiplicateur de penalize ; hors bornes, le portillon 1 refuse. Rappel : penalize n'agit que si planner.search ordonne sur g, donc sous astar et non sous gbfs — sous gbfs la contrainte est acceptee avec un avertissement 'sans effet sur ce moteur de recherche'. endpoint est le service FastAPI de service/, qui parle a OpenRouter a notre place : le jeu ne connait ni cle d'API ni fournisseur. timeout_ms vaut 8000 contre 800 pour un dialogue, parce que compiler une instruction n'est pas dans la boucle de jeu. cache_enabled est l'une des deux choses qui rendent une partie reproductible malgre un fournisseur distant non deterministe, l'autre etant qu'une contrainte acceptee est figee. openrouter.api_key_env est le NOM de la variable d'environnement qui porte la cle, jamais la cle : ce fichier est versionne.",
+  "//instructions": "Instructions tactiques en langage naturel (livrable 15). enabled ne commande QUE la traduction d'une phrase libre par un modele de langage : les contraintes, les quatre portillons et le compilateur de domaine tournent sans lui, sur les instructions pre-ecrites de config/instruction_presets.json. Livre a false, comme le reste de ce qui demande le reseau ; pour l'allumer le temps d'une session sans modifier ce fichier, lancer le jeu avec -- --ia ou la variable HORDINARY_IA=1 (InstructionSettings.LocallyEnabled). max_active_constraints borne le nombre de contraintes simultanees — chacune reecrit le domaine, et au-dela d'une poignee plus personne ne sait ce qu'il autorise encore. min_penalty et max_penalty bornent le multiplicateur de penalize ; hors bornes, le portillon 1 refuse. Rappel : penalize n'agit que si planner.search ordonne sur g, donc sous astar et non sous gbfs — sous gbfs la contrainte est acceptee avec un avertissement 'sans effet sur ce moteur de recherche'. endpoint est le service FastAPI de service/, qui parle a OpenRouter a notre place : le jeu ne connait ni cle d'API ni fournisseur. timeout_ms vaut 8000 contre 800 pour un dialogue, parce que compiler une instruction n'est pas dans la boucle de jeu. cache_enabled est l'une des deux choses qui rendent une partie reproductible malgre un fournisseur distant non deterministe, l'autre etant qu'une contrainte acceptee est figee. openrouter.api_key_env est le NOM de la variable d'environnement qui porte la cle, jamais la cle : ce fichier est versionne.",
   "instructions": {
     "enabled": false,
     "provider": "openrouter",
@@ -240,7 +259,7 @@
     // Canaux ouverts, par le nom entre crochets qui ouvre chaque ligne du journal. Liste vide : tous.
     // Canaux disponibles : Config, Carte, Zone, Monde, Objet, Camp, Expedition, Utility, Mission,
     // Agent, Plan, Action, Replan, IA, Partage, Bruit, Zombie, Combat, Ordre, Instruction, Camera,
-    // Navigation, Rappel, Partie, Debug.
+    // Navigation, Rappel, Partie, Debug, Demo.
     //
     // Trois sont fermes par defaut, et pour la meme raison : ils repetent ce qu'un autre dit deja.
     // « IA » redit mot pour mot le bloc de replanification que « Replan » imprime tel que la
@@ -250,7 +269,7 @@
     "console_channels": [
       "Config", "Carte", "Zone", "Monde", "Objet", "Camp", "Expedition", "Utility",
       "Mission", "Agent", "Plan", "Replan", "Bruit", "Zombie", "Combat",
-      "Ordre", "Instruction", "Camera", "Navigation", "Rappel", "Partie", "Debug"
+      "Ordre", "Instruction", "Camera", "Navigation", "Rappel", "Partie", "Debug", "Demo"
     ],
     "commands": false,
     "hud_text": false,
@@ -259,6 +278,13 @@
     "show_navigation": false,
     "show_mental_map": true,
     "show_noise": false
+  },
+
+  "//demo": "Le mode demonstration : l'ecran de camp cede la place au choix d'une grille et d'un scenario d'essai, ecrits dans config/demo_scenarios.json. Il sert a tourner des clips — une consigne du joueur (livrable 15) ou un geste du survivant, isole sur un terrain dessine pour qu'il s'y produise. Ni peage, ni entrepot, ni journee : une prise ne consomme rien, pour que la suivante soit la meme. enabled ouvre le mode au lancement. autostart nomme un scenario a lancer sans passer par l'ecran, une fois : c'est ce qui rend une prise jouable en headless. La ligne de commande fait la meme chose sans toucher ce fichier : -- --demo ouvre le mode, -- --demo=<scenario> lance une prise, -- --sans-consignes la joue sans ses consignes, -- --quitter ferme le jeu apres le bilan de la prise. En headless, ajouter --fixed-fps 60 (option de Godot, avant le --) : sans elle une frame dure une milliseconde et la prise ne se joue pas a la cadence que la suite a verifiee. Le bilan de fin de prise dit si elle a montre ce que le scenario annonce ; Tests/DemoScenarioTests.cs exige la meme chose de chaque scenario. planner_max_time_ms est le plafond de temps du planificateur pendant une prise, lu aussi par le harnais : planner.max_time_ms (50 ms, livrable 5) protege la cadence d'une partie, mais une prise doit se rejouer a l'identique, et sous trois consignes une recherche depasse deja 50 ms — le plan dependait alors de la vitesse de la machine. Le plafond de noeuds reste la borne. 0 garde celui du jeu. Les missions du camp ne sont pas concernees.",
+  "demo": {
+    "enabled": true,
+    "autostart": "",
+    "planner_max_time_ms": 2000
   },
 
   "knowledge": {

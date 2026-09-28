@@ -281,6 +281,99 @@ public class MemoryTests
         Assert.False(belief.IsRemarkable);
     }
 
+    /// <summary>
+    /// Un pas, une course, une porte poussee en passant : ce sont les bruits du groupe, et un survivant
+    /// ne les prend pas pour une menace — vu ou pas vu, puisque les zombies n'en font aucun. Un fracas
+    /// reste une menace tant qu'on n'en voit pas l'auteur. Un zombie, lui, entend tous les pas.
+    /// </summary>
+    [Fact]
+    public void Un_survivant_ne_prend_pas_les_pas_du_groupe_pour_une_menace()
+    {
+        var (alice, world, perception) = Room(
+            "..........",
+            "..........",
+            "..........");
+
+        alice.Position = new GridPosition(0, 1);
+
+        world.Noises.Emit(NoiseAction.Walk, alice.Position, 1d, sourceId: "bob");
+        world.Noises.Emit(NoiseAction.Run, new GridPosition(1, 0), 1d, sourceId: "bob");
+        world.Noises.Emit(NoiseAction.OpenDoor, new GridPosition(2, 1), 1d, sourceId: "claire");
+        world.Noises.Emit(NoiseAction.ForceDoor, new GridPosition(3, 1), 1d, sourceId: "claire");
+
+        perception.Listen(alice, world, new Random(1), time: 1d, seen: []);
+
+        var belief = Assert.Single(alice.Knowledge.KnownNoises.Values);
+        Assert.Equal(NoiseAction.ForceDoor, belief.Action);
+
+        // Sans ce qu'il voit — un zombie, un test d'audition —, rien n'est ecarte.
+        var (zombie, same, ears) = Room(
+            "..........",
+            "..........",
+            "..........");
+
+        // Un pas perd 1 par cellule : pour qu'il s'entende, il faut qu'il soit tout pres.
+        zombie.Position = new GridPosition(0, 1);
+        same.Noises.Emit(NoiseAction.Walk, zombie.Position, 1d, sourceId: "bob");
+        ears.Listen(zombie, same, new Random(1), time: 1d);
+
+        Assert.Equal(NoiseAction.Walk, Assert.Single(zombie.Knowledge.KnownNoises.Values).Action);
+    }
+
+    /// <summary>
+    /// Un fracas dont on voit l'auteur, et qu'on sait etre un camarade, n'est pas une menace. Le leurre
+    /// fait exception : on le retient meme en voyant le lanceur, parce que la diversion se lit dans son
+    /// souvenir.
+    /// </summary>
+    [Fact]
+    public void Un_fracas_dont_on_voit_l_auteur_n_est_pas_une_menace()
+    {
+        var (alice, world, perception) = Room(
+            "..........",
+            "..........",
+            "..........");
+
+        alice.Position = new GridPosition(0, 1);
+        world.SetEntity("bob", EntityKind.Survivor, new GridPosition(3, 1));
+
+        var seen = perception.Observe(alice, world, time: 1d).SeenEntities;
+        Assert.Contains("bob", seen);
+
+        world.Noises.Emit(NoiseAction.ForceDoor, new GridPosition(3, 1), 1d, sourceId: "bob");
+        world.Noises.Emit(NoiseAction.Lure, new GridPosition(8, 1), 1d, sourceId: "bob");
+
+        perception.Listen(alice, world, new Random(1), time: 1d, seen: seen);
+
+        Assert.Equal(NoiseAction.Lure, Assert.Single(alice.Knowledge.KnownNoises.Values).Action);
+    }
+
+    /// <summary>
+    /// Un repere prend la categorie du lieu ou il tombe, tel que l'agent l'a vu : la trousse apercue
+    /// dans un batiment est « dans un batiment », et une consigne sur la nature d'un lieu la couvre.
+    /// Sans memoire de la case, le repere n'a pas de categorie.
+    /// </summary>
+    [Fact]
+    public void Un_repere_prend_la_categorie_du_lieu_ou_il_tombe()
+    {
+        var (alice, world, perception) = Room("......");
+        var spot = new GridPosition(4, 0);
+
+        world.SetItem("objective-1", Survivor.DefaultObjectiveItem, spot);
+        perception.Observe(alice, world, time: 1d);
+
+        bool Holds(string fact)
+            => SymbolicStateBuilder.Observe(new UtilityContext(alice, 1d, Config.UtilityAi)).State.Holds(fact);
+
+        Assert.False(Holds("building(objective_spot)"));
+
+        alice.Knowledge.RememberZoneKind(spot, ZoneKind.Building);
+        Assert.True(Holds("building(objective_spot)"));
+
+        // Une rue ne recouvre pas une piece deja connue.
+        alice.Knowledge.RememberZoneKind(spot, ZoneKind.Street);
+        Assert.True(Holds("building(objective_spot)"));
+    }
+
     [Fact]
     public void Une_action_de_plan_s_entend_pour_ce_qu_elle_est()
     {

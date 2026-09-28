@@ -1,0 +1,39 @@
+# Les deux suites du depot, a chaque push et sur chaque pull request.
+#
+# Windows, et non Ubuntu : c'est la seule plateforme ou les deux suites ont ete eprouvees. Le jeu
+# n'est pas construit ici — Hordinary.Core ne reference pas Godot, et les tests ne dependent que de
+# lui. Ni reseau ni cle : le service de langage se teste sur des bouchons, et les tests qui cherchent
+# Fast Downward ou VAL changent de question quand ils ne les trouvent pas (Tests/SatisfiabilityTests).
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  dotnet:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+      - run: dotnet test Tests/Hordinary.Tests.csproj --logger "console;verbosity=minimal"
+
+  service:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: service/requirements.txt
+      - run: python -m pip install -r requirements.txt
+      - run: python -m pytest tests/ -q
+      - run: python -m evals.run --dry-run

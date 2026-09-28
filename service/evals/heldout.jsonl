@@ -1,0 +1,24 @@
+{"id": "ecart-01", "utterance": "Avant de retourner à la base, transmettez vos infos à quelqu'un.", "expect": "constraint", "constraint": "require_before(knowledge_shared, ReachExtraction)"}
+{"id": "ecart-02", "utterance": "Bandez les plaies de vos camarades avant de pénétrer dans un immeuble.", "expect": "constraint", "constraint": "require_before(band_tended, enter:building)"}
+{"id": "ecart-03", "utterance": "Qu'aucun survivant ne passe le seuil d'un bâtiment les mains vides, sans arme.", "expect": "constraint", "constraint": "require_before(armed, enter:building)"}
+{"id": "ecart-04", "utterance": "Détournez l'attention de la horde avant d'aller dans une pharmacie.", "expect": "constraint", "constraint": "require_before(diversion_made, enter:pharmacy)"}
+{"id": "ecart-05", "utterance": "Faites du bruit loin de l'entrée avant de passer la porte d'un bâtiment.", "expect": "constraint", "constraint": "require_before(diversion_made, enter:building)"}
+{"id": "ecart-06", "utterance": "Avant de fouiller, assurez-vous que personne n'est blessé.", "expect": "constraint", "constraint": "require_before(band_tended, SearchRoom)"}
+{"id": "ecart-07", "utterance": "Ne revenez au camion qu'une fois la cachette de la caisse connue.", "expect": "constraint", "constraint": "require_before(objective_found, ReachExtraction)"}
+{"id": "ecart-08", "utterance": "Ne rentrez jamais sans avoir fouillé le lieu de la mission.", "expect": "constraint", "constraint": "require_before(searched(objective_zone), ReachExtraction)"}
+{"id": "ecart-09", "utterance": "Gardez toujours une arme à la main.", "expect": "constraint", "constraint": "require_always(armed)"}
+{"id": "ecart-10", "utterance": "Ne quittez jamais vos camarades.", "expect": "constraint", "constraint": "require_always(at(agent, group))"}
+{"id": "ecart-11", "utterance": "Interdiction d'emprunter l'équipement des autres.", "expect": "constraint", "constraint": "forbid(BorrowWeapon)"}
+{"id": "ecart-12", "utterance": "Économisez les pétards.", "expect": "constraint", "constraint": "penalize(ThrowFirecracker, k)", "factor_any": true}
+{"id": "ecart-13", "utterance": "Ne lancez aucun pétard.", "expect": "constraint", "constraint": "forbid(ThrowFirecracker)"}
+{"id": "ecart-14", "utterance": "Ne perdez pas de temps à panser les autres.", "expect": "constraint", "constraint": "penalize(TendAlly, k)", "factor_any": true}
+{"id": "ecart-15", "utterance": "Évitez de vous cacher.", "expect": "constraint", "constraint": "penalize(Hide, k)", "factor_any": true}
+{"id": "ecart-16", "utterance": "N'ouvrez aucune porte.", "expect": "constraint", "constraint": "forbid(OpenDoor)"}
+{"id": "ecart-17", "utterance": "Après avoir barricadé une porte, allez vous cacher.", "expect": "constraint", "constraint": "require_after(hidden, BarricadeDoor)"}
+{"id": "ecart-18", "utterance": "Soyez discrets.", "expect": "rejected", "reason": "preference_not_constraint"}
+{"id": "ecart-19", "utterance": "Allez chercher Claire.", "expect": "rejected", "reason": "not_expressible"}
+{"id": "ecart-20", "utterance": "Si Bob est blessé, soignez-le.", "expect": "rejected", "reason": "conditional_not_supported"}
+{"id": "ecart-21", "utterance": "Creusez un tunnel sous la rue.", "expect": "rejected", "reason": "unknown_symbol"}
+{"id": "ecart-22", "utterance": "Réparez la voiture avant de partir.", "expect": "rejected", "reason": "unknown_symbol"}
+{"id": "ecart-23", "utterance": "Racontez-moi une histoire drôle.", "expect": "rejected", "reason": "out_of_scope"}
+{"id": "ecart-24", "utterance": "Rapportez trois caisses.", "expect": "rejected", "reason": "not_expressible"}

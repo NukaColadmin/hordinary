@@ -1,0 +1,121 @@
+# Les conteneurs du projet, et une precision d'emblee : **le jeu n'en depend d'aucun**. Hordinary
+# tourne sans eux, la suite .NET passe avec eux arretes, et aucun planificateur tiers ne tourne
+# pendant une partie. Ce fichier existe pour que trois outillages se lancent d'une meme facon plutot
+# que de trois incantations a retrouver dans trois README, pas pour en faire des dependances.
+#
+#   docker compose up -d service                    # le service de langage, sur 127.0.0.1:8001
+#   docker compose --profile outils pull downward   # Fast Downward, portillon 3
+#   docker compose --profile outils build val       # VAL, portillon 4 : pas d'image officielle
+#
+# Un seul des quatre tourne en continu. Les autres sont des outils qu'on appelle et qui rendent la
+# main, d'ou les profils : un `up` sans profil ne demarre que le service de langage.
+#
+# La cle d'API n'est ecrite nulle part ici. `OPENROUTER_API_KEY` sans valeur reprend celle de
+# l'environnement courant : un fichier de compose se versionne comme le reste du depot.
+
+name: hordinary
+
+# Les deux services qui partent de l'image du service de langage la declarent ici, une fois : deux
+# `build:` sur le meme contexte donneraient deux constructions pour une seule image.
+x-langage: &langage
+  build: ./service
+  image: hordinary-service
+
+# L'environnement du service de langage, sans aucune valeur : ces trois variables viennent du shell
+# ou de nulle part. `HORDINARY_MODEL` et `HORDINARY_REASONING` absents, le service prend les defauts
+# de `app/settings.py` — qui sont ceux que les mesures publiees ont employes.
+x-openrouter: &openrouter
+  - OPENROUTER_API_KEY
+  - HORDINARY_MODEL
+  - HORDINARY_REASONING
+
+services:
+
+  # -----------------------------------------------------------------------------------------------
+  # Le service de langage du livrable 15 (FastAPI, graphe LangGraph a cinq noeuds, OpenRouter).
+  service:
+    <<: *langage
+    environment: *openrouter
+    ports:
+      # 127.0.0.1 et non 0.0.0.0 : ce service porte une cle d'API et appelle un fournisseur facture a
+      # l'appel. Publie sur toutes les interfaces, il offrirait cette facture a qui partage le reseau.
+      # C'est aussi l'adresse exacte que le jeu interroge (`instructions.endpoint` de game_config).
+      - "127.0.0.1:8001:8001"
+    healthcheck:
+      # La bibliotheque standard, et non httpx : httpx n'est installe que pour le client de test de
+      # FastAPI, et une sonde de sante qui depend d'un paquet de test ment le jour ou on l'enleve.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      # Sans cle, le service demarre quand meme et /health repond : le repli du jeu s'eprouve sans
+      # payer, et ce conteneur est *sain* sans cle. Confondre « pas de cle » et « en panne » ferait
+      # redemarrer en boucle un service qui fonctionne comme prevu.
+      start_period: 5s
+
+  # -----------------------------------------------------------------------------------------------
+  # Le harnais d'evaluation, dans la meme image. Ce n'est pas un serveur : il mesure et rend la main.
+  #
+  #   docker compose --profile evals run --rm evals --dry-run
+  #   docker compose --profile evals run --rm evals --model deepseek/deepseek-v4.1-flash
+  #   docker compose --profile evals run --rm evals --no-digest --out evals/results.no-digest.md
+  evals:
+    <<: *langage
+    profiles: [evals]
+    environment: *openrouter
+    volumes:
+      # Le montage est le point. `.dockerignore` tient les `results*.md` hors de l'image, et un
+      # passage reel coute des appels factures : sans cette ligne le rapport s'ecrirait dans le
+      # conteneur et disparaitrait avec lui. `--out` vise `evals/results.md` par defaut, donc ici.
+      - ./service/evals:/service/evals
+    entrypoint: ["python", "-m", "evals.run"]
+
+  # -----------------------------------------------------------------------------------------------
+  # Fast Downward — portillon 3, la preuve d'insatisfiabilite. Image officielle : on la tire, on ne
+  # la construit pas, et les tests ne la tirent jamais eux-memes.
+  #
+  #   docker compose --profile outils run --rm downward \
+  #       --plan-file /tmp/plan.txt \
+  #       /benchmarks/domain.pddl /benchmarks/snapshots/10-completeplayermission.pddl \
+  #       --search "astar(lmcut())"
+  #
+  # Le verdict se lit au **code de retour** et non dans le texte : 11 est une preuve, 12 une
+  # recherche qui a renonce. Accuser une consigne du joueur sur un 12 serait l'erreur judiciaire que
+  # le portillon existe pour eviter.
+  downward:
+    image: aibasel/downward
+    profiles: [outils]
+    volumes:
+      # En lecture seule : ce dossier porte des artefacts versionnes, que `PddlArtifactsTests` rend a
+      # nouveau et compare. Un outil qui les reecrirait casserait la suite sans qu'on sache pourquoi.
+      - ./tools/pddl:/benchmarks:ro
+    # Fast Downward ecrit output.sas et son plan dans le dossier courant. Le laisser dans
+    # /benchmarks salirait le depot — d'ou /tmp, qui meurt avec le conteneur.
+    working_dir: /tmp
+
+  # -----------------------------------------------------------------------------------------------
+  # VAL — le temoin exterieur du portillon 4. Il ne remplace pas `TrajectoryChecker`, il le
+  # corrobore : les deux repondent a la meme question, mais le notre est ecrit par la main qui a
+  # ecrit le compilateur, et deux erreurs identiques ne se verraient pas.
+  #
+  #   docker compose --profile outils build val    # une fois : cette image compile VAL 4
+  #   docker compose --profile outils run --rm val -v \
+  #       /data/missions/<id>/domain.declared.pddl /data/missions/<id>/problem.pddl \
+  #       /data/missions/<id>/plan.txt
+  #
+  # Le `-v` n'est pas decoratif : sans le mode verbeux, un plan refuse pour violation de contrainte
+  # rend « Plan failed to execute » et rien d'autre — c'est-a-dire tout sauf ce qu'on vient chercher.
+  val:
+    build: ./tools/pddl/val
+    # Ce nom-la, et non celui que compose deduirait du projet et du service : `SatisfiabilityTests`
+    # cherche l'image `hordinary-val` par `docker image inspect`. Le nom deduit tombe juste
+    # aujourd'hui et faux le jour ou l'un des deux est renomme — et les tests changeraient alors de
+    # question en silence, ce qui est exactement le defaut qu'ils sont faits pour ne pas avoir.
+    image: hordinary-val
+    profiles: [outils]
+    volumes:
+      # La racine du depot, en lecture seule. VAL veut le domaine, le probleme et le plan, et ils ne
+      # vivent pas au meme endroit : les artefacts versionnes sont dans tools/pddl/, ceux d'une
+      # partie jouee dans missions/<id>/. Un seul montage les atteint tous les deux.
+      # HORDINARY_VAL_DATA pointe ailleurs quand les trois fichiers sont dans un dossier a part.
+      - ${HORDINARY_VAL_DATA:-.}:/data:ro

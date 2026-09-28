@@ -82,6 +82,17 @@ public sealed class SurvivorAgent
     /// </summary>
     public event Action<string>? Violated;
 
+    /// <summary>
+    /// Plans passes au portillon 4, et combien l'ont echoue. Le bilan de fin de mission les montre au
+    /// joueur : « deux consignes, quatorze plans verifies, aucun ecart » est la seule trace visible
+    /// qu'une consigne a pese sur la sortie. Une violation part deja au journal, mais un journal ne
+    /// se lit pas depuis l'ecran de camp.
+    /// </summary>
+    public int PlansVerified { get; private set; }
+
+    /// <inheritdoc cref="PlansVerified"/>
+    public int PlansViolated { get; private set; }
+
     public SurvivorAgent(
         SurvivorProfile profile,
         GridPosition spawn,
@@ -144,7 +155,8 @@ public sealed class SurvivorAgent
         Survivor.Inventory.EquipmentChanged += RefreshDomain;
 
         Runtime = new WorldPlanRuntime(
-            Survivor, world, Follower, Astar, Survivor.Settings, band, sharing, horde, catalogue);
+            Survivor, world, Follower, Astar, Survivor.Settings, band, sharing, horde, catalogue,
+            config.UtilityAi.Cooperation);
 
         Runtime.Logged += message => Logged?.Invoke(message);
         Runtime.Fought += message => Fought?.Invoke(message);
@@ -161,6 +173,15 @@ public sealed class SurvivorAgent
         // Le portillon 4 se branche sur la production d'un plan, et non sur son execution : ce qu'il
         // verifie est la compilation, pas le monde. Sans contrainte active il ne coute rien.
         Brain.Replanned += _ => VerifyTrajectory();
+
+        // Un camarade vient de donner un ordre : reconsiderer, et pas seulement demander a
+        // reflechir, pour la meme raison que le rappel du van — l'ordre doit pouvoir deloger un
+        // objectif installe, que l'hysteresis protegerait sinon (UtilitySelector.Reconsider).
+        Survivor.Ordered += order =>
+        {
+            Utility.Reconsider(order.Label);
+            Logged?.Invoke($"{Survivor.Name} recoit un {order}");
+        };
 
         _world.SetEntity(Survivor.Id, EntityKind.Survivor, spawn);
     }
@@ -273,7 +294,11 @@ public sealed class SurvivorAgent
         if (Plan is not { } plan) return;
 
         var verdict = instructions.Verify(TrajectoryTrace.Of(plan));
+        PlansVerified++;
+
         if (verdict.Satisfied) return;
+
+        PlansViolated++;
 
         foreach (string violation in verdict.Violations) Violated?.Invoke(violation);
     }
@@ -300,7 +325,7 @@ public sealed class SurvivorAgent
         _world.SetEntity(Survivor.Id, EntityKind.Survivor, Survivor.Position);
 
         LastPerception = _perception.Observe(Survivor, _world);
-        LastHeard = _perception.Listen(Survivor, _world, rng);
+        LastHeard = _perception.Listen(Survivor, _world, rng, seen: LastPerception.SeenEntities);
         Survivor.Knowledge.ForgetFadedNoises(_world.Time);
 
         Context = NewContext();
@@ -320,9 +345,61 @@ public sealed class SurvivorAgent
     {
         var context = Context ?? NewContext();
 
+        SettleOrder();
         Brain.Advance(context, delta);
         DeclareIntent(context);
     }
+
+    /// <summary>
+    /// Clot l'ordre d'un camarade quand il est resolu, dans un sens ou dans l'autre : rempli — le
+    /// survivant est a destination —, ou impossible — il l'a pris pour objectif et le planificateur
+    /// n'en a rien tire, ou l'a suspendu faute d'itineraire.
+    ///
+    /// <para>
+    /// C'est ce qui fait d'un ordre de camarade une parenthese et non une laisse. Tant qu'il est
+    /// pendant, l'entree <c>obeying</c> ferme les objectifs propres du survivant ; s'il ne se
+    /// resolvait jamais, un ordre impossible le laisserait plante pour le reste de la mission, ses
+    /// seuls reflexes pour l'animer. Il ne s'efface pas pour autant a la premiere difficulte : un
+    /// danger qui fait passer la fuite devant ne le resout pas, il le fait attendre.
+    /// </para>
+    ///
+    /// <para>
+    /// Le verdict vient avant la decision de la passe, pour qu'un survivant arrive decide aussitot de
+    /// la suite plutot que de rester une passe sans objectif — l'ordre rempli ferme
+    /// <c>CompletePlayerMission</c>, et « obeying » tous les autres.
+    /// </para>
+    /// </summary>
+    private void SettleOrder()
+    {
+        if (Survivor.Mission is not { FromAlly: true } order) return;
+
+        // Un rappel au van se tient une fois rempli (MissionOrder.Holds) : on n'efface que ce qui
+        // est impossible.
+        bool arrived = order.ReachedFrom(Survivor.Position);
+        bool reached = arrived && !order.Holds;
+        bool hopeless = !arrived && PursuesOrder() && (Plan is null || Brain.Suspended);
+
+        if (!reached && !hopeless) return;
+
+        Survivor.Settle();
+        Utility.Reconsider(reached ? "ordre rempli" : "ordre impossible");
+
+        Logged?.Invoke(reached
+            ? $"{Survivor.Name} a rempli l'{order.Label}"
+            : $"{Survivor.Name} renonce a l'{order.Label} : aucun plan n'y mene");
+    }
+
+    /// <summary>
+    /// Vrai quand l'objectif courant est celui qui vise l'ordre — la cible <c>mission</c> de
+    /// <c>config/utility_goals.json</c>. Le code ne nomme pas l'objectif : il lit sa cible.
+    /// </summary>
+    private bool PursuesOrder()
+        => Survivor.CurrentGoal is { } goal
+           && Utility.Goals.Find(goal)?.Target is { } target
+           && target.Equals(MissionTarget, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Nom de cible sous lequel un objectif poursuit l'ordre courant (<c>UtilityContext.Locate</c>).</summary>
+    private const string MissionTarget = "mission";
 
     /// <summary>
     /// La situation telle que ce survivant-la la voit, a l'instant present.

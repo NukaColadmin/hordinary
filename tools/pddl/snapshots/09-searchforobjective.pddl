@@ -1,5 +1,5 @@
 ; Instantane : objectif « SearchForObjective », agent en (2,17).
-; 24 objets connus, 47 faits, 98 actions instanciees.
+; 24 objets connus, 49 faits, 98 actions instanciees.
 ; Ce que l'agent n'a jamais percu n'y figure pas : c'est voulu.
 
 (define (problem searchforobjective)
@@ -24,6 +24,8 @@
     (accessible start)
     (alley ruelle)
     (at agent cover)
+    (band_tended)
+    (building cover)
     (building entrepot_ouest)
     (building hangar_sud)
     (door_closed door_0_3)

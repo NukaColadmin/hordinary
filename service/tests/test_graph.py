@@ -205,6 +205,37 @@ def test_le_contexte_ne_montre_que_le_vocabulaire_du_digest(request_of, digest):
     assert absent not in prompt
 
 
+def test_le_contexte_donne_le_sens_de_chaque_symbole(request_of, digest):
+    compiled, provider, _ = graph_of(constraint_json("forbid", action="BreakWindow"))
+
+    run(compiled, request_of("Ne cassez aucune vitre."))
+
+    _, prompt = provider.seen[0]
+
+    # Un fait, une action, une categorie, un repere : les quatre listes portent le sens a cote du nom,
+    # et ce sens est celui du digest — le noeud n'en ecrit aucun.
+    assert f"band_tended() — {digest.meaning('band_tended')}" in prompt
+    assert f"TendAlly — {digest.meaning('TendAlly')}" in prompt
+    assert f"building — {digest.meaning('building')}" in prompt
+    assert f"patient : location — {digest.meaning('patient')}" in prompt
+
+
+def test_sans_glossaire_le_contexte_reste_celui_des_passages_publies(digest):
+    from app.contracts import InstructionRequest
+
+    bare = digest.model_copy(update={"glossary": {}})
+    compiled, provider, _ = graph_of(constraint_json("forbid", action="BreakWindow"))
+
+    run(compiled, InstructionRequest(utterance="Ne cassez aucune vitre.", domain_digest=bare))
+
+    _, prompt = provider.seen[0]
+
+    # L'ablation --no-glossary doit rendre le contexte des passages anterieurs, a la lettre : sinon
+    # elle mesurerait la mise en page en meme temps que les definitions.
+    assert "Actions : " + ", ".join(digest.actions) in prompt
+    assert not [line for line in prompt.splitlines() if line.startswith("  ") and " — " in line]
+
+
 def test_les_contraintes_actives_sont_montrees(request_of, digest):
     active = digest.model_copy(update={"active_constraints": ["forbid(BreakWindow)"]})
 

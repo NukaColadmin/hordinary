@@ -415,6 +415,27 @@ public sealed class CampStock(CampSettings? settings = null)
         return day;
     }
 
+    /// <summary>
+    /// Combien de journees pleines la reserve tient encore a <paramref name="mouths"/> bouches, a la
+    /// ration de <see cref="ResolveDay"/> ; <c>null</c> pour une reserve qui ne se mange ni ne se
+    /// boit. Les paliers de <see cref="LevelOf"/> disent si une reserve est basse, pas quand elle
+    /// sera vide — et c'est la seconde question qui decide de la sortie du lendemain.
+    /// </summary>
+    public int? DaysOf(string resource, int mouths)
+    {
+        float ration = resource.ToLowerInvariant() switch
+        {
+            "food" => Settings.FoodPerSurvivorPerDay,
+            "water" => Settings.WaterPerSurvivorPerDay,
+            _ => 0f,
+        };
+
+        float need = ration * mouths;
+        if (need <= 0f) return null;
+
+        return (int)Math.Floor(Of(resource) / need);
+    }
+
     public override string ToString()
         => $"nourriture {Food:0.#}, eau {Water:0.#}, essence {Fuel:0.#}, munitions {Ammo:0}";
 }

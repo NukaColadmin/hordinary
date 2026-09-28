@@ -3,6 +3,8 @@
     python -m evals.run --model deepseek/deepseek-v4.1-flash
     python -m evals.run --model x --no-digest          # ablation 1
     python -m evals.run --model x --few-shot 4         # ablation 2
+    python -m evals.run --model x --no-glossary        # ablation 3 : le sens des symboles retire
+    python -m evals.run --corpus evals/heldout.jsonl   # les phrases tenues a l'ecart
     python -m evals.run --dry-run                      # sans reseau, pour verifier le harnais
 
 Ce qui est mesure, et pourquoi :
@@ -29,6 +31,7 @@ import json
 import re
 import sys
 import time
+from collections import Counter
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -44,6 +47,9 @@ from app.provider import Budget, OpenRouterProvider, ScriptedProvider  # noqa: E
 from app.settings import Settings  # noqa: E402
 
 CORPUS = HERE / "utterances.jsonl"
+HELDOUT = HERE / "heldout.jsonl"
+"""Phrases tenues a l'ecart : jamais lues pour ecrire le prompt ni le glossaire du domaine. Un gain
+qui n'existerait que sur `CORPUS` serait de l'apprentissage deguise ; c'est ici qu'il se verifie."""
 DIGEST = ROOT / "tests" / "domain.digest.json"
 
 
@@ -105,6 +111,12 @@ class Report:
     model: str
     ablation: str
     outcomes: list[Outcome] = field(default_factory=list)
+    # Le nombre de passages fusionnes dans `outcomes`. A temperature nulle, le modele livre ne rend
+    # pas la meme reponse d'un tirage a l'autre — OpenRouter repartit les appels entre plusieurs
+    # hebergeurs. Un passage unique a publie « trois regressions » qui etaient du bruit et un « 0 % de
+    # faux acceptes » qui etait de la chance : les taux se lisent donc sur plusieurs tirages, et
+    # chaque echec avec sa frequence.
+    draws: int = 1
 
     def rate(self, subset: list[Outcome], predicate) -> float:
         return 100.0 * sum(1 for o in subset if predicate(o)) / len(subset) if subset else 0.0
@@ -138,7 +150,12 @@ class Report:
         ) + " |"
 
     def failures(self) -> list[str]:
-        """Le detail de ce qui a rate. Un taux sans ses cas ne s'ameliore pas."""
+        """Le detail de ce qui a rate. Un taux sans ses cas ne s'ameliore pas.
+
+        Sur plusieurs tirages, un meme echec n'est ecrit qu'une fois, precede de sa frequence : « 1/3 »
+        est une phrase instable, « 3/3 » une phrase que le modele ne sait pas traduire, et ce ne sont
+        pas les memes chantiers.
+        """
         lines = []
 
         for outcome in self.outcomes:
@@ -163,7 +180,17 @@ class Report:
                     f"(attendu : `{outcome.case.reason}`)"
                 )
 
-        return lines
+        if self.draws <= 1:
+            return lines
+
+        counts = Counter(lines)
+
+        # Dans l'ordre du corpus, et non de premiere apparition : une phrase ratee de deux facons
+        # differentes doit se lire en deux lignes voisines.
+        order = {outcome.case.id: index for index, outcome in reversed(list(enumerate(self.outcomes)))}
+        unique = sorted(dict.fromkeys(lines), key=lambda line: order[line.split("`", 2)[1]])
+
+        return [f"- ({counts[line]}/{self.draws}) {line[2:]}" for line in unique]
 
 
 def _form_of(constraint: str | None) -> str | None:
@@ -206,10 +233,10 @@ def _percentile(values: list[int], share: int) -> int:
     return values[index]
 
 
-def load_corpus() -> list[Case]:
+def load_corpus(path: Path = CORPUS) -> list[Case]:
     cases = []
 
-    for line in CORPUS.read_text(encoding="utf-8").splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
 
@@ -229,16 +256,22 @@ def load_corpus() -> list[Case]:
     return cases
 
 
-def load_digest(empty: bool = False) -> DomainDigest:
+def load_digest(empty: bool = False, glossary: bool = True) -> DomainDigest:
     """Le digest du jeu, ou un digest vide pour l'ablation.
 
     L'ablation « sans digest » n'envoie pas un digest partiel : elle en envoie un vide. Un digest
     partiel mesurerait la qualite de la coupe, pas l'apport du contexte.
+
+    L'ablation « sans glossaire » est la seule coupe partielle, et elle est voulue : elle retire les
+    definitions et rien d'autre, ce qui rend au noeud `context` la mise en page exacte des passages
+    anterieurs au glossaire. Elle mesure donc ce que le sens des mots apporte, a vocabulaire egal.
     """
     if empty:
         return DomainDigest()
 
-    return DomainDigest.model_validate(json.loads(DIGEST.read_text(encoding="utf-8")))
+    digest = DomainDigest.model_validate(json.loads(DIGEST.read_text(encoding="utf-8")))
+
+    return digest if glossary else digest.model_copy(update={"glossary": {}})
 
 
 def few_shot(case: Case, corpus: list[Case], count: int) -> str:
@@ -279,8 +312,8 @@ def few_shot(case: Case, corpus: list[Case], count: int) -> str:
     return f" EXEMPLES : {examples}"
 
 
-def evaluate(model: str, *, ablation: str, digest: DomainDigest, shots: int, dry: bool) -> Report:
-    corpus = load_corpus()
+def evaluate(model: str, *, ablation: str, digest: DomainDigest, shots: int, dry: bool, path: Path = CORPUS) -> Report:
+    corpus = load_corpus(path)
     report = Report(model=model, ablation=ablation)
 
     if dry:
@@ -341,7 +374,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Evaluation des modeles sur le corpus d'instructions.")
     parser.add_argument("--model", action="append", default=[], help="Repetable : un passage par modele.")
     parser.add_argument("--no-digest", action="store_true", help="Ablation : contexte de domaine vide.")
+    parser.add_argument("--no-glossary", action="store_true", help="Ablation : le digest sans les definitions des symboles.")
     parser.add_argument("--few-shot", type=int, default=0, help="Ablation : k exemples proches.")
+    parser.add_argument("--corpus", default=str(CORPUS), help=f"Le jeu de phrases ; {HELDOUT.name} pour les phrases tenues a l'ecart.")
+    parser.add_argument("--repeat", type=int, default=1, help="Tirages par modele, fusionnes en une ligne ; 3 pour conclure.")
     parser.add_argument("--dry-run", action="store_true", help="Sans reseau : verifie le harnais, pas les modeles.")
     parser.add_argument("--out", default=str(HERE / "results.md"))
 
@@ -351,22 +387,36 @@ def main() -> int:
     ablation = "aucune"
     if args.no_digest:
         ablation = "sans digest"
+    elif args.no_glossary:
+        ablation = "sans glossaire"
     elif args.few_shot:
         ablation = f"few-shot {args.few_shot}"
+
+    corpus = Path(args.corpus)
+    if corpus.resolve() != CORPUS.resolve():
+        ablation += f", {corpus.name}"
+
+    draws = max(1, args.repeat)
+    if draws > 1:
+        ablation += f", {draws} tirages"
 
     reports = []
 
     for model in models:
-        print(f"[{model}] {ablation}")
-        reports.append(
-            evaluate(
+        merged = Report(model=model, ablation=ablation, draws=draws)
+
+        for draw in range(draws):
+            print(f"[{model}] {ablation}" + (f" — tirage {draw + 1}" if draws > 1 else ""))
+            merged.outcomes += evaluate(
                 model,
                 ablation=ablation,
-                digest=load_digest(empty=args.no_digest),
+                digest=load_digest(empty=args.no_digest, glossary=not args.no_glossary),
                 shots=args.few_shot,
                 dry=args.dry_run,
-            )
-        )
+                path=corpus,
+            ).outcomes
+
+        reports.append(merged)
 
     lines = [HEADER, *(report.row() for report in reports), ""]
 

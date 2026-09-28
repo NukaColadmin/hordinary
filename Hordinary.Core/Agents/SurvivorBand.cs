@@ -229,6 +229,47 @@ public sealed class SurvivorBand
     }
 
     /// <summary>
+    /// Le plan du quartier : chacun part en sachant ou sont les murs, les portes et les lieux — mais
+    /// ni ou sont les zombies, ni ce que contiennent les pieces. C'est <see cref="KnowBorder"/> etendu
+    /// a tout le terrain, et pour la meme raison de source : c'est su, pas observe
+    /// (<see cref="KnowledgeSource.Inference"/>).
+    ///
+    /// <para>
+    /// Aucune mission du camp ne s'en sert. Il existe pour le mode demonstration, ou une prise doit
+    /// montrer un geste et non la reconnaissance qui le precede : sans plan, le groupe passe sa
+    /// premiere minute a explorer, la horde le repere en chemin, et le petard qui devait detourner
+    /// des zombies distraits part sur des zombies deja lances a sa poursuite. Ce que le plan ne dit
+    /// pas reste a decouvrir : une porte se sait verrouillee, un zombie ne se sait nulle part.
+    /// </para>
+    /// </summary>
+    /// <returns>Le nombre de cases portees a la connaissance du groupe.</returns>
+    public int KnowTerrain()
+    {
+        var grid = _world.Grid;
+        int marked = 0;
+
+        foreach (var cell in grid.AllPositions())
+        {
+            var type = grid.GetCell(cell);
+            bool indoor = grid.IsIndoor(cell);
+            marked++;
+
+            foreach (var agent in _agents)
+                agent.Survivor.Knowledge.ObserveCell(cell, type, indoor, 0d, KnowledgeSource.Inference);
+
+            foreach (var zone in grid.ZonesAt(cell))
+            {
+                if (!PerceptionSystem.IsCategorised(zone.Kind)) continue;
+                foreach (var agent in _agents) agent.Survivor.Knowledge.RememberZoneKind(cell, zone.Kind);
+            }
+        }
+
+        foreach (var zone in grid.Zones) Brief(zone);
+
+        return marked;
+    }
+
+    /// <summary>
     /// Le rappel : « rentrez, le van part. » C'est ce que le temps imparti d'une mission declenche
     /// quand il est ecoule (<see cref="Game.MissionSettings.TimeLimit"/>).
     ///
@@ -272,6 +313,45 @@ public sealed class SurvivorBand
     public void Move(float delta)
     {
         foreach (var agent in Standing) agent.Move(delta);
+    }
+
+    /// <summary>Derniere case ou chaque survivant a pose le pied, pour ne sonner qu'aux changements.</summary>
+    private readonly Dictionary<string, GridPosition> _footprints = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Se deplacer fait du bruit (specification section 18.1) : un bruit par case franchie, pas un
+    /// par frame. Franchir une porte fermee, c'est l'ouvrir, et le bareme le facture plus cher qu'un
+    /// pas ; courir s'entend, quel que soit celui qui court.
+    ///
+    /// <para>
+    /// Ici et non dans <c>GameRoot</c> : le jeu et le harnais des prises de demonstration en avaient
+    /// chacun leur copie, et elles divergeaient deja — celle du harnais ne connaissait pas la course.
+    /// Un bruit est de la simulation, et une simulation qui s'ecrit deux fois finit par se derouler de
+    /// deux facons.
+    /// </para>
+    /// </summary>
+    /// <param name="running">Le groupe court (l'allure que le joueur a choisie) : chaque pas est une <see cref="NoiseAction.Run"/>.</param>
+    /// <returns>Les bruits emis a cette passe, avec leur auteur : le jeu en journalise certains.</returns>
+    public IReadOnlyList<(SurvivorAgent Agent, NoiseEvent Noise)> EmitFootsteps(bool running = false)
+    {
+        var emitted = new List<(SurvivorAgent, NoiseEvent)>();
+
+        foreach (var agent in Standing)
+        {
+            var cell = agent.Follower.CurrentCell;
+
+            if (_footprints.TryGetValue(agent.Survivor.Id, out var previous) && previous == cell) continue;
+            _footprints[agent.Survivor.Id] = cell;
+
+            var action = _world.Grid.GetCell(cell) == CellType.DoorClosed
+                ? NoiseAction.OpenDoor
+                : running ? NoiseAction.Run : NoiseAction.Walk;
+
+            var noise = _world.Noises.EmitRaw(cell, _config.Noise.LevelOf(action), _world.Time, agent.Survivor.Id, action);
+            if (noise is not null) emitted.Add((agent, noise));
+        }
+
+        return emitted;
     }
 
     /// <summary>Une passe de perception pour tout le monde.</summary>
@@ -325,7 +405,9 @@ public sealed class SurvivorBand
     private List<Survivor> OnField() => Standing.Select(agent => agent.Survivor).ToList();
 
     /// <summary>
-    /// Une passe complete, pour les boucles qui n'ont pas besoin de cadences separees.
+    /// Une passe complete, pour les boucles qui n'ont pas besoin de cadences separees — dans l'ordre
+    /// du jeu : les corps bougent, leurs pas sonnent, puis on percoit, on se parle et on decide. Les pas
+    /// en sont : un harnais silencieux jouait une partie ou la horde n'entendait personne marcher.
     /// </summary>
     /// <param name="rng">
     /// Porte l'erreur de localisation des bruits. Sans lui, <c>NoiseSystem.Localize</c> retombe sur
@@ -336,6 +418,7 @@ public sealed class SurvivorBand
     public void Advance(float delta, Random? rng = null)
     {
         Move(delta);
+        EmitFootsteps();
         Perceive(delta, rng);
         ShareKnowledge(_world.Time);
         Think(delta);

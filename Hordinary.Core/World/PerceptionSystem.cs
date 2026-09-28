@@ -95,7 +95,13 @@ public sealed class PerceptionSystem(PerceptionSettings? settings = null)
     /// Fait observer le monde au survivant et met a jour sa carte mentale : type de chaque cellule
     /// visible, entites et objets presents, le tout horodate (specification section 9.2).
     /// </summary>
-    public PerceptionResult Observe(IPerceivingAgent agent, WorldState world, double? time = null)
+    /// <param name="concealed">
+    /// Les entites que ce regard ne peut pas saisir meme dans son champ — un survivant dans le van,
+    /// pour un zombie. C'est une regle du monde, comme un mur sur la ligne de vue : l'observateur
+    /// n'apprend pas pourquoi il ne voit rien, il ne voit rien.
+    /// </param>
+    public PerceptionResult Observe(
+        IPerceivingAgent agent, WorldState world, double? time = null, Func<WorldEntity, bool>? concealed = null)
     {
         double now = time ?? world.Time;
 
@@ -119,6 +125,7 @@ public sealed class PerceptionSystem(PerceptionSettings? settings = null)
         {
             if (entity.Id == agent.Id) continue;
             if (!visibleSet.Contains(entity.Position)) continue;
+            if (concealed?.Invoke(entity) == true) continue;
 
             knowledge.RememberEntity(entity.Id, entity.Kind, entity.Position, now);
             seenEntities.Add(entity.Id);
@@ -166,17 +173,54 @@ public sealed class PerceptionSystem(PerceptionSettings? settings = null)
     ///
     /// <paramref name="rng"/> porte l'erreur de localisation ; en passer un de graine connue rend
     /// le comportement reproductible.
+    ///
+    /// <para>
+    /// <paramref name="seen"/> : ce que l'agent a sous les yeux a cette passe (<see cref="PerceptionResult.SeenEntities"/>).
+    /// Un bruit dont il <b>voit</b> l'auteur, et qu'il sait etre un camarade, n'est pas une menace
+    /// inconnue : on ne sursaute pas plus aux pas d'Alice qu'on regarde marcher qu'aux siens. Sans
+    /// cette regle, tout bruit comptait comme un danger — les zombies n'en emettent aucun, donc tous
+    /// venaient du groupe — et trois survivants fuyaient plus de cent fois par prise sur une place sans
+    /// un zombie, les pas de course de l'un relancant la fuite des autres. La regle ne lit rien que
+    /// l'agent ne sache deja : l'auteur est reconnu parce qu'il est vu, pas parce que le monde le dit.
+    /// </para>
+    ///
+    /// <para>
+    /// Les bruits de deplacement — un pas, une course, une porte qu'on pousse en passant — ne sont
+    /// jamais une menace pour un survivant, vu ou pas vu. C'est la regle que
+    /// <see cref="Agents.NoiseBelief.IsRemarkable"/> portait deja (« un pas s'oublie, un fracas se va
+    /// voir »), appliquee a la menace : les zombies ne marchent pas en silence mais ne font aucun bruit
+    /// dans la simulation, et un pas entendu est toujours celui d'un camarade. La vue seule ne
+    /// suffisait pas — Bob franchissant la porte de la pharmacie derriere un mur restait un danger
+    /// anonyme, et dans le harnais du MVP, sans un zombie, une survivante finissait cachee. Attribuer
+    /// le bruit au camarade qu'on sait la n'a pas marche non plus : la position supposee d'un camarade
+    /// qu'on suit est a quatre ou cinq cases de la verite, la prediction extrapolant sa trajectoire.
+    /// Les zombies, eux, entendent toujours tous les pas : c'est ce qui les attire.
+    /// </para>
+    ///
+    /// <para>
+    /// Le leurre (<see cref="NoiseAction.Lure"/>) fait exception : on le retient meme en voyant le
+    /// lanceur, parce que <c>diversion_made</c> se lit dans son souvenir. Sans <paramref name="seen"/>
+    /// — les zombies, qui ne reconnaissent personne, et les tests d'audition —, rien ne change.
+    /// </para>
     /// </summary>
     public IReadOnlyList<HeardNoise> Listen(
-        IPerceivingAgent agent, WorldState world, Random? rng = null, double? time = null)
+        IPerceivingAgent agent, WorldState world, Random? rng = null, double? time = null,
+        IReadOnlyCollection<string>? seen = null)
     {
         double now = time ?? world.Time;
         var heard = new List<HeardNoise>();
 
         foreach (var audible in world.Noises.Audible(agent.Position, now, world.Grid))
         {
-            // On ne sursaute pas a ses propres pas.
-            if (audible.Noise.SourceId is { } source && source == agent.Id) continue;
+            // On ne sursaute pas a ses propres pas, ni a ceux d'un camarade qu'on regarde.
+            if (audible.Noise.SourceId is { } source)
+            {
+                if (source == agent.Id) continue;
+                if (audible.Noise.Action != NoiseAction.Lure && IsSeenAlly(agent, source, seen)) continue;
+            }
+
+            // Un survivant ne sursaute pas non plus a un bruit de deplacement : ce sont ceux du groupe.
+            if (seen is not null && IsMovement(audible.Noise.Action)) continue;
 
             var believed = world.Noises.Localize(audible.Noise, audible.PerceivedIntensity, rng);
 
@@ -205,6 +249,19 @@ public sealed class PerceptionSystem(PerceptionSettings? settings = null)
     }
 
     /// <summary>
+    /// L'auteur d'un bruit est un camarade que l'agent voit a cette passe : vu (<paramref name="seen"/>),
+    /// et connu comme survivant dans sa propre memoire, que <see cref="Observe"/> vient d'ecrire.
+    /// </summary>
+    private static bool IsSeenAlly(IPerceivingAgent agent, string source, IReadOnlyCollection<string>? seen)
+        => seen is not null
+           && seen.Contains(source)
+           && agent.Knowledge.GetEntity(source) is { Kind: EntityKind.Survivor };
+
+    /// <summary>Le bruit d'un corps qui se deplace, et rien d'autre : un pas, une course, une porte poussee.</summary>
+    private static bool IsMovement(NoiseAction action)
+        => action is NoiseAction.Walk or NoiseAction.Run or NoiseAction.OpenDoor;
+
+    /// <summary>
     /// Les lieux que le regard designe : apercevoir un bout d'entrepot, c'est savoir qu'il y a un
     /// entrepot la (livrable 15, prerequis des batiments).
     ///
@@ -229,6 +286,16 @@ public sealed class PerceptionSystem(PerceptionSettings? settings = null)
     {
         if (grid.Zones.Count == 0 || visible.Count == 0) return;
 
+        // La categorie de chaque case vue, pour qu'une consigne sur la nature d'un lieu couvre aussi
+        // un repere qui y tombe (AgentKnowledge.ZoneKindAt).
+        foreach (var cell in visible)
+        {
+            foreach (var zone in grid.ZonesAt(cell))
+            {
+                if (IsCategorised(zone.Kind)) knowledge.RememberZoneKind(cell, zone.Kind);
+            }
+        }
+
         foreach (var zone in grid.Zones)
         {
             if (!zone.Kind.IsCommon()) continue;
@@ -249,6 +316,13 @@ public sealed class PerceptionSystem(PerceptionSettings? settings = null)
             if (seen is { } spot) knowledge.RememberLocation(zone.Name, zone.Kind, spot, now);
         }
     }
+
+    /// <summary>
+    /// Les categories qu'une consigne peut nommer pour un repere : pas le van. Le depart et le retour
+    /// sont des lieux nommes, pas des natures d'endroit — « aller au van » n'est pas « entrer quelque
+    /// part ».
+    /// </summary>
+    public static bool IsCategorised(ZoneKind kind) => kind is not (ZoneKind.Start or ZoneKind.Extraction);
 
     /// <summary>
     /// L'agent voit la case ou il croyait trouver quelqu'un et elle est vide : la croyance tombe.

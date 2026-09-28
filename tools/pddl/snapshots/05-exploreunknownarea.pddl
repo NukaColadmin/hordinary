@@ -1,5 +1,5 @@
 ; Instantane : objectif « ExploreUnknownArea », agent en (-9,3).
-; 19 objets connus, 39 faits, 1 actions instanciees.
+; 17 objets connus, 37 faits, 1 actions instanciees.
 ; Ce que l'agent n'a jamais percu n'y figure pas : c'est voulu.
 
 (define (problem exploreunknownarea)
@@ -7,14 +7,12 @@
   (:objects
     bob claire - ally
     door_6_m2 - door
-    danger entrepot_ouest rue_principale ruelle start - location
+    entrepot_ouest rue_principale ruelle start - location
     window_m4_4 window_m4_m6 window_m8_m1 - window
   )
   (:init
     (accessible ally)
-    (accessible away_from_danger)
     (accessible cover)
-    (accessible danger)
     (accessible entrepot_ouest)
     (accessible extraction)
     (accessible frontier)
@@ -24,16 +22,15 @@
     (accessible ruelle)
     (accessible start)
     (alley ruelle)
-    (at agent away_from_danger)
+    (band_tended)
+    (building cover)
     (building entrepot_ouest)
     (door_closed door_6_m2)
     (door_of door_6_m2 objective_zone)
     (extraction extraction)
     (extraction_known)
     (known ally)
-    (known away_from_danger)
     (known cover)
-    (known danger)
     (known entrepot_ouest)
     (known extraction)
     (known frontier)
@@ -44,6 +41,7 @@
     (known start)
     (pharmacy objective_zone)
     (start start)
+    (street frontier)
     (street rue_principale)
     (window_intact window_m4_4)
     (window_intact window_m4_m6)

@@ -110,6 +110,13 @@ public sealed class Replanner
     /// <summary>Replanifications d'affilee qui n'ont produit aucun plan.</summary>
     public int ConsecutiveFailures { get; private set; }
 
+    /// <summary>
+    /// Vrai quand l'objectif courant est suspendu : le meme plan vient d'echouer faute d'itineraire, et
+    /// rien ne sera retente avant une information nouvelle. C'est, avec l'absence de plan, ce qui dit
+    /// qu'un ordre de camarade ne peut pas etre rempli (<see cref="Agents.SurvivorAgent"/>).
+    /// </summary>
+    public bool Suspended => _parkedStateHash is not null;
+
     public double LastReplanAt { get; private set; } = double.NegativeInfinity;
 
     /// <summary>Emis a chaque replanification, une fois le nouveau plan connu.</summary>

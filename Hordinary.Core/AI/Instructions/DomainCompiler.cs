@@ -188,6 +188,19 @@ public static class DomainCompiler
 
             if (constraint.Target!.IsClass)
             {
+                // Une contrainte precedente a pu deja scinder ce schema sur la meme categorie : sa
+                // moitie « dedans » recoit l'exigence telle quelle, sa moitie « dehors » n'est pas
+                // visee. La rescinder donnerait EnterBuilding_EnterBuilding et une moitie morte,
+                // dont la precondition exigerait a la fois building(?l) et sa negation.
+                switch (SideOf(constraint.Target, member))
+                {
+                    case Side.Inside:
+                        result[index] = member.With(precondition: member.Precondition.Conjoin(required), generatedBy: Origin(member, constraint));
+                        continue;
+                    case Side.Outside:
+                        continue;
+                }
+
                 if (Split(constraint, member, result) is not { } halves)
                 {
                     warnings.Add($"« {constraint.Text} » : le schema « {member.Name} » n'emmene l'agent nulle part de nommable.");
@@ -201,7 +214,7 @@ public static class DomainCompiler
             {
                 result[index] = member.With(
                     precondition: member.Precondition.Conjoin(required),
-                    generatedBy: constraint.Text);
+                    generatedBy: Origin(member, constraint));
             }
         }
 
@@ -227,6 +240,36 @@ public static class DomainCompiler
 
         return (inside, outside);
     }
+
+    private enum Side { Straddles, Inside, Outside }
+
+    /// <summary>
+    /// Ou tombe deja un schema vis-a-vis de la categorie d'une classe : dedans si sa precondition
+    /// exige la categorie de sa destination, dehors si elle l'exclut, a cheval sinon — et seul un
+    /// schema a cheval se scinde. C'est ce qui rend deux consignes sur la meme classe composables
+    /// (« armez-vous » et « faites diversion », toutes deux avant <c>enter:building</c>).
+    /// </summary>
+    private static Side SideOf(ActionTarget target, PddlAction member)
+    {
+        if (ActionFamilies.DestinationOf(member) is not { } destination) return Side.Straddles;
+
+        var category = new PddlAtom(target.Category!, destination.Name);
+        var conjuncts = member.Precondition.Conjuncts;
+
+        if (conjuncts.Contains(category)) return Side.Inside;
+        if (conjuncts.Contains(new PddlNegation(category))) return Side.Outside;
+        return Side.Straddles;
+    }
+
+    /// <summary>
+    /// Les contraintes dont un schema est issu, dans l'ordre ou elles l'ont touche. Le commentaire
+    /// du domaine exporte les cite toutes : n'en garder que la derniere ferait croire, a qui lit le
+    /// PDDL, qu'une precondition vient de nulle part.
+    /// </summary>
+    private static string Origin(PddlAction member, TacticalConstraint constraint)
+        => member.GeneratedBy is { } earlier && !earlier.Contains(constraint.Text, StringComparison.Ordinal)
+            ? $"{earlier}, puis {constraint.Text}"
+            : constraint.Text;
 
     /// <summary>
     /// Le nom du schema issu d'une scission : <c>enter:building</c> sur <c>MoveToLocation</c> donne
@@ -310,7 +353,10 @@ public static class DomainCompiler
 
             // Interdire une classe ne retire pas le schema : il n'en reste que la moitie qui ne va
             // pas la ou le joueur ne veut pas qu'on aille.
-            if (constraint.Target!.IsClass && Split(constraint, member, result) is { } halves) result[index] = halves.Outside;
+            var side = constraint.Target!.IsClass ? SideOf(constraint.Target, member) : Side.Inside;
+
+            if (side == Side.Outside) continue;
+            if (side == Side.Straddles && Split(constraint, member, result) is { } halves) result[index] = halves.Outside;
             else result.RemoveAt(index);
         }
 
@@ -418,14 +464,18 @@ public static class DomainCompiler
         {
             int index = result.IndexOf(member);
 
-            if (constraint.Target!.IsClass && Split(constraint, member, result) is { } halves)
+            var side = constraint.Target!.IsClass ? SideOf(constraint.Target, member) : Side.Inside;
+
+            if (side == Side.Outside) continue;
+
+            if (side == Side.Straddles && Split(constraint, member, result) is { } halves)
             {
                 result[index] = halves.Outside;
                 result.Insert(index + 1, halves.Inside.With(cost: halves.Inside.Cost * constraint.Factor));
                 continue;
             }
 
-            result[index] = member.With(cost: member.Cost * constraint.Factor, generatedBy: constraint.Text);
+            result[index] = member.With(cost: member.Cost * constraint.Factor, generatedBy: Origin(member, constraint));
         }
 
         return result;

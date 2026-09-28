@@ -38,6 +38,7 @@ public sealed record GameConfig
     public MissionGenerationSettings MissionGeneration { get; init; } = new();
     public InstructionSettings Instructions { get; init; } = new();
     public DebugSettings Debug { get; init; } = new();
+    public DemoSettings Demo { get; init; } = new();
 
     public static GameConfig Default { get; } = new();
 
@@ -70,9 +71,37 @@ public sealed record GameConfig
 /// n'est pas un raccourci d'ecriture mais la difference entre deux publics — on livre le jeu avec
 /// <c>enabled: false</c> et on le developpe avec <c>true</c>, sans avoir a se souvenir de la liste
 /// des reglages a eteindre un par un.
+///
+/// Un record, pour que <see cref="LocallyObserved"/> puisse le recopier avec deux champs changes.
 /// </summary>
-public sealed class DebugSettings
+public sealed record DebugSettings
 {
+    /// <summary>
+    /// L'argument de ligne de commande qui ouvre les touches et les panneaux de l'observateur pour
+    /// cette session : <c>-- --observateur</c>.
+    /// </summary>
+    public const string ObserverArgument = "--observateur";
+
+    /// <summary>
+    /// Les reglages de cette session : ceux du fichier, avec les touches F1 a F7 et les panneaux de
+    /// texte ouverts si <see cref="ObserverArgument"/> est passe.
+    ///
+    /// Le fichier livre les ferme, parce qu'un joueur n'a pas a deplacer une horde d'une pression
+    /// sur la barre d'espace. Mais tourner un clip qui montre un plan, ses scores et son journal
+    /// demandait alors de modifier un fichier versionne, puis de penser a le remettre — la meme
+    /// impasse que <c>instructions.enabled</c>, et la meme sortie que <c>--ia</c>. Le reglage vaut
+    /// pour toute la session, fixe au lancement : deux parties lancees de meme restent comparables,
+    /// ce qu'une bascule en cours de route n'aurait pas garanti.
+    /// </summary>
+    public DebugSettings LocallyObserved(IEnumerable<string> arguments)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+
+        if (!arguments.Contains(ObserverArgument, StringComparer.Ordinal)) return this;
+
+        return this with { Enabled = true, Commands = true, HudText = true };
+    }
+
     /// <summary>
     /// Interrupteur general du mode debug. A <c>false</c>, tout ce qui suit est neutralise : la
     /// console reste muette, les touches de debug ne repondent plus, les panneaux de texte

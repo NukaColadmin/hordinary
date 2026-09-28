@@ -1,5 +1,5 @@
 ; Instantane : objectif « CompletePlayerMission », agent en (9,0).
-; 25 objets connus, 52 faits, 105 actions instanciees.
+; 25 objets connus, 55 faits, 105 actions instanciees.
 ; Ce que l'agent n'a jamais percu n'y figure pas : c'est voulu.
 
 (define (problem completeplayermission)
@@ -26,6 +26,7 @@
     (alley ruelle)
     (at agent cover)
     (at agent objective_zone)
+    (band_tended)
     (building entrepot_ouest)
     (building hangar_sud)
     (door_closed door_0_3)
@@ -46,6 +47,8 @@
     (known rue_principale)
     (known ruelle)
     (known start)
+    (pharmacy ally)
+    (pharmacy cover)
     (pharmacy objective_zone)
     (searched objective_zone)
     (searched_in_vain objective_zone)

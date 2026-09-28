@@ -7,7 +7,7 @@ trop laxiste publie un taux qui ne veut rien dire. Les deux se testent ici, sans
 
 from __future__ import annotations
 
-from evals.run import Case, Outcome
+from evals.run import Case, Outcome, Report
 
 
 def _outcome(produced: str, expected: str, factor_any: bool = False) -> Outcome:
@@ -63,3 +63,20 @@ def test_un_faux_accepte_reste_un_faux_accepte():
     assert traduite.false_accept
     assert not refusee.false_accept
     assert refusee.right_refusal
+
+
+def test_plusieurs_tirages_donnent_un_taux_moyen_et_la_frequence_de_chaque_echec():
+    """Un passage unique a publie trois « regressions » qui etaient du bruit. Sur trois tirages, une
+    phrase ratee une fois doit se lire 1/3, et le taux doit etre la moyenne des trois."""
+    juste = _outcome("forbid(Wait)", "forbid(Wait)")
+    ratee = _outcome("penalize(Wait, 3)", "forbid(Wait)")
+
+    report = Report(model="m", ablation="a", outcomes=[juste, ratee, juste], draws=3)
+
+    assert round(report.rate(report.acceptable, lambda o: o.exact)) == 67
+    assert report.failures() == [
+        "- (1/3) traduction differente `essai` — `penalize(Wait, 3)` (attendu : `forbid(Wait)`)"
+    ]
+
+    # Un seul tirage : le rapport garde la forme des passages publies, sans frequence.
+    assert Report(model="m", ablation="a", outcomes=[ratee]).failures()[0].startswith("- traduction")

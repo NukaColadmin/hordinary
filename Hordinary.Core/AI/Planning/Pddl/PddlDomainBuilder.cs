@@ -61,6 +61,7 @@ public static class PddlDomainBuilder
             Goals = [.. domain.Goals.Where(goal => goal.Enabled)],
             LocationKinds = locationKinds,
             Landmarks = landmarks,
+            Glossary = new Dictionary<string, string>(domain.Glossary, StringComparer.Ordinal),
         };
     }
 

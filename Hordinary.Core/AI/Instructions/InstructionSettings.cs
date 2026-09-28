@@ -9,11 +9,43 @@ namespace Hordinary.AI.Instructions;
 /// la <b>traduction</b> d'une phrase libre en contrainte, pas les contraintes elles-memes — les quatre
 /// portillons et le compilateur tournent exactement pareil dans les deux cas.
 /// </para>
+///
+/// <para>
+/// Un record, pour que <see cref="LocallyEnabled"/> puisse le recopier avec un seul champ change.
+/// </para>
 /// </summary>
-public sealed class InstructionSettings
+public sealed record InstructionSettings
 {
     /// <summary>Appel a un modele de langage pour traduire une phrase libre. Les contraintes fonctionnent sans.</summary>
     public bool Enabled { get; init; }
+
+    /// <summary>L'argument de ligne de commande qui allume le service pour cette session : <c>-- --ia</c>.</summary>
+    public const string Argument = "--ia";
+
+    /// <summary>La variable d'environnement qui fait de meme, pour un jeu lance depuis l'editeur.</summary>
+    public const string EnvironmentVariable = "HORDINARY_IA";
+
+    /// <summary>
+    /// Le service allume pour cette session si l'argument <see cref="Argument"/> est passe ou si
+    /// <see cref="EnvironmentVariable"/> vaut <c>1</c>, <c>on</c> ou <c>true</c> ; sinon, tel quel.
+    ///
+    /// <para>
+    /// Pourquoi un reglage de session et non le fichier. Le fichier livre doit dire <c>false</c> — deux
+    /// tests l'exigent, parce que le livrable promet un jeu jouable sans service —, et le seul moyen
+    /// d'essayer la traduction etait de le modifier, donc de passer la suite au rouge. Ecrire
+    /// <c>true</c> dans un fichier versionne pour un essai local, c'est aussi le livrer au prochain
+    /// commit. Le sens n'est qu'unique : rien ici n'eteint un service que le fichier allume.
+    /// </para>
+    /// </summary>
+    public InstructionSettings LocallyEnabled(IEnumerable<string> arguments, string? environment)
+    {
+        ArgumentNullException.ThrowIfNull(arguments);
+
+        bool asked = arguments.Contains(Argument, StringComparer.Ordinal)
+                     || environment?.Trim().ToLowerInvariant() is "1" or "on" or "true";
+
+        return asked && !Enabled ? this with { Enabled = true } : this;
+    }
 
     /// <summary>Longueur maximale d'une phrase de joueur, coupee au-dela.</summary>
     public int MaxChars { get; init; } = 200;

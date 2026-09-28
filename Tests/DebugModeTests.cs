@@ -174,6 +174,27 @@ public class DebugModeTests
     }
 
     /// <summary>
+    /// <c>-- --observateur</c> ouvre les touches F1 a F7 et les panneaux de texte pour la session,
+    /// sans toucher au fichier livre qui les ferme — et ne change rien sans l'argument.
+    /// </summary>
+    [Fact]
+    public void L_observateur_s_ouvre_en_ligne_de_commande_sans_toucher_au_fichier()
+    {
+        var shipped = GameConfig.FromJson("""
+            { "debug": { "enabled": true, "console_output": true, "commands": false, "hud_text": false } }
+            """).Debug;
+
+        Assert.Same(shipped, shipped.LocallyObserved(["--demo=diversion"]));
+
+        var observed = shipped.LocallyObserved(["--demo=diversion", DebugSettings.ObserverArgument]);
+
+        Assert.True(observed.AcceptsCommands);
+        Assert.True(observed.ShowsText);
+        Assert.False(shipped.AcceptsCommands);
+        Assert.False(shipped.ShowsText);
+    }
+
+    /// <summary>
     /// Sans section <c>debug</c>, le mode debug est entierement allume : c'est le regime de
     /// developpement, et l'eteindre est un choix explicite du fichier livre.
     /// </summary>

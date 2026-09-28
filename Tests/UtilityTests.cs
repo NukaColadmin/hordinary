@@ -626,6 +626,28 @@ public class UtilityTests
         }
     }
 
+    /// <summary>
+    /// Une cachette qu'on ne peut pas atteindre n'en est pas une. Sans ce filtre, la piece la plus
+    /// proche etait l'interieur d'une superette fermee a clef : Hide visait une case derriere la
+    /// porte, A* refusait, et le plan se suspendait indefiniment. C'est le plan du quartier du mode
+    /// demonstration qui l'a montre ; une piece vue a travers une vitre produit la meme impasse.
+    /// </summary>
+    [Fact]
+    public void Une_cachette_hors_d_atteinte_n_en_est_pas_une()
+    {
+        var alice = Alice(new GridPosition(10, 10));
+        var locked = new GridPosition(11, 10);
+        var open = new GridPosition(15, 10);
+
+        alice.Knowledge.ObserveCell(locked, CellType.Floor, indoor: true, 0d);
+        alice.Knowledge.ObserveCell(open, CellType.Floor, indoor: true, 0d);
+
+        Assert.Equal(locked, Context(alice).Locate("cover"));
+
+        var reachable = new UtilityContext(alice, 0d, Tuning, reachable: cell => cell != locked);
+        Assert.Equal(open, reachable.Locate("cover"));
+    }
+
     [Fact]
     public void Personne_ne_decide_seul_de_creer_une_diversion()
     {
@@ -637,8 +659,13 @@ public class UtilityTests
         var domain = PlanningDomain.FromJson(DemoMap.ReadConfig("planner_domain.json"));
 
         Assert.Null(domain.FindAction("CreateNoiseDistraction"));
-        Assert.Null(domain.FindAction("ThrowFirecracker"));
         Assert.Null(domain.FindGoal("CreateDistraction"));
+
+        // ThrowFirecracker est revenue, mais sans demandeur : elle pose « diversion_made », que ni
+        // une precondition ni un but ne reclament. C'est une consigne du joueur qui la rend
+        // necessaire (CooperationTests.Un_geste_d_entraide_n_a_pas_d_autre_demandeur_qu_une_consigne).
+        Assert.NotNull(domain.FindAction("ThrowFirecracker"));
+        Assert.DoesNotContain(domain.Goals, goal => goal.ParsedConditions.Any(condition => condition.Pattern == "diversion_made"));
 
         // Le fait symbolique part avec les actions qui le posaient : un predicat que plus personne ne
         // lit ni n'ecrit n'a pas a survivre a son action.

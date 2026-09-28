@@ -1,12 +1,16 @@
 (define (domain hordinary)
   (:requirements :strips :typing :negative-preconditions :conditional-effects :action-costs)
   (:types ally door heavy item location threat window - object)
-  (:constants objective remedy toolbox - item  ally away_from_danger cover extraction frontier group mission objective_spot objective_zone - location  agent - object)
+  (:constants noisemaker objective remedy toolbox - item  ally away_from_danger cover decoy extraction frontier group lender mission objective_spot objective_zone patient - location  agent - object)
   (:predicates
     (accessible ?arg0 - location)
     (alley ?arg0 - location)
+    (armed)
     (at ?arg0 - object ?arg1 - location)
+    (band_ordered ?arg0 - location)
+    (band_tended)
     (building ?arg0 - location)
+    (diversion_made)
     (door_barricaded ?arg0 - door)
     (door_closed ?arg0 - door)
     (door_locked ?arg0 - door)
@@ -30,6 +34,7 @@
     (objective_collected)
     (objective_found)
     (observed ?arg0 - location)
+    (ordered ?arg0 - location)
     (pharmacy ?arg0 - location)
     (pushed ?arg0 - heavy)
     (pushed_back ?arg0 - threat)
@@ -179,4 +184,29 @@
     :parameters (?door - door ?location - location)
     :precondition (and (at agent ?location) (door_of ?door ?location) (door_closed ?door) (equipped toolbox))
     :effect (and (door_barricaded ?door) (not (door_open ?door)) (not (door_closed ?door)) (door_locked ?door) (increase (total-cost) 6)))
+
+  (:action ThrowFirecracker
+    :parameters ()
+    :precondition (and (has agent noisemaker) (known decoy) (not (diversion_made)))
+    :effect (and (not (has agent noisemaker)) (diversion_made) (increase (total-cost) 4)))
+
+  (:action BorrowWeapon
+    :parameters ()
+    :precondition (and (at agent lender) (not (armed)))
+    :effect (and (armed) (increase (total-cost) 2)))
+
+  (:action TendAlly
+    :parameters ()
+    :precondition (and (at agent patient) (has agent remedy) (not (band_tended)))
+    :effect (and (not (has agent remedy)) (band_tended) (increase (total-cost) 2)))
+
+  (:action OrderAlly
+    :parameters (?location - location)
+    :precondition (and (at agent ally) (known ?location) (not (ordered ?location)))
+    :effect (and (ordered ?location) (increase (total-cost) 2)))
+
+  (:action OrderBand
+    :parameters (?location - location)
+    :precondition (and (at agent ally) (known ?location) (not (band_ordered ?location)))
+    :effect (and (band_ordered ?location) (increase (total-cost) 4)))
 )

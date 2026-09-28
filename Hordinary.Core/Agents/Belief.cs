@@ -114,6 +114,12 @@ public enum EntityKind
 /// dit qu'il l'etait.
 /// </param>
 /// <param name="Panic">Panique rapportee par l'interesse, entre 0 et 1, ou <c>null</c> si inconnue.</param>
+/// <param name="SpareWeapon">
+/// L'arme que l'allie dit porter en plus de celle qu'il a en main : <c>null</c> tant qu'il n'en a rien
+/// dit, une chaine vide s'il a dit n'en avoir aucune. La difference compte — « je ne sais pas » laisse
+/// l'ancien renseignement en place, « je n'en ai plus » l'efface. Comme la sante, elle n'arrive que
+/// par la parole : on voit ce qu'un camarade tient, pas ce qu'il a dans le sac.
+/// </param>
 public sealed record EntityBelief(
     string Id,
     EntityKind Kind,
@@ -123,8 +129,12 @@ public sealed record EntityBelief(
     KnowledgeSource Source,
     Vector2 Heading = default,
     float? HealthRatio = null,
-    float? Panic = null) : IBelief
+    float? Panic = null,
+    string? SpareWeapon = null) : IBelief
 {
+    /// <summary>Vrai si l'allie a dit porter une arme qu'il peut preter.</summary>
+    public bool CanLend => !string.IsNullOrEmpty(SpareWeapon);
+
     /// <summary>Vrai si l'agent a vu l'entite se deplacer et sait dans quel sens, en cellules par seconde.</summary>
     public bool IsMoving => Heading.LengthSquared() > 0f;
 

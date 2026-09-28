@@ -55,6 +55,7 @@ public sealed class NoiseSettings
         NoiseAction.BreakWindow => BreakWindow,
         NoiseAction.Distraction => Distraction,
         NoiseAction.BarricadeDoor => BarricadeDoor,
+        NoiseAction.Lure => Distraction,
         _ => 0f,
     };
 }

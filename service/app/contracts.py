@@ -65,6 +65,15 @@ class DomainDigest(BaseModel):
     location_kinds: list[str] = Field(default_factory=list)
     objects: list[DigestObject] = Field(default_factory=list)
     active_constraints: list[str] = Field(default_factory=list)
+    glossary: dict[str, str] = Field(default_factory=dict)
+    """Ce que chaque symbole veut dire, dans les mots d'un joueur — section `glossary` de
+    `config/planner_domain.json`. Le nom et le type disent ou un symbole se met, pas ce qu'il designe :
+    sans ce champ, « soignez les blesses avant d'entrer » etait refusee faute de rien qui la relie a
+    `band_tended`. Absent, le digest se lit comme avant."""
+
+    def meaning(self, name: str) -> str | None:
+        """La definition d'un symbole, ou `None` s'il n'en a pas."""
+        return self.glossary.get(name)
 
     def predicate(self, name: str) -> DigestPredicate | None:
         lowered = name.strip().lower()

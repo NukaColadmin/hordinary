@@ -1,6 +1,6 @@
 // Domaine de planification GBFS (specification, livrable 5).
 //
-// Il n'existe volontairement aucune classe C# par action. Les vingt-cinq actions livrees sont des
+// Il n'existe volontairement aucune classe C# par action. Les vingt-neuf actions livrees sont des
 // *instances* de huit verbes primitifs — toPos, take, put, setFlag, wait, damage, push, emitNoise —
 // decrites ici. Ajouter une action au jeu, en retirer une pour isoler un comportement
 // ("enabled": false) ou reequilibrer son cout se fait dans ce fichier, sans recompilation.
@@ -29,18 +29,29 @@
 // instruction tactique. ShareKnowledge reste : dire ce qu'on a vu n'est pas porter secours, c'est ce
 // qui alimente les croyances de tout le monde.
 //
-// La diversion non plus, et pour la meme raison : CreateNoiseDistraction et ThrowFirecracker ont ete
-// retirees, avec le but CreateDistraction et le fait distraction_created. Faire du bruit expres pour
-// attirer la horde ailleurs n'est pas un reflexe — c'est un sacrifice calcule, decide en connaissance
-// de qui est ou et de ce qu'on protege. Personne ne fait cela sans qu'on le lui demande. Le moteur
-// sait toujours l'executer (verbe emitNoise, WorldPlanRuntime.ThrowNoise, l'effet emit_noise du
-// petard de config/items.json) : c'est au livrable 15 de rendre le geste au joueur, comme
-// BarricadeDoor plus bas.
+// La diversion non plus, et pour la meme raison : CreateNoiseDistraction et l'objectif
+// CreateDistraction ont ete retires. Faire du bruit expres pour attirer la horde ailleurs n'est pas un
+// reflexe — c'est un sacrifice calcule, decide en connaissance de qui est ou et de ce qu'on protege.
+// Personne ne fait cela sans qu'on le lui demande.
+//
+// CINQ GESTES D'ENTRAIDE SONT REVENUS, ET AUCUN N'EST UN REFLEXE. ThrowFirecracker, BorrowWeapon,
+// TendAlly, OrderAlly et OrderBand posent des faits — diversion_made, armed, band_tended,
+// ordered(lieu), band_ordered(lieu) —
+// qu'aucune precondition du domaine et aucun but ne lit. ActionRelevance les ecarte donc pour tous les
+// objectifs, exactement comme BarricadeDoor : un survivant livre a lui-meme ne lance jamais de petard,
+// n'emprunte jamais d'arme, ne soigne jamais un camarade et ne donne d'ordre a personne. C'est une consigne du joueur qui leur donne un demandeur —
+// « require_before(diversion_made, enter:building) » fait de la diversion la condition d'entree, et
+// le planificateur remonte alors jusqu'au petard. C'est la forme que le livrable 15 promettait a ces
+// gestes : le moteur les sait, le joueur les commande. Les cinq faits sont observes a chaque
+// instantane (SymbolicStateBuilder.CollectCooperation) : l'arme en main se voit, la sante du groupe se
+// raconte, une diversion s'entend, un ordre se retient. HealAlly reste retiree sous ce nom : TendAlly n'est pas son retour
+// automatique, c'est le meme geste avec un autre demandeur.
 //
 // Le domaine ne nomme aucun objet reel et aucun lieu de mission. Trois noms symboliques suffisent :
 //   objective       ce que la mission envoie chercher — config/missions.json decide lequel c'est.
 //   objective_zone  ou elle l'envoie le chercher — pharmacie, entrepot ou hangar, indifferemment.
 //   remedy          de quoi soigner — le premier objet porte qui declare un effet "heal".
+//   noisemaker      de quoi faire diversion — le premier objet porte qui declare "emit_noise".
 // C'est ce qui fait qu'une mission qui rapporte un jerrican se joue avec les memes actions qu'une
 // mission qui rapporte une trousse, sans une ligne de plus. Le coeur les traduit en identifiants de
 // config/items.json au moment d'executer, jamais avant (WorldPlanRuntime.Resolve).
@@ -408,6 +419,68 @@
       "noise_level": 6,
       "noise_action": "BarricadeDoor",
       "duration": 4
+    },
+
+    {
+      "name": "ThrowFirecracker",
+      "description": "Lancer un petard loin de soi et loin du lieu vise, pour y attirer la horde (livrable 11, rendu au joueur au livrable 15). Le bruit tombe au repere « decoy », pas sous les pieds du lanceur : noise_level vaut donc 0, et c'est WorldPlanRuntime.ThrowNoise qui fait sonner le petard la ou il atterrit. La diversion est un geste de groupe : ceux qui l'entendent savent que la voie se libere (diversion_made), sans qu'on ait a le leur dire.",
+      "verb": "emitNoise",
+      "params": { "target": "decoy", "amount": 10 },
+      "preconditions": [ "has(agent, noisemaker)", "known(decoy)", "!diversion_made" ],
+      "effects": [ "!has(agent, noisemaker)", "diversion_made" ],
+      "cost": 2,
+      "noise_level": 0,
+      "duration": 1.5
+    },
+
+    {
+      "name": "BorrowWeapon",
+      "description": "Emprunter l'arme de rechange d'un camarade. Le repere « lender » est l'allie le plus proche qui a dit en porter une : on voit ce qu'un camarade tient, pas ce qu'il a dans son sac, et c'est la conversation qui l'apprend. L'arme passe de sac en sac avec son usure (Inventory.HandTo) et vient en main. Duree nulle : le geste se fait en passant. Avec une seconde, le preteur — qui ne s'arrete pas pour autant — avait le temps de s'eloigner d'une case, et le moniteur annulait l'emprunt sur « at(agent, lender) » devenu faux.",
+      "verb": "setFlag",
+      "params": { "condition": "armed", "value": true, "target": "lender" },
+      "preconditions": [ "at(agent, lender)", "!armed" ],
+      "effects": [ "armed" ],
+      "cost": 1,
+      "noise_level": 0,
+      "duration": 0
+    },
+
+    {
+      "name": "TendAlly",
+      "description": "Soigner un camarade blesse avec ce qu'on porte. Le repere « patient » est l'allie le plus proche qu'on sait sous utility_ai.cooperation.wounded_ratio — su, et non devine : la sante d'un allie se raconte. Le montant est celui du remede, ou a defaut la fiche du soignant : Claire, secouriste, rend davantage avec la meme trousse.",
+      "verb": "setFlag",
+      "params": { "condition": "band_tended", "value": true, "target": "patient" },
+      "preconditions": [ "at(agent, patient)", "has(agent, remedy)", "!band_tended" ],
+      "effects": [ "!has(agent, remedy)", "band_tended" ],
+      "cost": 1,
+      "noise_level": 0,
+      "duration": 2
+    },
+
+    {
+      "name": "OrderAlly",
+      "description": "Ordonner a un camarade d'aller a un lieu. Le plan vise le repere « ally » ; l'ordre part a qui l'entend reellement — a portee de voix, ou de radio si les deux en portent une — et qui l'accepte : on ne supplante ni le rappel du van ni l'ordre d'un autre camarade pas encore rempli. Le camarade l'execute avec sa propre boucle de decision, en priorite sur ses objectifs (entree « obeying ») mais pas sur ses reflexes, et l'ordre s'efface une fois rempli ou reconnu impossible, rendant la place a celui qu'il avait mis de cote. « ordered(?location) » se lit dans la memoire des deux bouts : celui qui a donne l'ordre et celui qui l'a recu.",
+      "verb": "setFlag",
+      "parameters": { "location": "location" },
+      "params": { "condition": "ordered(?location)", "value": true, "target": "?location" },
+      "preconditions": [ "at(agent, ally)", "known(?location)", "!ordered(?location)" ],
+      "effects": [ "ordered(?location)" ],
+      "cost": 1,
+      "noise_level": 1,
+      "duration": 1
+    },
+
+    {
+      "name": "OrderBand",
+      "description": "Rappeler tout le groupe a un lieu : le meme ordre qu'OrderAlly, donne a chaque camarade qui l'entend et l'accepte, et non au premier. « Tous » veut dire tous ceux qui l'entendent — a portee de voix, ou de radio si les deux en portent une ; un camarade hors de portee ne recoit rien, et le plan ne va pas le chercher. D'ou le repere « ally » : on va trouver le camarade le plus proche, et l'ordre part de la. Un geste distinct d'OrderAlly, et non un reglage de celui-ci, parce que c'est au joueur de dire s'il renvoie un camarade ou rappelle tout le monde. Plus bruyant et plus cher d'un point : on crie, ou l'on appelle sur la radio. Et instantane, quand OrderAlly dure une seconde : c'est mesure dans le moteur, pas dans le harnais — pendant cette seconde, les camarades qu'on est venu trouver font un pas, « at(agent, ally) » tombe, et le plan invalide courait apres eux jusqu'au rappel du van. « band_ordered(?location) » se lit dans la memoire de celui qui a rappele et de chacun de ceux qui ont obei.",
+      "verb": "setFlag",
+      "parameters": { "location": "location" },
+      "params": { "condition": "band_ordered(?location)", "value": true, "target": "?location" },
+      "preconditions": [ "at(agent, ally)", "known(?location)", "!band_ordered(?location)" ],
+      "effects": [ "band_ordered(?location)" ],
+      "cost": 2,
+      "noise_level": 2,
+      "duration": 0
     }
   ],
 
@@ -436,13 +509,140 @@
   //   kinds       categories de lieux, une par predicat unaire : building(entrepot_ouest). C'est ce
   //               qui donne un sens a la classe de schemas « enter:building » du livrable 15.
   //   landmarks   reperes recalcules a chaque decision — le barycentre du groupe, une cachette, une
-  //               frontiere. Ce sont des objets du probleme, figes a leur valeur du moment.
+  //               frontiere. Ce sont des objets du probleme, figes a leur valeur du moment. « lender »,
+  //               « patient » et « decoy » sont ceux de l'entraide : l'allie qui peut preter une arme,
+  //               le blesse le plus proche, et ou lancer un petard (UtilityContext).
   //
   // Attention : declarer une categorie ici ne la fait pas exister sur la carte. C'est
   // SymbolicStateBuilder qui doit emettre building(...) pour les zones de map_locations.json ; tant
   // qu'il ne le fait pas, une contrainte portant sur ces lieux est acceptee et signalee sans effet.
   "places": {
     "kinds": [ "building", "street", "alley", "pharmacy", "extraction", "start" ],
-    "landmarks": [ "group", "cover", "frontier", "away_from_danger", "mission" ]
+    "landmarks": [ "group", "cover", "frontier", "away_from_danger", "mission", "lender", "patient", "decoy" ]
+  },
+
+  // Ce que chaque symbole nommable VEUT DIRE, dans les mots d'un joueur. C'est la seule section du
+  // fichier ecrite pour le service de langage du livrable 15 : elle voyage dans le digest
+  // (DomainDigest.Glossary) et le noeud « context » l'ecrit en face de chaque symbole.
+  //
+  // Pourquoi elle existe. Le digest transmettait le nom et le type de chaque symbole, jamais son
+  // sens : « band_tended() » ne dit pas « les blesses sont panses », et « Soignez les blesses avant
+  // d'entrer » — le libelle meme d'une consigne pre-ecrite — etait refusee comme un enchainement
+  // d'actions. Le few-shot l'avait deja montre pour « group » : le type se transmet, le sens se devine.
+  //
+  // Pourquoi ici et pas dans le prompt du service. Une liste de correspondances ecrite cote service
+  // serait un second vocabulaire, qui prendrait du retard sur celui-ci sans que rien ne le signale.
+  // Ici, un symbole ajoute au domaine sans definition fait echouer
+  // InstructionServiceTests.Chaque_symbole_nommable_a_sa_definition, et une definition dont le
+  // symbole a disparu aussi.
+  //
+  // Ce n'est PAS le champ « description » des actions : celui-la explique au concepteur pourquoi
+  // l'action est faite ainsi (couts, bruit, pieges), et le donner au modele lui apprendrait des
+  // decisions de conception au lieu du sens des mots. Une definition tient en une ligne, dit ce que
+  // le symbole designe, et jamais quand l'employer.
+  //
+  // Une meme cle vaut pour tout ce qui porte ce nom : « extraction » est a la fois une categorie de
+  // lieu et le repere du van, et c'est le meme endroit.
+  "glossary": {
+    "MoveToLocation": "aller a un lieu connu",
+    "OpenDoor": "ouvrir une porte fermee mais pas verrouillee",
+    "ForceDoor": "forcer, enfoncer une porte verrouillee",
+    "BreakWindow": "casser une vitre pour entrer",
+    "SearchRoom": "fouiller un lieu",
+    "LocateObjective": "decouvrir, en fouillant le lieu de la mission, ou se trouve ce qu'on est venu chercher",
+    "PickUpObjective": "ramasser ce que la mission envoie chercher, sur le lieu de la mission",
+    "PickUpSpottedObjective": "ramasser ce que la mission envoie chercher, apercu ailleurs que sur le lieu de la mission",
+    "DropItem": "poser, lacher un objet qu'on porte",
+    "ReachExtraction": "rentrer au van avec ce qu'on est venu chercher : le retour a la base",
+    "EscapeLocation": "fuir un lieu ou rodent des zombies",
+    "Hide": "aller se cacher dans un abri connu",
+    "Explore": "explorer, aller voir ce qu'il y a au-dela de ce qu'on connait",
+    "Observe": "s'arreter pour observer un lieu",
+    "PushBackZombie": "repousser un zombie au contact, sans le blesser",
+    "AttackZombie": "frapper un zombie au contact, a mains nues",
+    "HealSelf": "se soigner soi-meme",
+    "ShareKnowledge": "aller dire a un camarade ce qu'on a vu, lui transmettre ce qu'on sait",
+    "Wait": "attendre sur place",
+    "PickUpItem": "ramasser un objet",
+    "UseItem": "se servir d'un objet qu'on porte",
+    "EquipWeapon": "prendre une arme en main",
+    "AttackWithWeapon": "attaquer un zombie avec l'arme qu'on tient : frapper ou tirer",
+    "PushHeavyObject": "pousser un objet lourd, meuble ou caisse",
+    "BarricadeDoor": "barricader, condamner une porte",
+    "ThrowFirecracker": "lancer un petard au loin pour attirer les zombies ailleurs : faire diversion",
+    "BorrowWeapon": "emprunter l'arme de rechange d'un camarade",
+    "TendAlly": "soigner, panser un camarade blesse",
+    "OrderAlly": "ordonner a un camarade d'aller a un lieu, l'y envoyer",
+    "OrderBand": "rappeler tout le monde, ordonner a tout le groupe d'aller a un lieu",
+
+    "accessible": "on peut entrer dans ce lieu : porte ouverte ou vitre cassee",
+    "armed": "le survivant tient une arme en etat de servir",
+    "at": "at(X, lieu) : X se trouve a ce lieu ; at(agent, lieu) : le survivant y est",
+    "band_ordered": "band_ordered(lieu) : tout le groupe a portee a recu l'ordre d'aller a ce lieu",
+    "band_tended": "aucun blesse du groupe, soi compris, n'attend de soins",
+    "diversion_made": "une diversion vient de se faire entendre : les zombies sont attires ailleurs",
+    "door_barricaded": "la porte est barricadee",
+    "door_closed": "la porte est fermee, sans etre verrouillee",
+    "door_locked": "la porte est verrouillee",
+    "door_of": "la porte donne sur ce lieu",
+    "door_open": "la porte est ouverte",
+    "equipped": "cet objet est en main, equipe",
+    "escaped": "le survivant a fui le danger",
+    "explored": "le survivant a explore la zone qu'il visait",
+    "extracted": "le survivant est rentre au van avec ce qu'il etait venu chercher",
+    "extraction_known": "le survivant sait ou est le van",
+    "has": "has(X, objet) : X porte cet objet ; has(agent, objet) : le survivant l'a sur lui",
+    "healed": "healed(agent) : le survivant s'est soigne lui-meme",
+    "heavy_at": "un objet lourd encombre ce lieu",
+    "hidden": "le survivant est cache",
+    "inventory_full": "le sac du survivant est plein",
+    "item_at": "cet objet se trouve a ce lieu",
+    "knowledge_shared": "le survivant a transmis ce qu'il sait a un camarade",
+    "known": "le survivant sait ou est ce lieu",
+    "mass_ok": "assez de survivants sont la pour pousser cet objet lourd",
+    "objective_collected": "ce que la mission envoie chercher a ete ramasse",
+    "objective_found": "on sait ou se trouve ce que la mission envoie chercher",
+    "observed": "ce lieu a ete observe",
+    "ordered": "ordered(lieu) : un camarade a recu l'ordre d'aller a ce lieu",
+    "pushed": "cet objet lourd a ete pousse",
+    "pushed_back": "ce zombie a ete repousse",
+    "searched": "ce lieu a ete fouille",
+    "searched_in_vain": "ce lieu a ete fouille sans y trouver ce que la mission cherche",
+    "shared_with": "le survivant a parle a ce camarade",
+    "threat_down": "ce zombie est a terre",
+    "threat_handled": "la menace au contact est reglee : zombie repousse ou abattu",
+    "usable": "cet objet est en etat de servir",
+    "used": "cet objet a servi",
+    "waited": "le survivant a attendu",
+    "window_broken": "la vitre est cassee",
+    "window_intact": "la vitre est intacte",
+    "window_of": "la vitre donne sur ce lieu",
+    "zombie_adjacent": "ce zombie est au contact",
+    "zombie_in_range": "ce zombie est a portee de l'arme en main",
+    "zombie_near": "des zombies rodent pres de ce lieu",
+
+    "building": "un batiment",
+    "street": "une rue",
+    "alley": "une ruelle",
+    "pharmacy": "une pharmacie",
+    "extraction": "le van, point d'extraction : la ou l'on rentre",
+    "start": "le point de depart de la mission",
+
+    "agent": "le survivant qui agit ; chaque consigne vaut pour chacun",
+    "ally": "le camarade le plus proche",
+    "away_from_danger": "un point hors de portee du danger",
+    "cover": "la cachette connue la plus proche",
+    "decoy": "l'endroit ou lancer un petard : a portee d'oreille des zombies, loin du lieu vise",
+    "frontier": "le bord de ce qu'on connait, a explorer",
+    "group": "la ou se tient le groupe ; y etre, c'est etre regroupe avec les autres",
+    "lender": "le camarade qui a dit porter une arme de rechange",
+    "mission": "le lieu designe par l'ordre du joueur",
+    "noisemaker": "un objet qui fait du bruit, comme un petard",
+    "objective": "ce que la mission envoie chercher",
+    "objective_spot": "l'endroit ou l'on a apercu ce que la mission cherche, hors du lieu de la mission",
+    "objective_zone": "le lieu de la mission, ou chercher",
+    "patient": "le camarade blesse le plus proche",
+    "remedy": "de quoi soigner : bandage, trousse",
+    "toolbox": "une caisse a outils"
   }
 }

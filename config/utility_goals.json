@@ -13,6 +13,12 @@
 // Le survivant garde ses reflexes personnels — fuir, se cacher, se soigner, se battre — et le groupe
 // reste une cible atteignable ("group"), mais par un ordre du joueur, pas par un score.
 //
+// "obeying" ferme les quatre objectifs propres du survivant — explorer, chercher, ramasser, rentrer —
+// tant qu'il execute l'ordre d'un camarade (action OrderAlly). C'est ce qui fait passer l'ordre en
+// priorite, et c'est tout : les reflexes — fuir, se cacher, se soigner, se battre — n'ont pas cette
+// precondition. On obeit a un camarade, on ne se laisse pas mordre pour lui. Le poids de l'ordre,
+// lui, ne suffirait pas : PickUpObjective lit aussi player_priority et le depasse a courte distance.
+//
 // Lecture d'une consideration :
 //   input     entree primitive lue dans la memoire du survivant, toujours entre 0 et 1
 //   curve     forme de la reponse ; "exponent" durcit linear/quadratic/inverse
@@ -28,7 +34,7 @@
   "goals": [
     {
       "name": "CompletePlayerMission",
-      "description": "L'ordre du joueur. Il ne s'impose pas : la securite le fait fondre vite (courbe quadratique). Un ordre rempli cesse d'etre un objectif : sans cette precondition, un survivant arrive a destination resterait plante la au lieu de passer a ce que la consigne impliquait.",
+      "description": "L'ordre du joueur. Il ne s'impose pas : la securite le fait fondre vite (courbe quadratique). Un ordre rempli cesse d'etre un objectif : sans cette precondition, un survivant arrive a destination resterait plante la au lieu de passer a ce que la consigne impliquait. C'est aussi l'objectif qui execute l'ordre d'un camarade (OrderAlly) : il arrive par le meme MissionOrder, au poids utility_ai.cooperation.order_priority, et se clot de lui-meme une fois rempli ou reconnu impossible (SurvivorAgent.SettleOrder).",
       "target": "mission",
       "preconditions": [ { "input": "mission_reached", "max": 0.5 } ],
       "considerations": [
@@ -45,7 +51,8 @@
       "target": "frontier",
       "preconditions": [
         { "input": "frontier_known", "min": 0.5 },
-        { "input": "has_objective", "max": 0.5 }
+        { "input": "has_objective", "max": 0.5 },
+        { "input": "obeying", "max": 0.5 }
       ],
       "considerations": [
         { "input": "unexplored_ratio", "curve": "linear" },
@@ -89,7 +96,8 @@
       "preconditions": [
         { "input": "has_objective", "max": 0.5 },
         { "input": "objective_known", "max": 0.5 },
-        { "input": "objective_zone_searched", "max": 0.5 }
+        { "input": "objective_zone_searched", "max": 0.5 },
+        { "input": "obeying", "max": 0.5 }
       ],
       "considerations": [
         { "input": "player_priority", "curve": "linear", "min": 0.4 },
@@ -106,7 +114,8 @@
       "preconditions": [
         { "input": "has_objective", "max": 0.5 },
         { "input": "objective_known", "min": 0.5 },
-        { "input": "objective_reachable", "min": 0.5 }
+        { "input": "objective_reachable", "min": 0.5 },
+        { "input": "obeying", "max": 0.5 }
       ],
       "considerations": [
         { "input": "player_priority", "curve": "linear", "min": 0.4 },
@@ -122,7 +131,8 @@
       "target": "extraction",
       "preconditions": [
         { "input": "has_objective", "min": 0.5 },
-        { "input": "at_extraction", "max": 0.5 }
+        { "input": "at_extraction", "max": 0.5 },
+        { "input": "obeying", "max": 0.5 }
       ],
       "considerations": [
         { "input": "player_priority", "curve": "linear", "min": 0.5 },

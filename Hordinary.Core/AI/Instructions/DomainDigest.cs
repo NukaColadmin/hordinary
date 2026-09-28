@@ -68,6 +68,14 @@ public sealed record DigestObject(string Name, string Type);
 /// pourtant l'exactitude ; il aurait produit des refus a repetition, imputes au modele alors qu'ils
 /// venaient du contexte qu'on lui donne.
 /// </para>
+///
+/// <para>
+/// <see cref="Glossary"/> est le second ajout, et il vient de la meme lecon, un cran plus loin : le
+/// type dit a quelle position un symbole se met, pas ce qu'il designe. Mesure avec le modele livre,
+/// « Soignez les blesses avant d'entrer » — le libelle d'une consigne pre-ecrite — etait refusee,
+/// faute de rien qui relie « soigner les blesses » a <c>band_tended</c>. Il n'est rendu qu'en
+/// <b>ajout</b> : un service qui l'ignore lit le reste du digest comme avant.
+/// </para>
 /// </summary>
 public sealed record DomainDigest(
     string DomainHash,
@@ -76,7 +84,8 @@ public sealed record DomainDigest(
     IReadOnlyList<string> Actions,
     IReadOnlyList<string> LocationKinds,
     IReadOnlyList<DigestObject> Objects,
-    IReadOnlyList<string> ActiveConstraints)
+    IReadOnlyList<string> ActiveConstraints,
+    IReadOnlyDictionary<string, string> Glossary)
 {
     /// <summary>
     /// Projette le domaine, avec les contraintes deja actives : le modele doit les voir pour ne pas
@@ -86,14 +95,52 @@ public sealed record DomainDigest(
     {
         ArgumentNullException.ThrowIfNull(domain);
 
+        var predicates = domain.Predicates.Select(predicate => new DigestPredicate(predicate.Name, [.. predicate.ParameterTypes])).ToList();
+        var actions = domain.Actions.Select(action => action.Name).ToList();
+        var objects = Vocabulary(domain).ToList();
+
         return new DomainDigest(
             DomainHash: HashOf(domain),
             Types: [.. domain.Types],
-            Predicates: [.. domain.Predicates.Select(predicate => new DigestPredicate(predicate.Name, [.. predicate.ParameterTypes]))],
-            Actions: [.. domain.Actions.Select(action => action.Name)],
+            Predicates: predicates,
+            Actions: actions,
             LocationKinds: [.. domain.LocationKinds],
-            Objects: [.. Vocabulary(domain)],
-            ActiveConstraints: [.. active?.Select(constraint => constraint.Text) ?? []]);
+            Objects: objects,
+            ActiveConstraints: [.. active?.Select(constraint => constraint.Text) ?? []],
+            Glossary: Define(domain, NamesOf(predicates, actions, domain.LocationKinds, objects)));
+    }
+
+    /// <summary>
+    /// Les noms que le digest montre, donc ceux qu'une definition doit couvrir. Un nom sans definition
+    /// est montre quand meme, sans sens a cote : c'est le test sur le domaine livre, et non ce code,
+    /// qui exige qu'il n'en manque aucune — un domaine de test n'a pas a ecrire de glossaire.
+    /// </summary>
+    public static IEnumerable<string> NamesOf(
+        IEnumerable<DigestPredicate> predicates,
+        IEnumerable<string> actions,
+        IEnumerable<string> locationKinds,
+        IEnumerable<DigestObject> objects)
+        => predicates.Select(predicate => predicate.Name)
+            .Concat(actions)
+            .Concat(locationKinds)
+            .Concat(objects.Select(entry => entry.Name))
+            .Distinct(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Les definitions des seuls noms montres, triees : le fichier versionne sous <c>service/tests/</c>
+    /// se compare a la ligne pres, et l'ordre d'un dictionnaire n'est pas une propriete sur laquelle
+    /// compter.
+    /// </summary>
+    private static SortedDictionary<string, string> Define(PddlDomain domain, IEnumerable<string> names)
+    {
+        var glossary = new SortedDictionary<string, string>(StringComparer.Ordinal);
+
+        foreach (string name in names)
+        {
+            if (domain.Glossary.TryGetValue(name, out string? meaning)) glossary[name] = meaning;
+        }
+
+        return glossary;
     }
 
     /// <summary>

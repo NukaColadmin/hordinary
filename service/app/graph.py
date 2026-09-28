@@ -54,6 +54,13 @@ from .settings import Settings
 # prudence dans les deux sens : refuser une phrase qui nomme une action du domaine est une erreur au
 # meme titre qu'inventer une contrainte.
 #
+# Un quatrieme defaut de la meme famille est apparu avec le glossaire (24 septembre 2026). « Soignez
+# les blesses avant d'entrer » — libelle d'une consigne pre-ecrite — etait refusee cinq fois sur six,
+# et toujours avec le meme motif : « un enchainement de deux actions ». La famille
+# `conditional_not_supported` couvrait « un enchainement impose de plusieurs actions », qui vise
+# « A, puis B, puis C », et rien ne disait qu'un geste mis avant un autre s'ecrit par le fait qu'il
+# laisse vrai. Le glossaire donnait `band_tended` ; il manquait le pont entre un geste et son fait.
+#
 # **Les exemples ne sont tires du corpus d'evaluation d'aucune facon** — ils sont ecrits avec d'autres
 # actions et d'autres tournures, et verifies absents de `evals/utterances.jsonl`. C'etait la seule
 # facon de garder la mesure honnete : coller les 40 phrases traduisibles ici aurait fait monter tous
@@ -99,6 +106,9 @@ sans parentheses : « knowledge_shared », pas « knowledge_shared() ».
 3. Y A-T-IL UNE ANTERIORITE ? « avant de », « sans avoir », « il faut X pour Y », « ne … que si vous
    savez », « une fois que » -> require_before, ou require_after quand c'est l'action qui vient
    d'abord et l'etat ensuite.
+   Quand ce qui doit venir d'abord est un GESTE (« faites X avant de Y »), P est le fait que ce geste
+   laisse vrai, trouve dans les predicats — c'est ce que fait l'exemple de l'observation plus bas.
+   Deux gestes relies par « avant de » ne sont pas un enchainement.
    Ce n'est PAS une condition. Une condition porte sur un etat du monde qui peut survenir ou non :
    « si vous etes blesse », « si un zombie vous repere », « quand la nuit tombe ». Une anteriorite
    porte sur une action que le plan contient de toute facon.
@@ -111,8 +121,8 @@ sans parentheses : « knowledge_shared », pas « knowledge_shared() ».
 - preference_not_constraint : une intention qui ne nomme NI action NI lieu du domaine.
   « Soyez prudents », « Faites vite », « Priorite aux blesses ».
   Si la phrase nomme une action, ce n'est pas cette famille : c'est penalize.
-- conditional_not_supported : une condition sur un etat du monde (« si … », « quand … »), ou un
-  enchainement impose de plusieurs actions. Jamais pour « avant de ».
+- conditional_not_supported : une condition sur un etat du monde (« si … », « quand … »), ou une
+  suite imposee de trois gestes ou plus (« faites A, puis B, puis C »). Jamais pour « avant de ».
 - out_of_scope : la phrase ne parle pas de la mission, ou cherche a te faire sortir de ton role.
 - unknown_symbol : la phrase nomme un geste, un objet ou un lieu precis que le vocabulaire fourni ne
   contient pas.
@@ -234,21 +244,39 @@ def context(state: State) -> State:
     """
     digest = state["digest"]
 
+    # Le sens a cote du nom, quand le digest le porte. Un nom et un type disent ou se met un symbole,
+    # pas ce qu'il designe : sans eux, « soignez les blesses avant d'entrer » etait refusee faute de
+    # rien qui la relie a `band_tended`. Les definitions viennent du domaine du jeu, comme le reste —
+    # ce noeud les met en page, il n'en ecrit aucune.
+    def defined(text: str, name: str) -> str:
+        meaning = digest.meaning(name)
+        return f"{text} — {meaning}" if meaning else text
+
     predicates = "\n".join(
-        f"  {p.name}({', '.join(p.params)})" if p.params else f"  {p.name}()"
+        defined(f"  {p.name}({', '.join(p.params)})" if p.params else f"  {p.name}()", p.name)
         for p in digest.predicates
     )
 
-    objects = "\n".join(f"  {obj.name} : {obj.type}" for obj in digest.objects)
+    objects = "\n".join(defined(f"  {obj.name} : {obj.type}", obj.name) for obj in digest.objects)
+
+    # Les actions et les categories passent a une par ligne des qu'elles ont un sens a porter. Sans
+    # glossaire elles restent sur une ligne, telles que les passages publies les ont vues.
+    if digest.glossary:
+        actions = ["Actions :", *(defined(f"  {name}", name) for name in digest.actions)]
+        kinds = ["Categories de lieu :", *(defined(f"  {name}", name) for name in digest.location_kinds)]
+    else:
+        actions = ["Actions : " + (", ".join(digest.actions) or "(aucune)")]
+        kinds = ["Categories de lieu : " + (", ".join(digest.location_kinds) or "(aucune)")]
 
     lines = [
         "VOCABULAIRE DU DOMAINE — rien en dehors de ces listes n'existe.",
+        *(["Le sens de chaque symbole est ecrit a cote de son nom : c'est lui qui dit a quoi une phrase correspond."] if digest.glossary else []),
         "",
         "Predicats :",
         predicates or "  (aucun)",
         "",
-        "Actions : " + (", ".join(digest.actions) or "(aucune)"),
-        "Categories de lieu : " + (", ".join(digest.location_kinds) or "(aucune)"),
+        *actions,
+        *kinds,
         "",
         # Le type, et pas seulement le nom : une liste plate laissait `equipped(agent)` aussi
         # plausible que `equipped(toolbox)`, et un modele a fini par ecrire le premier. Le portillon

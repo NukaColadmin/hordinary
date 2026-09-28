@@ -15,6 +15,37 @@ public class NoiseTests
 
     // --- Bareme (section 18.1) ------------------------------------------------------------
 
+    /// <summary>
+    /// Les pas du groupe, que le jeu et le harnais deroulent par le meme code
+    /// (<see cref="SurvivorBand.EmitFootsteps"/>) : un bruit par case franchie et non par passe, et
+    /// l'allure de course qui s'entend comme telle.
+    /// </summary>
+    [Fact]
+    public void Un_pas_sonne_une_fois_par_case_et_la_course_s_entend()
+    {
+        // Un groupe tout juste enrole, sans passe de la boucle : personne n'a encore pose le pied.
+        var run = new MissionRun(team: true);
+
+        var first = run.Band.EmitFootsteps();
+        Assert.Equal(run.Band.Standing.Count(), first.Count);
+        Assert.All(first, step => Assert.Equal(step.Agent.Survivor.Id, step.Noise.SourceId));
+        Assert.All(first, step => Assert.Equal(NoiseAction.Walk, step.Noise.Action));
+
+        // Personne n'a bouge : rien ne sonne une seconde fois.
+        Assert.Empty(run.Band.EmitFootsteps());
+
+        // La course : les corps avancent, et chaque case franchie sonne comme une course.
+        IReadOnlyList<(SurvivorAgent Agent, NoiseEvent Noise)> running = [];
+        Assert.True(run.RunUntil(() =>
+        {
+            run.Band.Move(MissionRun.Step);
+            running = run.Band.EmitFootsteps(running: true);
+            return running.Count > 0;
+        }), run.Trace());
+
+        Assert.All(running, step => Assert.True(step.Noise.Action is NoiseAction.Run or NoiseAction.OpenDoor, step.Noise.ToString()));
+    }
+
     [Fact]
     public void Le_bareme_de_la_specification_est_respecte()
     {

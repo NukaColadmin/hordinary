@@ -110,6 +110,30 @@ public class InstructionServiceTests
     }
 
     /// <summary>
+    /// Chaque symbole que le digest montre a sa definition dans <c>config/planner_domain.json</c>, et
+    /// chaque definition a son symbole.
+    ///
+    /// <para>
+    /// Les deux sens comptent. Un symbole sans definition revient a la situation qui a fait ecrire le
+    /// glossaire : le modele voit <c>band_tended</c> et devine. Une definition sans symbole est un
+    /// mot que le service croit pouvoir traduire et que le portillon 1 refusera — la meme derive que
+    /// le digest existe pour empecher, par l'autre bout.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public void Chaque_symbole_nommable_a_sa_definition()
+    {
+        var digest = DomainDigest.From(Domain);
+        var names = DomainDigest.NamesOf(digest.Predicates, digest.Actions, digest.LocationKinds, digest.Objects).ToList();
+
+        var undefined = names.Where(name => !digest.Glossary.TryGetValue(name, out string? meaning) || string.IsNullOrWhiteSpace(meaning)).ToList();
+        Assert.True(undefined.Count == 0, $"Sans definition dans planner_domain.json (glossary) : {string.Join(", ", undefined)}.");
+
+        var orphans = DeliveredDomain.Glossary.Keys.Except(names, StringComparer.Ordinal).ToList();
+        Assert.True(orphans.Count == 0, $"Definitions sans symbole au domaine : {string.Join(", ", orphans)}.");
+    }
+
+    /// <summary>
     /// Tout objet que le digest montre est un objet que la grammaire accepte, et reciproquement pour
     /// l'exemple canonique du livrable.
     ///
@@ -483,7 +507,8 @@ public class InstructionServiceTests
     // --- Le corpus d'evaluation -------------------------------------------------------------------
 
     /// <summary>
-    /// Chaque contrainte attendue par <c>service/evals/utterances.jsonl</c> passe le portillon 1.
+    /// Chaque contrainte attendue par <c>service/evals/utterances.jsonl</c> — et par
+    /// <c>heldout.jsonl</c>, les phrases tenues a l'ecart — passe le portillon 1.
     ///
     /// <para>
     /// Un corpus d'evaluation dont l'attendu est impossible ne mesure rien : il compte comme echec
@@ -503,7 +528,7 @@ public class InstructionServiceTests
         var settings = Enabled();
         int checkedCount = 0;
 
-        foreach (var line in Corpus())
+        foreach (var line in Corpus().Concat(Corpus("heldout.jsonl")))
         {
             if (line.GetProperty("expect").GetString() != "constraint") continue;
 
@@ -553,14 +578,14 @@ public class InstructionServiceTests
     [Fact]
     public void Les_identifiants_du_corpus_sont_uniques()
     {
-        var ids = Corpus().Select(line => line.GetProperty("id").GetString()!).ToList();
+        var ids = Corpus().Concat(Corpus("heldout.jsonl")).Select(line => line.GetProperty("id").GetString()!).ToList();
 
         Assert.Equal(ids.Count, ids.Distinct(StringComparer.Ordinal).Count());
     }
 
-    private static IEnumerable<System.Text.Json.JsonElement> Corpus()
+    private static IEnumerable<System.Text.Json.JsonElement> Corpus(string file = "utterances.jsonl")
     {
-        string path = Path.Combine(DemoMap.RepositoryRoot, "service", "evals", "utterances.jsonl");
+        string path = Path.Combine(DemoMap.RepositoryRoot, "service", "evals", file);
 
         Assert.True(File.Exists(path), $"{path} est absent.");
 

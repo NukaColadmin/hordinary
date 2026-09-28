@@ -4,10 +4,15 @@ using Hordinary.World;
 namespace Hordinary.Agents;
 
 /// <summary>Un echange : qui a parle a qui, ce que l'auditeur y a gagne, et a quelle distance.</summary>
-public readonly record struct KnowledgeExchange(string From, string To, int Learned, int Distance, double At)
+/// <param name="ByRadio">
+/// Vrai quand les deux etaient hors de portee de voix et que seules leurs radios les reliaient. C'est
+/// la ligne que le mode demonstration filme : sans ce drapeau, un echange a douze cases et un echange a
+/// deux se liraient pareil au journal.
+/// </param>
+public readonly record struct KnowledgeExchange(string From, string To, int Learned, int Distance, double At, bool ByRadio = false)
 {
     public override string ToString()
-        => $"{From} informe {To} a {Distance} cases : {Learned} croyance(s)";
+        => $"{From} informe {To} a {Distance} cases{(ByRadio ? " par radio" : string.Empty)} : {Learned} croyance(s)";
 }
 
 /// <summary>
@@ -52,7 +57,30 @@ public sealed class KnowledgeSharing(KnowledgeSettings? settings = null)
         if (!speaker.Alive || !listener.Alive) return false;
 
         return Settings.RadioEnabled
-            || speaker.Position.ChebyshevDistanceTo(listener.Position) <= Settings.CommunicationRange;
+            || speaker.Position.ChebyshevDistanceTo(listener.Position) <= RangeBetween(speaker, listener);
+    }
+
+    /// <summary>La caracteristique qu'une radio de <c>config/items.json</c> declare modifier.</summary>
+    public const string RangeStat = "knowledge.communication_range";
+
+    /// <summary>
+    /// A quelle distance ces deux-la s'entendent : la portee de voix, multipliee par ce que leur
+    /// equipement fait de <see cref="RangeStat"/> — le <b>plus faible</b> des deux.
+    ///
+    /// <para>
+    /// Le plus faible, parce qu'une radio n'est utile qu'aux deux bouts. Un seul poste dans le groupe
+    /// ne relie personne ; c'est au joueur, au paquetage, d'en confier deux. L'effet etait declare dans
+    /// le catalogue depuis le livrable 11 et personne ne le lisait : une radio emportee ne changeait
+    /// rien a qui entendait quoi.
+    /// </para>
+    /// </summary>
+    public int RangeBetween(Survivor speaker, Survivor listener)
+    {
+        ArgumentNullException.ThrowIfNull(speaker);
+        ArgumentNullException.ThrowIfNull(listener);
+
+        float factor = Math.Min(speaker.Inventory.StatMultiplier(RangeStat), listener.Inventory.StatMultiplier(RangeStat));
+        return (int)MathF.Floor(Settings.CommunicationRange * Math.Max(1f, factor));
     }
 
     /// <summary>
@@ -118,17 +146,20 @@ public sealed class KnowledgeSharing(KnowledgeSettings? settings = null)
             speaker.Position,
             now,
             health: speaker.HealthRatio,
-            panic: speaker.Panic);
+            panic: speaker.Panic,
+            spareWeapon: speaker.Inventory.SpareWeapon ?? string.Empty);
 
         int learned = listener.Knowledge.LearnFrom(speaker.Knowledge);
+        int distance = speaker.Position.ChebyshevDistanceTo(listener.Position);
 
         ExchangeCount++;
         Exchanged?.Invoke(new KnowledgeExchange(
             speaker.Name,
             listener.Name,
             learned,
-            speaker.Position.ChebyshevDistanceTo(listener.Position),
-            now));
+            distance,
+            now,
+            ByRadio: !Settings.RadioEnabled && distance > Settings.CommunicationRange));
 
         return learned;
     }

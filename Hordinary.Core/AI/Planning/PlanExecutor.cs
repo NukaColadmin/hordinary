@@ -351,7 +351,7 @@ public sealed class PlanExecutor
             ResolveTarget(action)),
         ActionVerb.Damage => _runtime.Damage(Parameter(action, "target"), Amount(action, "amount")),
         ActionVerb.Push => _runtime.Push(Parameter(action, "target")),
-        ActionVerb.EmitNoise => _runtime.ThrowNoise(Parameter(action, "target"), Amount(action, "amount")),
+        ActionVerb.EmitNoise => _runtime.ThrowNoise(Aim(action), Amount(action, "amount")),
         ActionVerb.Wait => true,
         _ => true,
     };
@@ -393,6 +393,16 @@ public sealed class PlanExecutor
 
     private GridPosition? ResolveTarget(PlanningAction action)
         => action.TargetObject is { } target ? Plan?.Problem.PositionOf(target) : null;
+
+    /// <summary>
+    /// Ou lancer : la case du repere tel que le probleme l'a fige, ecrite <c>"x,y"</c>. Un repere
+    /// comme <c>decoy</c> n'est pas un lieu que la memoire nomme — il est recalcule a chaque decision —
+    /// et le passer par son nom laisserait le moteur incapable de le retrouver.
+    /// </summary>
+    private string Aim(PlanningAction action)
+        => ResolveTarget(action) is { } cell
+            ? string.Create(CultureInfo.InvariantCulture, $"{cell.X},{cell.Y}")
+            : Parameter(action, "target");
 
     private static string Parameter(PlanningAction action, string key)
         => action.Parameters.TryGetValue(key, out string? value) ? value : string.Empty;

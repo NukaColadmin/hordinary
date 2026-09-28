@@ -40,3 +40,6 @@ service/evals/results.md
 # Outillage jetable : mesures ponctuelles, journaux de passages d'evaluation, PDDL de travail.
 # CLAUDE.md le declare deja hors du build ; il n'a pas non plus a entrer dans l'historique.
 /_work/
+
+# Plan de tournage personnel ; le guide versionne est docs/enregistrer-la-demo.md.
+/PLAN-DEMO.md

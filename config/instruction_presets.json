@@ -1,7 +1,7 @@
 // Instructions tactiques pre-ecrites (livrable 15).
 //
 // Elles existent pour que le livrable soit jouable et demontrable SANS modele de langage : avec
-// instructions.enabled a false, aucune requete n'est emise et ces huit-la restent proposees. Ce qui
+// instructions.enabled a false, aucune requete n'est emise et ces quatorze-la restent proposees. Ce qui
 // est desactive dans ce cas, c'est la traduction d'une phrase libre en contrainte — pas les
 // contraintes elles-memes. Les quatre portillons, le compilateur et le verificateur de trajectoire
 // tournent exactement pareil dans les deux cas.
@@ -12,6 +12,12 @@
 //
 // Les cinq formes sont couvertes : require_before (1, 2), require_after (3), forbid (4, 5),
 // require_always (6), penalize (7, 8).
+//
+// Les six dernieres sont celles de l'entraide (9 a 14). Cinq donnent un demandeur a un geste que le
+// domaine sait faire et qu'aucun objectif ne reclame — lancer un petard, emprunter une arme, soigner
+// un camarade, renvoyer un camarade au van, y rappeler tout le monde — et une a part,
+// « prevenir », reveille ShareKnowledge, qui dormait depuis le livrable 7 sans une ligne de code de
+// plus. Chacune a son scenario dans config/demo_scenarios.json.
 {
   "presets": [
     {
@@ -53,6 +59,36 @@
       "id": "eviter_les_rues",
       "label": "Passez par les rues le moins possible.",
       "constraint": "penalize(move:street, 2)"
+    },
+    {
+      "id": "diversion_avant_entree",
+      "label": "Faites diversion avant d'entrer dans un batiment.",
+      "constraint": "require_before(diversion_made, enter:building)"
+    },
+    {
+      "id": "personne_n_entre_desarme",
+      "label": "Personne n'entre desarme dans un batiment.",
+      "constraint": "require_before(armed, enter:building)"
+    },
+    {
+      "id": "soigner_avant_d_entrer",
+      "label": "Soignez les blesses avant d'entrer.",
+      "constraint": "require_before(band_tended, enter:building)"
+    },
+    {
+      "id": "prevenir_avant_de_rentrer",
+      "label": "Prevenez un camarade avant de rentrer.",
+      "constraint": "require_before(knowledge_shared, ReachExtraction)"
+    },
+    {
+      "id": "renvoyer_au_van",
+      "label": "Renvoyez un camarade au van avant de rentrer.",
+      "constraint": "require_before(ordered(extraction), ReachExtraction)"
+    },
+    {
+      "id": "rappeler_tout_le_monde",
+      "label": "Rappelez tout le monde au van avant de rentrer.",
+      "constraint": "require_before(band_ordered(extraction), ReachExtraction)"
     }
   ]
 }
