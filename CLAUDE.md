@@ -160,7 +160,7 @@ retiré, le 16 est fait.
 
 ## État actuel
 
-Branche `epuration-spec-15`, travail en cours d'épuration du projet autour du livrable 15. Sur l'arbre
+Branche `main` : l'épuration du projet autour du livrable 15 y est fusionnée. Sur l'arbre
 de travail actuel, `dotnet test` donne **683 passés sur 683** (sous `planner.search: gbfs`, le réglage livré). Deux d'entre eux exigent que `instructions.enabled`
 reste à `false` dans le fichier livré : pour essayer le service de langage, lancer le jeu avec
 `-- --ia` ou `HORDINARY_IA=1` (`InstructionSettings.LocallyEnabled`), jamais en écrivant `true` dans
