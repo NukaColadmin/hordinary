@@ -101,5 +101,13 @@ et versions des dépendances. Ce manifeste exclut les clés et jetons ; il sert 
 sans promettre une réponse identique du fournisseur.
 
 Pour mettre à jour les dépendances : installer les versions choisies dans un environnement dédié,
-exécuter les tests, régénérer `requirements.lock` avec `python -m pip freeze`, puis exécuter
-`python -m pip_audit -r requirements.lock --no-deps --disable-pip`. Vérifier le diff avant publication.
+régénérer `requirements.lock` avec `python -m pip freeze`, puis vérifier les deux fichiers ensemble
+avec `python -m pip install -r requirements.lock -r requirements.txt` et `python -m pip check`.
+Exécuter les tests et `python -m pip_audit -r requirements.lock --no-deps --disable-pip`.
+La CI installe les deux fichiers ensemble : relever une version minimale sans synchroniser le
+verrou fait échouer la résolution, avant les tests. Vérifier le diff avant publication.
+
+Sur GitHub, les alertes et mises à jour de sécurité Dependabot, la détection de secrets et leur
+blocage au push sont activés. Ces réglages du dépôt sont indépendants des fichiers versionnés :
+les vérifier après un transfert ou dans un fork. Dependabot groupe les mises à jour par écosystème
+pour permettre de tester ensemble les dépendances liées.

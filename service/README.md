@@ -335,6 +335,7 @@ voudra « juste renvoyer le domaine compilé pour déboguer ».
 
 * `evals/results.md` — demande une clé OpenRouter et des appels facturés ;
 * les versions testées sont figées dans `requirements.lock` ; maintenir ce fichier avec les mises
-  à jour proposées et l'audit des vulnérabilités de la CI ;
+  à jour proposées. La CI installe ensemble le verrou et `requirements.txt` : toute incompatibilité
+  fait échouer l'installation avant les tests et l'audit des vulnérabilités ;
 * le portillon 3 (Fast Downward) reste **hors ligne** et indépendant de ce service : voir
   [`tools/pddl/README.md`](../tools/pddl/README.md).
