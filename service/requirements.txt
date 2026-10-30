@@ -11,7 +11,7 @@ pydantic>=2.14.1
 langgraph>=1.2.11
 langchain-core>=1.6.3
 langchain-openai>=1.6.2
-certifi>=2026.10.19
+certifi>=2026.10.23
 langgraph-sdk>=0.4.6
 
 # Tests et evaluation. httpx sert au client de test de FastAPI, pas au service lui-meme.
