@@ -34,6 +34,9 @@ desktop.ini
 # results.md est un resultat de mesure, pas une source — il se regenere par `python -m evals.run`.
 __pycache__/
 *.pyc
+.env
+.env.*
+!.env.example
 service/.venv/
 service/evals/results.md
 

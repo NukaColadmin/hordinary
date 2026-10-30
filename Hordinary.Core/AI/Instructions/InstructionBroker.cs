@@ -1,4 +1,5 @@
 using System.Text;
+using System.Security.Cryptography;
 using Hordinary.AI.Planning.Pddl;
 
 namespace Hordinary.AI.Instructions;
@@ -72,7 +73,7 @@ public delegate Task<InstructionReply?> InstructionTransport(InstructionRequest 
 ///
 /// <para>
 /// Le determinisme du jeu ne vient jamais du modele. Il vient de deux choses : ce cache, dont la cle
-/// est <c>(phrase normalisee, graine, empreinte du domaine)</c>, et le fait qu'une contrainte
+/// est <c>(phrase normalisee, graine, empreinte du contexte complet)</c>, et le fait qu'une contrainte
 /// acceptee est figee dans la mission. Rejouer une mission ne reinterroge aucun modele — c'est ce qui
 /// permet d'utiliser un fournisseur distant sans rendre les parties irreproductibles.
 /// </para>
@@ -129,7 +130,7 @@ public sealed class InstructionBroker(InstructionSettings settings, InstructionT
         }
 
         var digest = DomainDigest.From(domain, active);
-        string key = CacheKey(phrase, seed, digest.DomainHash);
+        string key = CacheKey(phrase, seed, ContextHash(digest));
 
         if (Settings.CacheEnabled && _cache.TryGetValue(key, out var cached))
             return cached with { Source = InstructionSource.Cache };
@@ -248,10 +249,21 @@ public sealed class InstructionBroker(InstructionSettings settings, InstructionT
     /// <summary>
     /// La cle du cache. Les trois termes sont necessaires : la phrase parce que c'est elle qu'on
     /// traduit, la graine parce que le vocabulaire nommable depend de la carte tiree, l'empreinte du
-    /// domaine parce qu'une contrainte reste vraie tant que le domaine qui la nomme n'a pas bouge.
+    /// contexte parce que le glossaire et les contraintes actives peuvent changer la traduction.
     /// </summary>
-    public static string CacheKey(string phrase, int seed, string domainHash)
-        => $"{phrase}{seed}{domainHash}";
+    public static string CacheKey(string phrase, int seed, string contextHash)
+        => $"{phrase}{seed}{contextHash}";
+
+    /// <summary>Empreinte du contexte complet pour le cache ; aucune preuve d'origine.</summary>
+    public static string ContextHash(DomainDigest digest)
+    {
+        var canonical = digest with
+        {
+            Glossary = new SortedDictionary<string, string>(digest.Glossary.ToDictionary(pair => pair.Key, pair => pair.Value), StringComparer.Ordinal),
+            ActiveConstraints = digest.ActiveConstraints.Order(StringComparer.Ordinal).ToList(),
+        };
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToJson())));
+    }
 
     /// <summary>
     /// Nettoie la phrase : espaces reduits, casse effacee, coupe au-dela de <c>max_chars</c>.

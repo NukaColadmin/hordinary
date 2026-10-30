@@ -58,6 +58,9 @@ public partial class InstructionPanel : VBoxContainer
 
     public event Action? Changed;
 
+    /// <summary>La demonstration privilegie la saisie ; les exemples se deploient a la demande.</summary>
+    public bool Compact { get; set; }
+
     /// <summary>Les contraintes retenues, dans la grammaire fermee. C'est ce qui part en mission.</summary>
     public IReadOnlyList<string> Constraints
         => [.. _instructions?.Active.Select(constraint => constraint.Text) ?? []];
@@ -95,8 +98,8 @@ public partial class InstructionPanel : VBoxContainer
         _seed = seed ?? (() => 0);
         _instructions = new TacticalInstructions(domain, _settings);
 
-        var heading = new Label { Text = "INSTRUCTIONS TACTIQUES (OPTIONNELLES)" };
-        heading.AddThemeFontSizeOverride("font_size", 13);
+        var heading = new Label { Text = Compact ? "VOTRE CONSIGNE" : "INSTRUCTIONS TACTIQUES (OPTIONNELLES)" };
+        heading.AddThemeFontSizeOverride("font_size", Compact ? 16 : 13);
         heading.AddThemeColorOverride("font_color", Heading);
         AddChild(heading);
 
@@ -110,19 +113,22 @@ public partial class InstructionPanel : VBoxContainer
         };
         hint.AddThemeFontSizeOverride("font_size", 11);
         hint.AddThemeColorOverride("font_color", Faint);
+        hint.Visible = !Compact;
         AddChild(hint);
 
-        BuildPresets();
+        if (!Compact) BuildPresets();
         BuildEntry();
 
         _verdict = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
-        _verdict.AddThemeFontSizeOverride("font_size", 11);
+        _verdict.AddThemeFontSizeOverride("font_size", Compact ? 14 : 11);
         _verdict.AddThemeColorOverride("font_color", Faint);
         AddChild(_verdict);
 
         _active = new VBoxContainer();
         _active.AddThemeConstantOverride("separation", 2);
         AddChild(_active);
+
+        if (Compact) BuildPresets();
 
         Refresh();
     }
@@ -138,6 +144,21 @@ public partial class InstructionPanel : VBoxContainer
 
         _list = new VBoxContainer();
         _list.AddThemeConstantOverride("separation", 2);
+
+        if (Compact)
+        {
+            var show = new Button { Text = "+ Consignes pre-ecrites", ToggleMode = true,
+                Alignment = HorizontalAlignment.Left };
+            show.AddThemeFontSizeOverride("font_size", 12);
+            show.Toggled += open =>
+            {
+                _list.Visible = open;
+                show.Text = $"{(open ? "−" : "+")} Consignes pre-ecrites";
+            };
+            AddChild(show);
+            _list.Visible = false;
+        }
+
         AddChild(_list);
 
         foreach (var preset in _presets.Presets)
@@ -189,14 +210,16 @@ public partial class InstructionPanel : VBoxContainer
 
         _entry = new LineEdit
         {
+            Name = "InstructionEntry",
             PlaceholderText = Translating
-                ? "Avant d'entrer dans un batiment, regroupez-vous."
+                ? Compact ? "Ex. Soignez les blesses avant d'entrer." : "Avant d'entrer dans un batiment, regroupez-vous."
                 : ConstraintGrammar.Forms(),
             MaxLength = _settings.MaxChars,
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            CustomMinimumSize = new Vector2(0, Compact ? 38 : 0),
         };
 
-        _entry.AddThemeFontSizeOverride("font_size", 11);
+        _entry.AddThemeFontSizeOverride("font_size", Compact ? 15 : 11);
         _entry.AddThemeColorOverride("font_color", Ink);
         _entry.TextSubmitted += _ => Submit();
         _entry.TextChanged += _ => UpdateCounter();
@@ -317,7 +340,7 @@ public partial class InstructionPanel : VBoxContainer
         }
         else
         {
-            _verdict.Text = $"Acceptee : {entry.Constraint}";
+            _verdict.Text = Compact ? "Consigne acceptee." : $"Acceptee : {entry.Constraint}";
             _verdict.AddThemeColorOverride("font_color", Good);
         }
 
@@ -350,6 +373,12 @@ public partial class InstructionPanel : VBoxContainer
             row.AddThemeConstantOverride("separation", 6);
             _active.AddChild(row);
 
+            Container content = row;
+            if (Compact)
+            {
+                content = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+                row.AddChild(content);
+            }
             var label = new Label
             {
                 Text = $"• {constraint.Utterance ?? constraint.Text}",
@@ -357,9 +386,18 @@ public partial class InstructionPanel : VBoxContainer
                 AutowrapMode = TextServer.AutowrapMode.WordSmart,
             };
 
-            label.AddThemeFontSizeOverride("font_size", 11);
+            label.AddThemeFontSizeOverride("font_size", Compact ? 15 : 11);
             label.AddThemeColorOverride("font_color", Ink);
-            row.AddChild(label);
+            content.AddChild(label);
+
+            if (Compact)
+            {
+                var formal = new Label { Text = constraint.Text,
+                    AutowrapMode = TextServer.AutowrapMode.WordSmart };
+                formal.AddThemeFontSizeOverride("font_size", 13);
+                formal.AddThemeColorOverride("font_color", Good);
+                content.AddChild(formal);
+            }
 
             string text = constraint.Text;
 

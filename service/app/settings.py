@@ -11,21 +11,17 @@ l'environnement, pour que comparer deux modeles ne demande pas de toucher au cod
 from __future__ import annotations
 
 import os
+import math
+from urllib.parse import urlsplit
 from dataclasses import dataclass
 
 
 def _float(name: str, fallback: float) -> float:
-    try:
-        return float(os.environ[name])
-    except (KeyError, ValueError):
-        return fallback
+    return float(os.environ[name]) if name in os.environ else fallback
 
 
 def _int(name: str, fallback: int) -> int:
-    try:
-        return int(os.environ[name])
-    except (KeyError, ValueError):
-        return fallback
+    return int(os.environ[name]) if name in os.environ else fallback
 
 
 @dataclass(frozen=True)
@@ -33,10 +29,11 @@ class Settings:
     """Ce dont le service a besoin pour tourner. Immuable : relu au demarrage, jamais en cours."""
 
     api_key: str = ""
+    service_token: str = ""
     model: str = "deepseek/deepseek-v4.1-flash"
     base_url: str = "https://openrouter.ai/api/v1"
 
-    #: Plafond dur de depense, en dollars, pour la duree du processus. Atteint, le service refuse
+    #: Seuil de depense observee, en dollars, pour la duree du processus. Atteint, le service refuse
     #: avec la famille `budget_exhausted` — et le jeu bascule sur les instructions pre-ecrites en le
     #: signalant au joueur. Le meme plafond existe cote jeu : deux garde-fous pour deux pannes
     #: differentes, un service oublie allume et un jeu qui boucle.
@@ -80,6 +77,21 @@ class Settings:
 
     timeout_s: float = 20.0
 
+    def __post_init__(self):
+        endpoint = urlsplit(self.base_url)
+        if endpoint.scheme != "https" or endpoint.hostname != "openrouter.ai" or endpoint.username or endpoint.password or endpoint.port not in (None, 443):
+            raise ValueError("Le fournisseur doit utiliser HTTPS sur openrouter.ai.")
+        if not math.isfinite(self.max_cost_usd) or self.max_cost_usd <= 0:
+            raise ValueError("Le budget doit etre fini et positif.")
+        if not math.isfinite(self.timeout_s) or not 0 < self.timeout_s <= 60:
+            raise ValueError("Le delai doit etre compris entre 0 et 60 secondes.")
+        if not math.isfinite(self.temperature) or not 0 <= self.temperature <= 2:
+            raise ValueError("Temperature invalide.")
+        if not 0 <= self.self_check_retries <= 1:
+            raise ValueError("Au plus une reprise est autorisee.")
+        if self.service_token and (len(self.service_token) < 32 or len(self.service_token) > 256 or not self.service_token.isascii() or any(c.isspace() for c in self.service_token)):
+            raise ValueError("Le jeton local doit contenir 32 a 256 caracteres ASCII sans espace.")
+
     @property
     def configured(self) -> bool:
         """Faux si aucune cle n'est presente : le service repond alors, mais refuse tout appel."""
@@ -89,6 +101,7 @@ class Settings:
     def from_env(api_key_env: str = "OPENROUTER_API_KEY") -> "Settings":
         return Settings(
             api_key=os.environ.get(api_key_env, ""),
+            service_token=os.environ.get("HORDINARY_SERVICE_TOKEN", ""),
             model=os.environ.get("HORDINARY_MODEL", Settings.model),
             base_url=os.environ.get("HORDINARY_BASE_URL", Settings.base_url),
             max_cost_usd=_float("HORDINARY_MAX_COST_USD", Settings.max_cost_usd),

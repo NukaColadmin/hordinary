@@ -11,14 +11,12 @@ namespace Hordinary.UI;
 ///
 /// <code>
 /// +------------------------------------------------------------------+
-/// |  MODE DEMONSTRATION — scenarios d'essai                          |
-/// |  (bilan de la prise precedente)                                   |
-/// |  GRILLES            |  SCENARIOS                                  |
-/// |  > Deux batiments   |  > [consigne] Ne forcez aucune porte        |
-/// |    La longue rue    |    [action]   Forcer une porte              |
-/// |    Le square        |                                             |
-/// |  « La vitre de l'entrepot est a l'arriere... »                    |
-/// |  [x] Appliquer les consignes du scenario           [ LANCER ]     |
+/// |  DEMONSTRATION                                                   |
+/// |  TERRAIN [La superette v]  SCENARIO [Carte blanche v]             |
+/// |  VOTRE CONSIGNE                                                  |
+/// |  [Soignez les blesses avant d'entrer.]  [AJOUTER]                 |
+/// |  + Consignes pre-ecrites   + Details du scenario                 |
+/// |                                                    [ LANCER ]   |
 /// +------------------------------------------------------------------+
 /// </code>
 ///
@@ -59,8 +57,9 @@ public partial class DemoScreen : CanvasLayer
     private int _grid;
     private int _scenario;
 
-    private VBoxContainer _grids = null!;
-    private VBoxContainer _scenarios = null!;
+    private OptionButton _grids = null!;
+    private OptionButton _scenarios = null!;
+    private Label _summary = null!;
     private Label _gridDetail = null!;
     private Label _detail = null!;
     private CheckBox _withInstructions = null!;
@@ -132,11 +131,9 @@ public partial class DemoScreen : CanvasLayer
         margin.AddChild(frame);
 
         var title = Text(frame, 22, Ink);
-        title.Text = "MODE DEMONSTRATION — scenarios d'essai";
+        title.Text = "DEMONSTRATION";
 
-        // Tout ce qui est entre le titre et le bouton defile : bilan de la prise precedente, dix-neuf
-        // scenarios, detail et panneau de carte blanche depassent la hauteur d'un ecran. Le titre et
-        // le pied restent fixes — LANCER doit rester a portee quelle que soit la longueur du bilan.
+        // Le titre et le lancement restent fixes quand on deploie les exemples ou les details.
         var body = new ScrollContainer
         {
             SizeFlagsVertical = Control.SizeFlags.ExpandFill,
@@ -154,33 +151,51 @@ public partial class DemoScreen : CanvasLayer
         column.AddThemeConstantOverride("separation", 8);
         body.AddChild(column);
 
-        var hint = Text(column, 12, Faint);
-        hint.Text = "Chaque scenario isole une consigne du joueur ou un geste du survivant, sur une grille dessinee pour qu'il se produise. "
-                  + "Equipe, paquetage et horde sont ecrits dans config/demo_scenarios.json : une prise se refait a l'identique.";
-        hint.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        if (!string.IsNullOrWhiteSpace(_debrief))
+        {
+            // Le verdict et la consigne suffisent pour le clip ; la chronologie complete reste
+            // accessible sans repousser le choix de la prise suivante hors de l'ecran.
+            var lines = _debrief.Split('\n');
+            var lastRun = Text(column, 14, Heading);
+            lastRun.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+            lastRun.Text = string.Join("\n", lines.Where((line, index) => index < 2
+                    || line.StartsWith("Vos consignes :", StringComparison.Ordinal))
+                .Select(line => line.StartsWith("PRISE ", StringComparison.Ordinal)
+                    ? line.Split(" — ", 2)[0] : line));
+            var fullReport = Disclosure(column, "Bilan complet");
+            var report = Text(fullReport, 12, Faint);
+            report.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+            report.Text = _debrief;
+        }
 
-        // Le bilan de la prise precedente, en tete : c'est la qu'on lit si le clip a montre ce qu'il
-        // annoncait, avant de decider de le refaire.
-        var lastRun = Text(column, 13, Heading);
-        lastRun.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-        lastRun.Visible = !string.IsNullOrWhiteSpace(_debrief);
-        lastRun.Text = _debrief ?? string.Empty;
+        var choices = new HBoxContainer();
+        choices.AddThemeConstantOverride("separation", 16);
+        column.AddChild(choices);
+        _grids = Selector(choices, "TERRAIN");
+        _scenarios = Selector(choices, "SCENARIO");
+        foreach (var grid in _catalogue.Grids) _grids.AddItem(grid.Name);
+        _grids.ItemSelected += index =>
+        {
+            _grid = (int)index;
+            _scenario = 0;
+            Refresh();
+        };
+        _scenarios.ItemSelected += index =>
+        {
+            _scenario = (int)index;
+            Refresh();
+        };
 
-        var lists = new HBoxContainer { SizeFlagsVertical = Control.SizeFlags.ExpandFill };
-        lists.AddThemeConstantOverride("separation", 24);
-        column.AddChild(lists);
-
-        _grids = List(lists, "GRILLES", 260);
-        _scenarios = List(lists, "SCENARIOS", 0);
-
-        _gridDetail = Text(column, 12, Faint);
-        _gridDetail.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-
-        _detail = Text(column, 12, Ink);
-        _detail.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-        _detail.CustomMinimumSize = new Vector2(0, 150);
+        _summary = Text(column, 14, Ink);
+        _summary.AutowrapMode = TextServer.AutowrapMode.WordSmart;
 
         BuildStrategy(column);
+
+        var details = Disclosure(column, "Details du scenario");
+        _gridDetail = Text(details, 12, Faint);
+        _gridDetail.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _detail = Text(details, 12, Ink);
+        _detail.AutowrapMode = TextServer.AutowrapMode.WordSmart;
 
         var footer = new HBoxContainer();
         frame.AddChild(footer);
@@ -197,24 +212,6 @@ public partial class DemoScreen : CanvasLayer
         UiSkin.Dress(_go);
         _go.Pressed += Confirm;
         footer.AddChild(_go);
-
-        for (int index = 0; index < _catalogue.Grids.Count; index++)
-        {
-            int choice = index;
-            var grid = _catalogue.Grids[index];
-
-            var button = Choice($"{grid.Name}     {_catalogue.On(grid).Count} scenario(s)");
-            button.Pressed += () =>
-            {
-                if (_grid == choice) return;
-
-                _grid = choice;
-                _scenario = 0;
-                Refresh();
-            };
-
-            _grids.AddChild(button);
-        }
 
         Refresh();
     }
@@ -237,6 +234,7 @@ public partial class DemoScreen : CanvasLayer
         _strategy = new InstructionPanel
         {
             Name = "StrategyInstructions",
+            Compact = true,
             SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
         };
 
@@ -245,12 +243,11 @@ public partial class DemoScreen : CanvasLayer
         _strategyBox.AddChild(_strategy);
     }
 
-    private static VBoxContainer List(Container parent, string heading, float width)
+    private static OptionButton Selector(Container parent, string heading)
     {
         var column = new VBoxContainer
         {
-            CustomMinimumSize = new Vector2(width, 0),
-            SizeFlagsHorizontal = width > 0 ? Control.SizeFlags.Fill : Control.SizeFlags.ExpandFill,
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
         };
 
         column.AddThemeConstantOverride("separation", 4);
@@ -259,11 +256,27 @@ public partial class DemoScreen : CanvasLayer
         var label = Text(column, 13, Heading);
         label.Text = heading;
 
-        var list = new VBoxContainer();
-        list.AddThemeConstantOverride("separation", 2);
-        column.AddChild(list);
+        var select = new OptionButton { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            CustomMinimumSize = new Vector2(0, 36), FitToLongestItem = false };
+        select.AddThemeFontSizeOverride("font_size", 15);
+        column.AddChild(select);
+        return select;
+    }
 
-        return list;
+    private static VBoxContainer Disclosure(Container parent, string heading)
+    {
+        var toggle = new Button { Text = $"+ {heading}", ToggleMode = true,
+            Alignment = HorizontalAlignment.Left };
+        toggle.AddThemeFontSizeOverride("font_size", 12);
+        parent.AddChild(toggle);
+        var content = new VBoxContainer { Visible = false };
+        parent.AddChild(content);
+        toggle.Toggled += open =>
+        {
+            content.Visible = open;
+            toggle.Text = $"{(open ? "−" : "+")} {heading}";
+        };
+        return content;
     }
 
     // --- Choix -------------------------------------------------------------------------------------
@@ -297,22 +310,12 @@ public partial class DemoScreen : CanvasLayer
     }
 
     /// <summary>
-    /// Refait la liste des scenarios de la grille choisie, et le detail du scenario choisi. La liste
-    /// est reconstruite plutot que filtree : elle change a chaque grille, et une douzaine de boutons
-    /// ne justifie pas de tenir un cache.
+    /// Actualise les choix et le detail sans perdre les consignes deja saisies.
     /// </summary>
     private void Refresh()
     {
-        for (int index = 0; index < _grids.GetChildCount(); index++)
-        {
-            if (_grids.GetChild(index) is Button button) button.ButtonPressed = index == _grid;
-        }
-
-        foreach (var child in _scenarios.GetChildren())
-        {
-            _scenarios.RemoveChild(child);
-            child.QueueFree();
-        }
+        _grids.Select(_grid);
+        _scenarios.Clear();
 
         if (SelectedGrid is { } grid)
         {
@@ -320,25 +323,20 @@ public partial class DemoScreen : CanvasLayer
 
             for (int index = 0; index < scenarios.Count; index++)
             {
-                int choice = index;
                 var scenario = scenarios[index];
-
-                var button = Choice($"{Tag(scenario.Focus)}   {scenario.Name}");
-                button.ButtonPressed = index == Math.Clamp(_scenario, 0, scenarios.Count - 1);
-                button.Pressed += () =>
-                {
-                    _scenario = choice;
-                    Refresh();
-                };
-
-                _scenarios.AddChild(button);
+                _scenarios.AddItem(scenario.TakesPlayerInstructions ? "Carte blanche" : scenario.Name);
             }
+
+            if (scenarios.Count > 0) _scenarios.Select(Math.Clamp(_scenario, 0, scenarios.Count - 1));
 
             _gridDetail.Text = grid.Description ?? string.Empty;
         }
 
         var selected = SelectedScenario;
         bool open = selected is { TakesPlayerInstructions: true };
+        _summary.Text = open
+            ? "Donnez une consigne au groupe, puis lancez la prise."
+            : selected?.Summary ?? "Aucun scenario sur ce terrain.";
 
         _withInstructions.Visible = !open;
         _strategyBox.Visible = open;
@@ -454,22 +452,6 @@ public partial class DemoScreen : CanvasLayer
         }
 
         ScenarioChosen?.Invoke(scenario, _withInstructions.ButtonPressed && scenario.Instructions.Count > 0, []);
-    }
-
-    private static Button Choice(string text)
-    {
-        var button = new Button
-        {
-            Text = text,
-            Alignment = HorizontalAlignment.Left,
-            ToggleMode = true,
-            CustomMinimumSize = new Vector2(0, 30),
-        };
-
-        button.AddThemeFontSizeOverride("font_size", 12);
-        UiSkin.DressRow(button);
-
-        return button;
     }
 
     private static Label Text(Container parent, int size, Color color)

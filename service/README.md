@@ -19,18 +19,19 @@ La suite de tests .NET passe entièrement avec ce service arrêté. Aucun test n
 du PDDL, jamais un patch de domaine, jamais du texte libre à afficher tel quel. La totalité du PDDL
 donné à un planificateur sort du compilateur déterministe de `Hordinary.Core`.
 
-`status: "constraint"` ne veut pas dire « appliquée » : les quatre portillons tournent ensuite, côté
-jeu, et peuvent encore refuser.
+`status: "constraint"` ne veut pas dire « appliquée » : le jeu valide la grammaire et les types,
+compile la contrainte et contrôle chaque plan. La preuve Fast Downward et la corroboration VAL
+restent des vérifications hors ligne.
 
 ## Installation
 
-Python 3.11 ou plus — éprouvé sur **CPython 3.12.10**.
+Python 3.12 — éprouvé sur **CPython 3.12.10**.
 
 ```bash
 cd service
 python -m venv .venv
 . .venv/bin/activate            # Windows : .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements.lock
 ```
 
 La clé d'API se met dans l'environnement, **jamais dans un fichier** :
@@ -44,15 +45,30 @@ Un dépôt est publié ; une clé qui y entre est publiée avec lui.
 
 ## Lancer
 
+Avec une clé fournisseur, générer d'abord un jeton local. Le service et Godot doivent hériter
+du même environnement ; un éditeur déjà ouvert doit être relancé depuis ce shell.
+
+```bash
+export HORDINARY_SERVICE_TOKEN="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+```
+
+Sous PowerShell :
+
+```powershell
+$env:HORDINARY_SERVICE_TOKEN = python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Puis, depuis `service/` :
+
 ```bash
 uvicorn app.main:app --host 127.0.0.1 --port 8001
 ```
 
-Ou en conteneur, sans installer Python :
+Ou en conteneur, depuis la racine du dépôt, après avoir généré le jeton :
 
 ```bash
 docker build -t hordinary-service service/
-docker run --rm -p 8001:8001 -e OPENROUTER_API_KEY hordinary-service
+docker run --rm -p 127.0.0.1:8001:8001 -e OPENROUTER_API_KEY -e HORDINARY_SERVICE_TOKEN hordinary-service
 ```
 
 `-e OPENROUTER_API_KEY` sans valeur reprend celle de l'environnement courant : **la clé n'entre ni
@@ -67,19 +83,30 @@ docker compose up -d service                                  # 127.0.0.1:8001
 docker compose --profile evals run --rm evals --dry-run       # le harnais, sans réseau
 ```
 
-Deux différences avec la ligne `docker run` ci-dessus, et les deux sont voulues. Le port est publié
+Sous Linux, avant de lancer le harnais, reprendre l'identité de l'utilisateur propriétaire du
+dépôt pour écrire les rapports dans le dossier monté :
+
+```bash
+export HORDINARY_EVAL_USER="$(id -u):$(id -g)"
+docker compose --profile evals run --rm evals --dry-run
+```
+
+Docker Desktop utilise par défaut `10001:10001`. Le harnais vérifie l'accès à ses sorties avant
+le premier appel fournisseur ; choisir avec `--out` un chemin accessible si nécessaire.
+
+Le port est publié
 sur **`127.0.0.1` et non `0.0.0.0`** : ce service porte une clé et appelle un fournisseur facturé à
-l'appel, donc l'offrir au réseau local revient à offrir la facture. Et le harnais monte
+l'appel, donc l'offrir au réseau local revient à offrir la facture. Le harnais Compose monte
 `service/evals/`, que le `.dockerignore` tient hors de l'image : sans ce montage, le rapport d'un
 passage payant s'écrirait dans le conteneur et disparaîtrait avec lui.
 
 L'image sert le service ; elle n'emporte pas le dépôt. Les trois tests qui comparent le digest au
 `tools/pddl/domain.pddl` du jeu s'y annoncent donc comme ignorés, avec leur raison — c'est le passage
-depuis le dépôt qui fait foi (58 contre 55 + 3).
+depuis le dépôt qui fait foi. Le conteneur ignore ces trois comparaisons ; les autres tests y passent.
 
-Puis, côté jeu, passer `instructions.enabled` à `true` dans `config/game_config.json`. Le champ de
-saisie du panneau d'instructions accepte alors du français ; sans le service, il attend une contrainte
-de la grammaire.
+Puis lancer Godot depuis ce même shell et activer le service avec `-- --ia` ou `HORDINARY_IA=1`.
+Conserver `instructions.enabled` à `false` dans le fichier versionné. Le champ de saisie du panneau
+d'instructions accepte alors du français ; sans le service, il attend une contrainte de la grammaire.
 
 Le service **démarre sans clé** : `/health` répond, et `/instruction` refuse avec
 `provider_unavailable`. C'est voulu — refuser de démarrer obligerait à configurer OpenRouter pour
@@ -92,9 +119,10 @@ Tous par variable d'environnement, tous avec un défaut utilisable :
 | Variable | Défaut | |
 |---|---|---|
 | `OPENROUTER_API_KEY` | — | sans elle, le service refuse tout appel |
+| `HORDINARY_SERVICE_TOKEN` | — | jeton local de 32 à 256 caractères, partagé avec le jeu ; requis avec une clé fournisseur |
 | `HORDINARY_MODEL` | `deepseek/deepseek-v4.1-flash` | |
 | `HORDINARY_BASE_URL` | `https://openrouter.ai/api/v1` | |
-| `HORDINARY_MAX_COST_USD` | `0.50` | plafond dur, pour la durée du processus |
+| `HORDINARY_MAX_COST_USD` | `0.50` | seuil de coût observé par processus ; limite fournisseur nécessaire |
 | `HORDINARY_TEMPERATURE` | `0.0` | |
 | `HORDINARY_REASONING` | `off` | coupe la réflexion. **Vide** = réglage d'usine du modèle |
 | `HORDINARY_SELF_CHECK_RETRIES` | `1` | une reprise, puis abandon |
@@ -118,7 +146,20 @@ de `instructions.openrouter.max_cost_usd_per_session`, côté jeu, protège d'un
 le client bascule sur les instructions pré-écrites **en le signalant** : un repli muet ferait croire au
 joueur que le modèle a lu sa phrase.
 
-## Le graphe
+## Sécurité de la prise
+
+Avec une clé fournisseur, `/instruction` exige désormais un jeton local aléatoire de 32 caractères
+minimum, partagé avec le jeu via `HORDINARY_SERVICE_TOKEN`. Générer le jeton dans le shell et lancer
+le service et Godot depuis cet environnement ; transmettre aussi `-e HORDINARY_SERVICE_TOKEN`
+avec `docker run`. Compose transmet déjà cette variable. Sans jeton, le service facturé reste fermé.
+
+Les compteurs sont par processus : dix requêtes/minute, une traduction simultanée, cent appels
+fournisseur, sortie de 512 tokens maximum. Le seuil en dollars porte sur les coûts reçus après
+appel ; une facturation inconnue bloque les appels suivants. Un redémarrage remet les compteurs
+à zéro. Fixer une limite financière côté fournisseur. Le détail, les tests et les limites de
+l'injection de prompt sont dans [`docs/securite.md`](../docs/securite.md).
+
+## Le graphe de traduction
 
 ```
 normalize → context → generate → self_check → project
@@ -167,7 +208,7 @@ elle est traitée comme une **ablation à publier**, pas comme un acquis (voir c
 
 ```bash
 cd service
-python -m pytest tests/ -q          # 62 tests, ~0,5 s
+python -m pytest tests/ -q          # 89 tests, ~0,5 s
 ```
 
 Aucun n'ouvre de connexion et aucun ne demande de clé : le fournisseur est un `ScriptedProvider` à qui
@@ -199,10 +240,10 @@ python -m evals.run --corpus evals/heldout.jsonl --no-glossary # les phrases ten
 python -m evals.run --no-glossary --repeat 3                    # trois tirages : le modèle n'est pas déterministe
 ```
 
-La mesure à mettre en avant est le **taux de faux acceptés** — une contrainte plausible mais fausse —
-y compris s'il est mauvais : c'est ce que les quatre portillons existent pour rattraper, et c'est ce
-qui rend la démonstration honnête. Un tableau qui ne publierait que le taux de compilation dirait
-qu'un modèle complaisant est le meilleur.
+La mesure à mettre en avant est le **taux de faux acceptés** — une consigne irrecevable traduite
+quand même — y compris s'il est mauvais. Les portillons limitent les effets, mais une erreur de sens
+peut les traverser : le joueur doit pouvoir lire la contrainte obtenue. Un tableau qui ne publierait
+que le taux de compilation dirait qu'un modèle complaisant est le meilleur.
 
 ### Les résultats
 
@@ -293,9 +334,7 @@ voudra « juste renvoyer le domaine compilé pour déboguer ».
 ## Ce qui reste
 
 * `evals/results.md` — demande une clé OpenRouter et des appels facturés ;
-* **les versions ne sont pas figées.** `requirements.txt` ne pose que des planchers, et
-  l'installation de référence a tiré `langgraph 1.2.11` et `langchain-core 1.6.3` — deux majeures
-  au-dessus de `>=0.2.40` et `>=0.3.15`. Tout fonctionne, mais rien ne garantit que la prochaine
-  installation tirera la même chose : il manque un jeu de versions consigné ;
+* les versions testées sont figées dans `requirements.lock` ; maintenir ce fichier avec les mises
+  à jour proposées et l'audit des vulnérabilités de la CI ;
 * le portillon 3 (Fast Downward) reste **hors ligne** et indépendant de ce service : voir
   [`tools/pddl/README.md`](../tools/pddl/README.md).

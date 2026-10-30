@@ -8,8 +8,37 @@ français « Soignez les blessés avant d'entrer » ; un modèle de langage en f
 formelle ; quatre portillons la valident, la compilent en PDDL et vérifient chaque plan ; et trois
 agents, qui ne voient que ce qu'ils perçoivent, changent leur façon de jouer.
 
-<!-- Clip de démonstration : voir docs/enregistrer-la-demo.md, puis décommenter la ligne suivante. -->
-<!-- ![Démo](docs/demo.gif) -->
+![Démonstration du jeu](docs/demo.gif)
+
+**Conçu, pensé et designé par un humain, exécuté avec Claude Code.**
+
+## Architecture de la solution IA
+
+```mermaid
+flowchart LR
+    Joueur[Consigne du joueur] --> Service[Service de langage]
+    Service --> LLM[LLM : traduction en contrainte]
+    LLM --> Validation[Validation déterministe : grammaire et types]
+    Validation --> Compilation[Compilation vers le domaine PDDL]
+    Compilation --> Plan[Planification individuelle des agents]
+    Compilation -. Artefacts hors ligne .-> Verification[Fast Downward : satisfiabilité]
+    Plan --> Trajectoire[Vérification de chaque plan]
+    Trajectoire --> Execution[Exécution et replanification]
+    Validation -. Refus .-> Retour[Contrainte ou refus affiché au joueur]
+    Validation --> Retour
+    Trajectoire -. Artefacts hors ligne .-> VAL[VAL : corroboration]
+    Presets[Consignes pré-écrites] --> Validation
+```
+
+Le LLM interprète le langage naturel sans piloter les agents : les contrôles déterministes limitent
+ce qui peut être exécuté, et les consignes pré-écrites offrent un fonctionnement sans service.
+Les évaluations confrontent exactitude, faux acceptés, latence et coût ; elles ont notamment conduit
+à renforcer le typage des arguments. Une contrainte valide peut néanmoins être sémantiquement fausse :
+son affichage permet au joueur de la vérifier.
+
+Sécurité : authentification locale, entrées bornées, quotas et dépendances vérifiées.
+Voir les [frontières de confiance et limites](docs/securite.md), notamment le budget fournisseur
+et le lancement avec `HORDINARY_SERVICE_TOKEN`. Les validateurs tiers interviennent hors ligne.
 
 ---
 
@@ -50,6 +79,9 @@ que le gain n'est pas un corpus appris par cœur. Dossier complet :
 
 Modèle livré (`deepseek/deepseek-v4.1-flash`, raisonnement désactivé), **trois tirages par
 condition** :
+
+Ces mesures précèdent le durcissement du service ; la nouvelle borne de sortie et les règles
+d'arrêt demandent une réévaluation avant de leur attribuer les mêmes taux.
 
 | Corpus | Compilation | Exacte | Refus correct | **Faux acceptés** | p95 |
 |---|---|---|---|---|---|
@@ -126,7 +158,7 @@ Guide de tournage, touches d'observation et phrases sûres :
 
 ## Qualité
 
-* **745 tests** : 683 en C# (xUnit, sans moteur) et 62 en Python (sans réseau ni clé). Les tests
+* **774 tests** : 685 en C# (xUnit, sans moteur) et 89 en Python (sans réseau ni clé). Les tests
   lisent la carte et les fichiers de `config/` **réellement livrés**, pas des copies.
 * **À graine égale, résultat égal** : horde, quartier généré, mission rejouée. Verrouillé par tests.
 * **Deux validateurs tiers** dans la boucle, par Docker : Fast Downward (satisfiabilité) et VAL
@@ -137,23 +169,28 @@ Guide de tournage, touches d'observation et phrases sûres :
 
 ## Démarrage
 
+Prérequis : SDK .NET 10 pour la suite de tests, et Godot 4.7.1 avec prise en charge .NET pour
+le jeu. Le cœur du jeu cible .NET 8.
+
 ```bash
 dotnet build Hordinary.sln
-dotnet test Tests/Hordinary.Tests.csproj                    # 683 tests, sans Godot
+dotnet test Tests/Hordinary.Tests.csproj                    # 685 tests, sans Godot
 ```
 
 Le service de langage est optionnel, avec sa propre suite (Python 3.12) :
 
 ```bash
 cd service
-python -m venv .venv && ./.venv/Scripts/python.exe -m pip install -r requirements.txt
-./.venv/Scripts/python.exe -m pytest tests/ -q              # 62 tests, sans réseau
+python -m venv .venv && ./.venv/Scripts/python.exe -m pip install -r requirements.lock
+./.venv/Scripts/python.exe -m pytest tests/ -q              # 89 tests, sans réseau
 ./.venv/Scripts/python.exe -m evals.run --dry-run           # le harnais d'évaluation, sans réseau
 ```
 
-Ou en conteneur, la clé OpenRouter restant dans l'environnement du shell :
+Ou en conteneur, la clé OpenRouter restant dans l'environnement du shell. Avec une clé fournisseur,
+générer le jeton local puis lancer Godot depuis ce même shell :
 
-```bash
+```powershell
+$env:HORDINARY_SERVICE_TOKEN = python -c "import secrets; print(secrets.token_urlsafe(32))"
 docker compose up -d service                                # 127.0.0.1:8001
 ```
 

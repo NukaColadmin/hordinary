@@ -253,7 +253,7 @@ def test_les_contraintes_actives_sont_montrees(request_of, digest):
 def test_la_phrase_est_coupee_a_max_chars(request_of):
     compiled, provider, _ = graph_of(constraint_json("forbid", action="BreakWindow"))
 
-    run(compiled, request_of("a" * 5000, max_chars=200))
+    run(compiled, request_of("a" * 4000, max_chars=200))
 
     _, prompt = provider.seen[0]
 

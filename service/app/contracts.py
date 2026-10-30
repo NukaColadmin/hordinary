@@ -12,9 +12,12 @@ et elle est verifiee ici par le type de retour plutot que par une relecture.
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+Symbol = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^[A-Za-z_][A-Za-z0-9_:-]*$")]
+ContextText = Annotated[str, Field(max_length=512)]
 
 ROOT_TYPE = "object"
 """Le type racine de PDDL, celui des symboles qu'aucune action ne type mieux.
@@ -28,8 +31,8 @@ n'accepte que son type exact.
 class DigestPredicate(BaseModel):
     """Un predicat declare : son nom et le type de ses arguments."""
 
-    name: str
-    params: list[str] = Field(default_factory=list)
+    name: Symbol
+    params: list[Symbol] = Field(default_factory=list, max_length=16)
 
     @property
     def arity(self) -> int:
@@ -45,8 +48,8 @@ class DigestObject(BaseModel):
     le rattraper. Un modele a fini par produire le premier, et le jeu l'acceptait aussi.
     """
 
-    name: str
-    type: str = ROOT_TYPE
+    name: Symbol
+    type: Symbol = ROOT_TYPE
 
 
 class DomainDigest(BaseModel):
@@ -58,14 +61,14 @@ class DomainDigest(BaseModel):
     et le symptome aurait ete un refus incomprehensible pour le joueur.
     """
 
-    domain_hash: str = ""
-    types: list[str] = Field(default_factory=list)
-    predicates: list[DigestPredicate] = Field(default_factory=list)
-    actions: list[str] = Field(default_factory=list)
-    location_kinds: list[str] = Field(default_factory=list)
-    objects: list[DigestObject] = Field(default_factory=list)
-    active_constraints: list[str] = Field(default_factory=list)
-    glossary: dict[str, str] = Field(default_factory=dict)
+    domain_hash: str = Field(default="", max_length=80)
+    types: list[Symbol] = Field(default_factory=list, max_length=64)
+    predicates: list[DigestPredicate] = Field(default_factory=list, max_length=256)
+    actions: list[Symbol] = Field(default_factory=list, max_length=256)
+    location_kinds: list[Symbol] = Field(default_factory=list, max_length=64)
+    objects: list[DigestObject] = Field(default_factory=list, max_length=512)
+    active_constraints: list[ContextText] = Field(default_factory=list, max_length=16)
+    glossary: dict[Symbol, ContextText] = Field(default_factory=dict, max_length=512)
     """Ce que chaque symbole veut dire, dans les mots d'un joueur — section `glossary` de
     `config/planner_domain.json`. Le nom et le type disent ou un symbole se met, pas ce qu'il designe :
     sans ce champ, « soignez les blesses avant d'entrer » etait refusee faute de rien qui la relie a
@@ -104,10 +107,11 @@ class DomainDigest(BaseModel):
 class InstructionRequest(BaseModel):
     """Ce que le jeu envoie : une phrase, une graine, et de quoi la traduire."""
 
-    utterance: str
+    model_config = ConfigDict(extra="forbid")
+    utterance: str = Field(max_length=4000)
     seed: int = 0
     domain_digest: DomainDigest = Field(default_factory=DomainDigest)
-    max_chars: int = 200
+    max_chars: int = Field(default=200, ge=1, le=4000)
 
 
 class ServiceConstraint(BaseModel):
@@ -121,7 +125,7 @@ class ServiceConstraint(BaseModel):
     form: Literal["require_before", "require_after", "forbid", "require_always", "penalize"]
     predicate: str | None = None
     action_class: str | None = None
-    factor: float | None = None
+    factor: float | None = Field(default=None, allow_inf_nan=False)
 
 
 class ServiceTokens(BaseModel):

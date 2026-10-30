@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import json
 import time
+import math
+from threading import Lock
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -34,6 +36,7 @@ class Completion:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     cost_usd: float = 0.0
+    cost_known: bool = True
     latency_ms: int = 0
 
 
@@ -54,10 +57,28 @@ class Budget:
     ceiling: float
     spent: float = 0.0
     calls: int = 0
+    max_calls: int = 100
+    uncertain: bool = False
+    _lock: object = field(default_factory=Lock, repr=False)
 
     @property
     def exhausted(self) -> bool:
-        return self.spent >= self.ceiling
+        return self.uncertain or self.spent >= self.ceiling or (self.max_calls > 0 and self.calls >= self.max_calls)
+
+    def complete(self, provider: Provider, system: str, user: str) -> Completion:
+        # Verification et facturation serialisees, y compris entre requetes concurrentes.
+        with self._lock:
+            if self.exhausted:
+                raise BudgetExhausted("Budget indisponible.")
+            try:
+                completion = provider.complete(system, user)
+            except Exception:
+                self.uncertain = True  # Une panne ne prouve pas l'absence de facturation.
+                raise
+            self.charge(completion.cost_usd)
+            if not completion.cost_known or not math.isfinite(completion.cost_usd) or completion.cost_usd < 0:
+                self.uncertain = True
+            return completion
 
     def charge(self, amount: float) -> None:
         self.spent += max(0.0, amount)
@@ -103,7 +124,7 @@ class OpenRouterProvider:
     `token_usage`, a cote des compteurs de tokens — et non a la racine des metadonnees, ou une
     premiere version le cherchait et ne trouvait jamais rien. On ne l'estime jamais a partir d'une
     table de tarifs : elle serait fausse le lendemain. Un fournisseur qui ne le renvoie pas rend
-    donc zero, et le plafond ne protege alors que contre un jeu qui boucle.
+    zero avec cost_known=False ; le budget bloque alors les appels suivants.
     """
 
     def __init__(self, settings: Settings, model: object | None = None) -> None:
@@ -133,6 +154,8 @@ class OpenRouterProvider:
             base_url=settings.base_url,
             temperature=settings.temperature,
             timeout=settings.timeout_s,
+            max_retries=0,
+            max_tokens=512,
             model_kwargs={"response_format": {"type": "json_object"}},
             extra_body=_extra_body(settings),
         )
@@ -152,6 +175,7 @@ class OpenRouterProvider:
             prompt_tokens=int(usage.get("prompt_tokens", 0) or 0),
             completion_tokens=int(usage.get("completion_tokens", 0) or 0),
             cost_usd=float(usage.get("cost", metadata.get("cost", 0.0)) or 0.0),
+            cost_known=usage.get("cost", metadata.get("cost")) is not None,
             latency_ms=elapsed,
         )
 

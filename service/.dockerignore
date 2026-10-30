@@ -4,6 +4,10 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+.env
+.env.*
+*.pem
+*.key
 
 # Les resultats d'evaluation sont des mesures, pas du code : ils n'ont rien a faire dans l'image.
 evals/results*.md

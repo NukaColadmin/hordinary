@@ -1,5 +1,6 @@
 using System;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -44,7 +45,7 @@ public sealed class InstructionClient : IDisposable
 
         // Le delai est tenu par le courtier, jeton d'annulation a l'appui : un Timeout de HttpClient
         // leve une TaskCanceledException que rien ne distingue d'une annulation du joueur.
-        _http = http ?? new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+        _http = http ?? new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = Timeout.InfiniteTimeSpan };
 
         Broker = new InstructionBroker(_settings, PostAsync);
     }
@@ -67,7 +68,14 @@ public sealed class InstructionClient : IDisposable
     private async Task<InstructionReply?> PostAsync(InstructionRequest request, CancellationToken cancellation)
     {
         using var content = new StringContent(request.ToJson(), Encoding.UTF8, "application/json");
-        using var response = await _http.PostAsync(_settings.Endpoint, content, cancellation).ConfigureAwait(false);
+        var endpoint = new Uri(_settings.Endpoint);
+        if (endpoint.Scheme != "https" && !(endpoint.Scheme == "http" && endpoint.IsLoopback))
+            throw new InvalidOperationException("Le service exige HTTPS ou une adresse de boucle locale.");
+        using var message = new HttpRequestMessage(HttpMethod.Post, endpoint) { Content = content };
+        string? token = Environment.GetEnvironmentVariable("HORDINARY_SERVICE_TOKEN");
+        if (!string.IsNullOrEmpty(token))
+            message.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await _http.SendAsync(message, cancellation).ConfigureAwait(false);
 
         string body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
 

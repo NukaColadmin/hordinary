@@ -1171,13 +1171,13 @@ public partial class GameRoot : Node2D
     {
         _band.PanicEnabled = _config.Debug.PanicEnabled;
 
-        _overlay.Visible = _config.Debug.ShowsOverlay(_config.Debug.ShowNavigation);
-        _knowledgeOverlay.Visible = _config.Debug.ShowsOverlay(_config.Debug.ShowMentalMap);
-        _noiseOverlay.Visible = _config.Debug.ShowsOverlay(_config.Debug.ShowNoise);
+        _overlay.Visible = !_demoMode && _config.Debug.ShowsOverlay(_config.Debug.ShowNavigation);
+        _knowledgeOverlay.Visible = !_demoMode && _config.Debug.ShowsOverlay(_config.Debug.ShowMentalMap);
+        _noiseOverlay.Visible = !_demoMode && _config.Debug.ShowsOverlay(_config.Debug.ShowNoise);
 
         _hud.Visible = ShowsText;
-        _agentPanel.Visible = ShowsText;
-        _planPanel.Visible = ShowsText;
+        _agentPanel.Visible = ShowsText && !_demoMode;
+        _planPanel.Visible = ShowsText && !_demoMode;
 
         if (!_config.Debug.Enabled) Trace.Print("[Debug] Mode debug entierement desactive (config debug.enabled).");
         else if (!ShowsText) Trace.Print("[Debug] Panneaux de texte masques (config debug.hud_text).");
@@ -1905,7 +1905,8 @@ public partial class GameRoot : Node2D
         var layer = new CanvasLayer { Name = "Hud" };
         AddMissionChild(layer);
 
-        _hud = new Hud();
+        _hud = new Hud { Compact = _demoMode };
+        if (_demoMode) _hud.AddThemeFontSizeOverride("font_size", 15);
         _hud.AnchorTo(HorizontalAlignment.Left, VerticalAlignment.Top);
         layer.AddChild(_hud);
 
@@ -1913,8 +1914,11 @@ public partial class GameRoot : Node2D
         _agentPanel.AnchorTo(HorizontalAlignment.Right, VerticalAlignment.Top);
         layer.AddChild(_agentPanel);
 
-        _planPanel = new PlanPanel();
-        _planPanel.AnchorTo(HorizontalAlignment.Right, VerticalAlignment.Bottom);
+        _planPanel = new PlanPanel { Compact = _demoMode };
+        if (_demoMode) _planPanel.AddThemeFontSizeOverride("font_size", 15);
+        _planPanel.AnchorTo(HorizontalAlignment.Right,
+            _demoMode ? VerticalAlignment.Top : VerticalAlignment.Bottom);
+        if (_demoMode) _planPanel.HorizontalAlignment = HorizontalAlignment.Left;
         layer.AddChild(_planPanel);
 
         _survivorPanel = new SurvivorPanel { Name = "SurvivorPanel" };
@@ -1924,7 +1928,7 @@ public partial class GameRoot : Node2D
         _team = new AgentRoster { Name = "Team" };
         AddMissionChild(_team);
 
-        _team.Configure(_band.Agents, _camp, _icons);
+        _team.Configure(_band.Agents, _demoMode ? null : _camp, _icons);
         _team.Paint(RingColors);
         _team.Picked += agent => _commands.Execute(PlayerCommand.Select(agent.Survivor.Id));
 
@@ -2131,6 +2135,7 @@ public partial class GameRoot : Node2D
 
             case Key.F4:
                 _agentPanel.ShowScoreDetail = !_agentPanel.ShowScoreDetail;
+                if (_demoMode) _agentPanel.Visible = ShowsText && _agentPanel.ShowScoreDetail;
                 UpdateHud();
                 return true;
 
@@ -2141,6 +2146,7 @@ public partial class GameRoot : Node2D
 
             case Key.F6:
                 _planPanel.ShowJournal = !_planPanel.ShowJournal;
+                if (_demoMode) _planPanel.Visible = ShowsText;
                 UpdateHud();
                 return true;
 
@@ -2322,9 +2328,16 @@ public partial class GameRoot : Node2D
     {
         _team.Refresh(_commands.Selected);
 
-        int rank = _commands.SelectedIndex;
-        _survivorPanel.RingColor = RingColors[rank % RingColors.Length];
-        _survivorPanel.Refresh(_commands.Selected, rank, _world.Time);
+        if (_demoMode)
+        {
+            _survivorPanel.Visible = false;
+        }
+        else
+        {
+            int rank = _commands.SelectedIndex;
+            _survivorPanel.RingColor = RingColors[rank % RingColors.Length];
+            _survivorPanel.Refresh(_commands.Selected, rank, _world.Time);
+        }
 
         for (int i = 0; i < _nodes.Count; i++)
         {

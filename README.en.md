@@ -8,8 +8,36 @@ before going in"*; a language model turns it into a formal constraint; four gate
 compile it into PDDL and check every plan; and three agents, who only know what they perceive,
 change the way they play.
 
-<!-- Demo clip: see docs/enregistrer-la-demo.md, then uncomment the next line. -->
-<!-- ![Demo](docs/demo.gif) -->
+![Game demonstration](docs/demo.gif)
+
+**Conceived, thought through and designed by a human, executed with Claude Code.**
+
+## AI solution architecture
+
+```mermaid
+flowchart LR
+    Player[Player order] --> Service[Language service]
+    Service --> LLM[LLM: translate into a constraint]
+    LLM --> Validation[Deterministic grammar and type checks]
+    Validation --> Compilation[Compile into the PDDL domain]
+    Compilation --> Plan[Individual agent planning]
+    Compilation -. Offline artifacts .-> Satisfiability[Fast Downward: satisfiability]
+    Plan --> Trajectory[Check each plan]
+    Trajectory --> Execution[Execution and replanning]
+    Validation -. Refusal .-> Feedback[Show constraint or refusal to player]
+    Validation --> Feedback
+    Trajectory -. Offline artifacts .-> VAL[VAL: corroboration]
+    Presets[Pre-written orders] --> Validation
+```
+
+The LLM interprets natural language without controlling the agents: deterministic checks limit what
+can be executed, and pre-written orders keep the game usable without the service. Evaluations weigh
+accuracy, false accepts, latency and cost; they led, for example, to stricter argument typing. A
+valid constraint can still be semantically wrong, so it is displayed for the player to check.
+
+Security: local authentication, bounded inputs, quotas and dependency scanning. See the
+[trust boundaries and limitations](docs/securite.md) (French), including provider spending limits
+and startup with `HORDINARY_SERVICE_TOKEN`. Third-party validators run offline.
 
 ---
 
@@ -47,6 +75,9 @@ are clear but inexpressible. Plus **24 held-out utterances**, written to check t
 memorised corpus. Full write-up (in French): **[`service/evals/README.md`](service/evals/README.md)**.
 
 Shipped model (`deepseek/deepseek-v4.1-flash`, reasoning off), **three draws per condition**:
+
+These measurements predate service hardening. The new output limit and stopping rules require
+another evaluation before attributing the same rates to this version.
 
 | Corpus | Compiled | Exact | Correct refusals | **False accepts** | p95 |
 |---|---|---|---|---|---|
@@ -120,7 +151,7 @@ Recording guide, inspection keys and reliable phrases (in French):
 
 ## Quality
 
-* **745 tests**: 683 in C# (xUnit, no engine) and 62 in Python (no network, no key). The tests read
+* **774 tests**: 685 in C# (xUnit, no engine) and 89 in Python (no network, no key). The tests read
   the map and the `config/` files **actually shipped**, not fixtures.
 * **Same seed, same outcome**: horde, generated district, replayed mission. Locked by tests.
 * **Two third-party validators** in the loop, through Docker: Fast Downward (satisfiability) and VAL
@@ -131,23 +162,28 @@ Recording guide, inspection keys and reliable phrases (in French):
 
 ## Getting started
 
+Requirements: the .NET 10 SDK for the test suite, and Godot 4.7.1 with .NET support for the game.
+The game core targets .NET 8.
+
 ```bash
 dotnet build Hordinary.sln
-dotnet test Tests/Hordinary.Tests.csproj                    # 683 tests, no Godot required
+dotnet test Tests/Hordinary.Tests.csproj                    # 685 tests, no Godot required
 ```
 
 The language service is optional and ships its own suite (Python 3.12):
 
 ```bash
 cd service
-python -m venv .venv && ./.venv/Scripts/python.exe -m pip install -r requirements.txt
-./.venv/Scripts/python.exe -m pytest tests/ -q              # 62 tests, offline
+python -m venv .venv && ./.venv/Scripts/python.exe -m pip install -r requirements.lock
+./.venv/Scripts/python.exe -m pytest tests/ -q              # 89 tests, offline
 ./.venv/Scripts/python.exe -m evals.run --dry-run           # the evaluation harness, offline
 ```
 
-Or as a container, the OpenRouter key staying in the shell environment:
+Or as a container, keeping the OpenRouter key in the shell environment. With a provider key,
+generate a local token and launch Godot from this same shell:
 
-```bash
+```powershell
+$env:HORDINARY_SERVICE_TOKEN = python -c "import secrets; print(secrets.token_urlsafe(32))"
 docker compose up -d service                                # 127.0.0.1:8001
 ```
 
