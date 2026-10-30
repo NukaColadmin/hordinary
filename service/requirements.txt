@@ -16,4 +16,4 @@ langgraph-sdk>=0.4.6
 
 # Tests et evaluation. httpx sert au client de test de FastAPI, pas au service lui-meme.
 pytest>=9.1
-httpx>=0.28
+httpx>=0.28.1
