@@ -181,7 +181,7 @@ Le service de langage est optionnel, avec sa propre suite (Python 3.12) :
 
 ```bash
 cd service
-python -m venv .venv && ./.venv/Scripts/python.exe -m pip install -r requirements.lock
+python -m venv .venv && ./.venv/Scripts/python.exe -m pip install -r requirements.txt
 ./.venv/Scripts/python.exe -m pytest tests/ -q              # 89 tests, sans réseau
 ./.venv/Scripts/python.exe -m evals.run --dry-run           # le harnais d'évaluation, sans réseau
 ```

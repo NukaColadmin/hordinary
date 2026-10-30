@@ -174,7 +174,7 @@ The language service is optional and ships its own suite (Python 3.12):
 
 ```bash
 cd service
-python -m venv .venv && ./.venv/Scripts/python.exe -m pip install -r requirements.lock
+python -m venv .venv && ./.venv/Scripts/python.exe -m pip install -r requirements.txt
 ./.venv/Scripts/python.exe -m pytest tests/ -q              # 89 tests, offline
 ./.venv/Scripts/python.exe -m evals.run --dry-run           # the evaluation harness, offline
 ```

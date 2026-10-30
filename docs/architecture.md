@@ -2070,9 +2070,10 @@ dans la mission. Rejouer ne reinterroge aucun modele.
   Windows etant en cp1252 et le rapport contenant des fleches, qui detruisait un passage entierement
   reussi ; et une ligne de tableau sans barres encadrantes, que GitHub rend en paragraphe. Le rapport
   s'ecrit desormais avant d'etre affiche.
-* Les versions installees depassent les planchers de `requirements.txt` — `langgraph 1.2.11` et
-  `langchain-core 1.6.3` contre `>=0.2.40` et `>=0.3.15`. Tout fonctionne, mais les bornes ne
-  decrivent plus ce qui a ete eprouve : c'est le defaut d'une borne basse seule, et il reste ouvert.
+* Les anciennes bornes basses ne decrivaient plus les versions eprouvees. Ce defaut est corrige :
+  `service/requirements.in` declare les dependances directes et pip-compile produit
+  `service/requirements.txt`, installe par Docker et la CI. Dependabot reconnait ce couple et
+  peut actualiser le verrou ; la CI refuse un plancher incompatible avec les versions figees.
 * `service/evals/results.md` — le tableau des modeles, des deux ablations et du **taux de faux
   acceptes** — n'existe pas encore : il demande une cle OpenRouter et des appels factures. Le
   `--dry-run` eprouve **le harnais, pas les modeles** ; son « 0 % de faux acceptes » vient d'un

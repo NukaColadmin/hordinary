@@ -21,7 +21,7 @@ CPython 3.12.10). Elle ne fait pas partie de `dotnet test` et se lance a part :
 
 ```bash
 cd service
-python -m venv .venv && ./.venv/Scripts/python.exe -m pip install -r requirements.lock
+python -m venv .venv && ./.venv/Scripts/python.exe -m pip install -r requirements.txt
 ./.venv/Scripts/python.exe -m pytest tests/ -q          # 89 tests
 ./.venv/Scripts/python.exe -m evals.run --dry-run       # le harnais d'evaluation, sans reseau
 ```
@@ -598,8 +598,8 @@ au joueur garde le mot qu'il a employé.
   sans barres encadrantes, que GitHub aurait rendu en paragraphe. Le rapport s'écrit désormais
   **avant** d'être affiché : un passage réel coûte des appels facturés et ne doit pas se perdre sur
   un caractère que le terminal ignore ;
-* **les versions testées sont figées dans `service/requirements.lock`**, utilisé pour les
-  installations, Docker et la CI. `requirements.txt` déclare les dépendances directes ; les mises
+* **les versions testées sont figées dans `service/requirements.txt`**, utilisé pour les
+  installations, Docker et la CI. `requirements.in` déclare les dépendances directes ; les mises
   à jour du verrou doivent passer les tests et l'audit de vulnérabilités avant publication ;
 * `service/evals/results.md` — le tableau des modèles, des deux ablations et du **taux de faux
   acceptés** — demande une clé OpenRouter et des appels facturés. Le `--dry-run` valide **le harnais,

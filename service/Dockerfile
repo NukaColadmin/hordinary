@@ -19,8 +19,8 @@ FROM python:3.12-slim
 WORKDIR /service
 
 # Les dependances d'abord, et seules : une couche qui ne se reconstruit pas a chaque edition du code.
-COPY requirements.lock .
-RUN pip install --no-cache-dir -r requirements.lock
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ app/
 COPY evals/ evals/

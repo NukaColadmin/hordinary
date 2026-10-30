@@ -52,7 +52,7 @@ sans jeton, `/instruction` répond 503 ; un jeton absent ou erroné répond 401.
 | Intégrité | Les empreintes SHA-256 servent au cache et à la traçabilité. Elles ne prouvent pas l'origine d'un fichier. Le dépôt ne fournit pas de signature cryptographique des configurations ou des binaires. |
 | Fournisseur | Adresse limitée à HTTPS sur `openrouter.ai`, réglages numériques validés au démarrage. L'environnement du poste reste une entrée de confiance. |
 | Conteneur | Utilisateur sans privilèges ; système de fichiers en lecture seule, capacités supprimées et ressources bornées dans Compose. |
-| Dépendances | Versions testées dans `service/requirements.lock`, audit des vulnérabilités Python en CI, mises à jour proposées par Dependabot et actions CI épinglées par commit. Ce verrouillage ne constitue pas une signature des paquets. |
+| Dépendances | Versions testées dans `service/requirements.txt`, audit des vulnérabilités Python en CI, mises à jour proposées par Dependabot et actions CI épinglées par commit. Ce verrouillage ne constitue pas une signature des paquets. |
 
 La validation syntaxique et le typage ne prouvent pas que la traduction respecte l'intention.
 Une injection peut produire une contrainte formellement valide mais indésirable : le vocabulaire
@@ -100,12 +100,25 @@ d'attribuer les anciens taux à cette version. Les passages futurs écrivent aus
 et versions des dépendances. Ce manifeste exclut les clés et jetons ; il sert à comparer les prises,
 sans promettre une réponse identique du fournisseur.
 
-Pour mettre à jour les dépendances : installer les versions choisies dans un environnement dédié,
-régénérer `requirements.lock` avec `python -m pip freeze`, puis vérifier les deux fichiers ensemble
-avec `python -m pip install -r requirements.lock -r requirements.txt` et `python -m pip check`.
-Exécuter les tests et `python -m pip_audit -r requirements.lock --no-deps --disable-pip`.
-La CI installe les deux fichiers ensemble : relever une version minimale sans synchroniser le
-verrou fait échouer la résolution, avant les tests. Vérifier le diff avant publication.
+Les dépendances suivent le [format pip-tools](https://pip-tools.pypa.io/en/stable/) :
+`service/requirements.in` contient les dépendances directes et `service/requirements.txt` le verrou
+généré avec son en-tête et ses références aux dépendances sources. Dependabot reconnaît ce couple
+et peut régénérer le verrou dans ses PR. L'ancien nom `requirements.lock` ne permettait pas cette
+association : Dependabot ne mettait à jour que les planchers.
+
+Pour mettre à jour les dépendances, installer `pip-tools==7.6.2` dans un environnement d'outillage
+Python 3.12, modifier `requirements.in`, puis exécuter depuis `service/` :
+
+```bash
+python -m piptools compile --strip-extras --no-emit-index-url --no-emit-trusted-host --output-file=requirements.txt requirements.in
+```
+
+Le verrou existant conserve les versions encore compatibles. Pour actualiser une dépendance sans
+relever son plancher, ajouter `--upgrade-package nom_du_paquet`. Vérifier le diff, installer dans un
+environnement propre avec `python -m pip install -r requirements.txt -r requirements.in`, exécuter
+`python -m pip check`, les tests et `python -m pip_audit -r requirements.txt --no-deps --disable-pip`.
+La CI installe les deux fichiers ensemble : relever un plancher sans synchroniser le verrou fait
+échouer la résolution avant les tests. Docker installe le même verrou, sans l'outillage pip-tools.
 
 Sur GitHub, les alertes et mises à jour de sécurité Dependabot, la détection de secrets et leur
 blocage au push sont activés. Ces réglages du dépôt sont indépendants des fichiers versionnés :
