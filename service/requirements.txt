@@ -4,16 +4,16 @@
 # passe avec lui arrete. Ce fichier declare les dependances directes ; requirements.lock fige
 # les versions testees et sert aux installations, a Docker et a la CI.
 
-fastapi>=0.141
-uvicorn[standard]>=0.53
+fastapi>=0.162.0
+uvicorn[standard]>=0.54.0
 pydantic>=2.14.1
 
-langgraph>=1.2.11
+langgraph>=1.2.18
 langchain-core>=1.7.0
-langchain-openai>=1.6.2
+langchain-openai>=1.7.3
 certifi>=2026.10.23
 langgraph-sdk>=0.4.10
 
 # Tests et evaluation. httpx sert au client de test de FastAPI, pas au service lui-meme.
-pytest>=9.1
+pytest>=9.1.1
 httpx>=0.28.1
