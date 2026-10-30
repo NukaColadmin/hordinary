@@ -31,7 +31,7 @@ Python 3.12 — éprouvé sur **CPython 3.12.10**.
 cd service
 python -m venv .venv
 . .venv/bin/activate            # Windows : .venv\Scripts\activate
-pip install -r requirements.lock
+pip install -r requirements.txt
 ```
 
 La clé d'API se met dans l'environnement, **jamais dans un fichier** :
@@ -334,8 +334,9 @@ voudra « juste renvoyer le domaine compilé pour déboguer ».
 ## Ce qui reste
 
 * `evals/results.md` — demande une clé OpenRouter et des appels facturés ;
-* les versions testées sont figées dans `requirements.lock` ; maintenir ce fichier avec les mises
-  à jour proposées. La CI installe ensemble le verrou et `requirements.txt` : toute incompatibilité
-  fait échouer l'installation avant les tests et l'audit des vulnérabilités ;
+* les dépendances directes sont dans `requirements.in` ; `requirements.txt` est le verrou généré
+  par pip-compile, que Dependabot sait mettre à jour. La CI installe les deux fichiers ensemble :
+  toute incompatibilité fait échouer l'installation avant les tests et l'audit des vulnérabilités.
+  Procédure de mise à jour : [`docs/securite.md`](../docs/securite.md) ;
 * le portillon 3 (Fast Downward) reste **hors ligne** et indépendant de ce service : voir
   [`tools/pddl/README.md`](../tools/pddl/README.md).

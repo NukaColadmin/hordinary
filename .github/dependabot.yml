@@ -1,5 +1,6 @@
 version: 2
 updates:
+  # Couple pip-compile : requirements.in et verrou genere requirements.txt.
   - package-ecosystem: pip
     directory: /service
     schedule:

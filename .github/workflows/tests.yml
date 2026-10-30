@@ -44,10 +44,11 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: service/requirements.lock
+          cache-dependency-path: service/requirements.txt
       # Les deux fichiers doivent etre compatibles : une mise a jour sans nouveau verrou echoue.
-      - run: python -m pip install -r requirements.lock -r requirements.txt
+      - run: python -m pip install -r requirements.txt -r requirements.in
+      - run: python -m pip check
       - run: python -m pip install pip-audit==2.10.1
-      - run: python -m pip_audit -r requirements.lock --no-deps --disable-pip
+      - run: python -m pip_audit -r requirements.txt --no-deps --disable-pip
       - run: python -m pytest tests/ -q
       - run: python -m evals.run --dry-run
