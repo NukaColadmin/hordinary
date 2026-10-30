@@ -6,14 +6,14 @@
 
 fastapi>=0.141
 uvicorn[standard]>=0.53
-pydantic>=2.13
+pydantic>=2.14.1
 
 langgraph>=1.2.11
-langchain-core>=1.6.3
+langchain-core>=1.7.0
 langchain-openai>=1.6.2
-certifi>=2026.10.19
-langgraph-sdk>=0.4.6
+certifi>=2026.10.23
+langgraph-sdk>=0.4.10
 
 # Tests et evaluation. httpx sert au client de test de FastAPI, pas au service lui-meme.
 pytest>=9.1
-httpx>=0.28
+httpx>=0.28.1
