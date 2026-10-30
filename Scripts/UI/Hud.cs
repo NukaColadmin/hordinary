@@ -25,6 +25,9 @@ public partial class Hud : InfoPanel
     /// <summary>Deplie les intentions connues et les frontieres candidates (touche F7).</summary>
     public bool ShowBandDetail { get; set; }
 
+    /// <summary>En demonstration, le chrono et la consigne gardent la carte lisible.</summary>
+    public bool Compact { get; set; }
+
     /// <summary>
     /// Ce que la victoire a rapporte (livrable 16), une fois le verdict rendu. Le jeu n'a pas d'ecran
     /// de resultat separe : le verdict s'affiche la ou il s'est toujours affiche, et ce qui a ete
@@ -42,6 +45,13 @@ public partial class Hud : InfoPanel
         IReadOnlyList<Zombie> horde,
         bool running)
     {
+        if (Compact && !ShowBandDetail)
+        {
+            Write($"Hordinary — {world.Time:0.0} s\n{InstructionLine(band)}\n"
+                + (mission.IsOver ? OutcomeLine(mission) : string.Empty));
+            return;
+        }
+
         Write($"""
             Hordinary — {mission.Mission.Name}
             Carte {map.Width} x {map.Height}, origine {map.Origin} — t = {world.Time:0.0} s{ClockLine(mission, world.Time)}

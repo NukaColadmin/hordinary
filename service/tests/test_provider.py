@@ -64,6 +64,7 @@ def test_l_adaptateur_survit_a_des_metadonnees_absentes():
     completion = provider.complete("systeme", "joueur")
 
     assert completion.cost_usd == 0.0
+    assert completion.cost_known is False
     assert completion.prompt_tokens == 0
 
 

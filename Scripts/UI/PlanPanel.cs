@@ -22,11 +22,24 @@ public partial class PlanPanel : InfoPanel
     /// <summary>Deroule le journal des decisions de l'IA (touche F6).</summary>
     public bool ShowJournal { get; set; }
 
+    /// <summary>Le clip montre les actions prevues ; les statistiques restent dans le journal.</summary>
+    public bool Compact { get; set; }
+
     public void Refresh(SurvivorAgent? agent)
     {
         if (agent is null)
         {
             Write(string.Empty);
+            return;
+        }
+
+        if (Compact && !ShowJournal)
+        {
+            string steps = agent.Plan is { } plan
+                ? string.Join("\n", plan.Actions.Select((action, index) =>
+                    $"{(index < plan.CurrentActionIndex ? "✓" : index == plan.CurrentActionIndex ? "→" : " ")} {index + 1}. {action.Name}"))
+                : "En attente d'un plan.";
+            Write($"PLAN — {agent.Survivor.Name}\n\n{steps}");
             return;
         }
 

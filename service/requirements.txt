@@ -1,9 +1,8 @@
 # Service d'instructions tactiques (livrable 15).
 #
 # Rien ici n'est une dependance du jeu : Hordinary tourne sans ce service, et la suite de tests .NET
-# passe avec lui arrete. Les versions sont bornees par le bas seulement — le service est un outil de
-# demonstration et non un binaire livre, et le figer completement l'aurait rendu ininstallable un an
-# plus tard.
+# passe avec lui arrete. Ce fichier declare les dependances directes ; requirements.lock fige
+# les versions testees et sert aux installations, a Docker et a la CI.
 
 fastapi>=0.141
 uvicorn[standard]>=0.53
@@ -12,6 +11,8 @@ pydantic>=2.13
 langgraph>=1.2.11
 langchain-core>=1.6.3
 langchain-openai>=1.6.2
+certifi>=2026.10.19
+langgraph-sdk>=0.4.6
 
 # Tests et evaluation. httpx sert au client de test de FastAPI, pas au service lui-meme.
 pytest>=9.1

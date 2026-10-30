@@ -27,10 +27,14 @@ tableau qui ne publierait que le taux de compilation dirait qu'un modele complai
 from __future__ import annotations
 
 import argparse
+import hashlib
+from importlib.metadata import distributions
 import json
 import re
 import sys
+import tempfile
 import time
+from collections.abc import Callable
 from collections import Counter
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -117,6 +121,8 @@ class Report:
     # faux acceptes » qui etait de la chance : les taux se lisent donc sur plusieurs tirages, et
     # chaque echec avec sa frequence.
     draws: int = 1
+    completed: bool = True
+    incomplete_reason: str | None = None
 
     def rate(self, subset: list[Outcome], predicate) -> float:
         return 100.0 * sum(1 for o in subset if predicate(o)) / len(subset) if subset else 0.0
@@ -130,6 +136,8 @@ class Report:
         return [o for o in self.outcomes if o.case.expect == "rejected"]
 
     def row(self) -> str:
+        if not self.completed:
+            return f"| `{self.model}` | {self.ablation} — INCOMPLET | — | — | — | — | — | — | — |"
         latencies = sorted(o.latency_ms for o in self.outcomes) or [0]
         cost = sum(o.cost_usd for o in self.outcomes)
 
@@ -312,23 +320,27 @@ def few_shot(case: Case, corpus: list[Case], count: int) -> str:
     return f" EXEMPLES : {examples}"
 
 
-def evaluate(model: str, *, ablation: str, digest: DomainDigest, shots: int, dry: bool, path: Path = CORPUS) -> Report:
+def evaluate(model: str, *, ablation: str, digest: DomainDigest, shots: int, dry: bool,
+             path: Path = CORPUS, settings: Settings | None = None,
+             on_progress: Callable[[Report], None] | None = None) -> Report:
     corpus = load_corpus(path)
-    report = Report(model=model, ablation=ablation)
+    report = Report(model=model, ablation=ablation, completed=False)
+    settings = replace(settings or Settings.from_env(), model=model)
+    # Valider tout le corpus avant le premier appel payant, exemples compris.
+    requests = [InstructionRequest(utterance=case.utterance + few_shot(case, corpus, shots),
+                                   domain_digest=digest, max_chars=4000) for case in corpus]
 
     if dry:
         provider = ScriptedProvider(replies=['{"status":"rejected","reason":"out_of_scope","message":"essai a vide"}'] * len(corpus) * 2)
     else:
-        provider = OpenRouterProvider(replace(Settings.from_env(), model=model))
+        provider = OpenRouterProvider(settings)
 
-    budget = Budget(ceiling=float("inf"))
-    compiled = build(provider, budget)
+    budget = Budget(ceiling=float("inf"), max_calls=0)
+    compiled = build(provider, budget, settings)
 
-    for case in corpus:
-        utterance = case.utterance + few_shot(case, corpus, shots)
-
+    for case, request in zip(corpus, requests):
         started = time.perf_counter()
-        reply = run(compiled, InstructionRequest(utterance=utterance, domain_digest=digest, max_chars=4000))
+        reply = run(compiled, request, retries=settings.self_check_retries)
         elapsed = int((time.perf_counter() - started) * 1000)
 
         produced = None
@@ -352,9 +364,50 @@ def evaluate(model: str, *, ablation: str, digest: DomainDigest, shots: int, dry
             )
         )
 
+        if budget.uncertain:
+            report.incomplete_reason = "Facturation inconnue ou panne fournisseur : passage interrompu."
+        if on_progress:
+            on_progress(report)
+        if report.incomplete_reason:
+            return report
+
         print(f"  {case.id:<20} {'ok' if (produced or case.expect == 'rejected') else '--'}", flush=True)
 
+    report.completed = True
     return report
+
+
+def prepare_outputs(paths: list[Path]) -> None:
+    """Eprouve les droits du montage avant tout appel facture, sans effacer les rapports existants."""
+    for path in paths:
+        if path.exists():
+            with path.open("a", encoding="utf-8"):
+                pass
+        with tempfile.TemporaryFile(dir=path.parent) as probe:
+            probe.write(b"verification")
+            probe.flush()
+
+
+def _write_atomic(path: Path, text: str) -> None:
+    """Chaque point de reprise remplace un fichier entier, jamais un rapport a moitie ecrit."""
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent, delete=False) as stream:
+            temporary = Path(stream.name)
+            stream.write(text)
+        # Sous Windows, l'indexeur ou l'antivirus peut ouvrir brievement le rapport entre deux
+        # points de reprise. Reessayer le remplacement, sans rejouer aucun appel fournisseur.
+        for attempt in range(6):
+            try:
+                temporary.replace(path)
+                break
+            except PermissionError:
+                if sys.platform != "win32" or attempt == 5:
+                    raise
+                time.sleep(0.02 * (2 ** attempt))
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 HEADER = (
@@ -382,7 +435,14 @@ def main() -> int:
     parser.add_argument("--out", default=str(HERE / "results.md"))
 
     args = parser.parse_args()
-    models = args.model or ["dry-run" if args.dry_run else Settings.from_env().model]
+    settings = Settings.from_env()
+    models = args.model or ["dry-run" if args.dry_run else settings.model]
+    output = Path(args.out)
+    manifest_path = output.with_suffix(".manifest.json")
+    try:
+        prepare_outputs([output, manifest_path])
+    except OSError:
+        parser.error("Rapport ou manifeste non inscriptible : verifier le dossier et les droits avant evaluation.")
 
     ablation = "aucune"
     if args.no_digest:
@@ -402,44 +462,82 @@ def main() -> int:
 
     reports = []
 
+    # Liste blanche des reglages publics : aucun secret de Settings n'est serialise.
+    from app.graph import SYSTEM
+    digest = load_digest(empty=args.no_digest, glossary=not args.no_glossary)
+    manifest = {
+        "models_requested": models,
+        "dry_run": args.dry_run,
+        "draws": draws,
+        "few_shot": args.few_shot,
+        "temperature": settings.temperature,
+        "reasoning": settings.reasoning,
+        "timeout_s": settings.timeout_s,
+        "self_check_retries": settings.self_check_retries,
+        "max_output_tokens": 512,
+        "system_sha256": hashlib.sha256(SYSTEM.encode()).hexdigest(),
+        "digest_sha256": hashlib.sha256(json.dumps(digest.model_dump(), sort_keys=True).encode()).hexdigest(),
+        "corpus_sha256": hashlib.sha256(corpus.read_bytes()).hexdigest(),
+        "dependencies": {d.metadata["Name"]: d.version for d in distributions()},
+    }
+
+    def save(current: list[Report], status: str) -> str:
+        lines = [HEADER, *(report.row() for report in current), ""]
+        for report in current:
+            failures = report.failures()
+            if not report.completed:
+                failures = [f"- **INCOMPLET** : {report.incomplete_reason or 'passage en cours'} ; "
+                            f"{len(report.outcomes)} observations conservees, taux non publies.", *failures]
+            if failures:
+                lines += [f"### `{report.model}` — {report.ablation}", "", *failures, ""]
+        text = "\n".join(lines)
+        manifest["status"] = status
+        manifest["reports"] = [{"model": r.model, "completed": r.completed,
+                                "observations": len(r.outcomes), "reason": r.incomplete_reason} for r in current]
+        _write_atomic(output, text)
+        _write_atomic(manifest_path, json.dumps(manifest, indent=2, sort_keys=True))
+        return text
+
     for model in models:
-        merged = Report(model=model, ablation=ablation, draws=draws)
+        merged = Report(model=model, ablation=ablation, draws=draws, completed=False)
+        save([*reports, merged], "running")
+
+        def checkpoint(partial: Report) -> None:
+            snapshot = replace(merged, outcomes=[*merged.outcomes, *partial.outcomes],
+                               incomplete_reason=partial.incomplete_reason)
+            save([*reports, snapshot], "incomplete" if partial.incomplete_reason else "running")
 
         for draw in range(draws):
             print(f"[{model}] {ablation}" + (f" — tirage {draw + 1}" if draws > 1 else ""))
-            merged.outcomes += evaluate(
+            report = evaluate(
                 model,
                 ablation=ablation,
-                digest=load_digest(empty=args.no_digest, glossary=not args.no_glossary),
+                digest=digest,
                 shots=args.few_shot,
                 dry=args.dry_run,
                 path=corpus,
-            ).outcomes
+                settings=settings,
+                on_progress=checkpoint,
+            )
+            merged.outcomes += report.outcomes
+            if not report.completed:
+                merged.incomplete_reason = report.incomplete_reason
+                break
+        else:
+            merged.completed = True
 
         reports.append(merged)
+        if not merged.completed:
+            break  # Un autre tirage ne doit pas contourner l'arret pour facturation inconnue.
 
-    lines = [HEADER, *(report.row() for report in reports), ""]
-
-    for report in reports:
-        failures = report.failures()
-
-        if not failures:
-            continue
-
-        lines += [f"### `{report.model}` — {report.ablation}", "", *failures, ""]
-
-    text = "\n".join(lines)
-
-    # Le fichier d'abord, l'affichage ensuite. Un passage complet coute des appels factures : il
-    # ne doit pas se perdre parce que la console ne sait pas rendre un caractere. Cas reel : la
-    # console Windows est en cp1252 et le tableau contient des fleches.
-    Path(args.out).write_text(text, encoding="utf-8")
+    complete = all(report.completed for report in reports)
+    text = save(reports, "complete" if complete else "incomplete")
 
     print()
     print(text)
     print(f"\nEcrit dans {args.out}")
 
-    return 0
+    return 0 if complete else 1
 
 
 if __name__ == "__main__":

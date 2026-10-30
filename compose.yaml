@@ -21,13 +21,14 @@ x-langage: &langage
   build: ./service
   image: hordinary-service
 
-# L'environnement du service de langage, sans aucune valeur : ces trois variables viennent du shell
+# L'environnement du service de langage, sans aucune valeur : ces variables viennent du shell
 # ou de nulle part. `HORDINARY_MODEL` et `HORDINARY_REASONING` absents, le service prend les defauts
 # de `app/settings.py` — qui sont ceux que les mesures publiees ont employes.
 x-openrouter: &openrouter
   - OPENROUTER_API_KEY
   - HORDINARY_MODEL
   - HORDINARY_REASONING
+  - HORDINARY_SERVICE_TOKEN
 
 services:
 
@@ -36,6 +37,12 @@ services:
   service:
     <<: *langage
     environment: *openrouter
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: 512m
+    tmpfs: [/tmp]
     ports:
       # 127.0.0.1 et non 0.0.0.0 : ce service porte une cle d'API et appelle un fournisseur facture a
       # l'appel. Publie sur toutes les interfaces, il offrirait cette facture a qui partage le reseau.
@@ -63,6 +70,9 @@ services:
     <<: *langage
     profiles: [evals]
     environment: *openrouter
+    # Linux : exporter HORDINARY_EVAL_USER="$(id -u):$(id -g)" pour ecrire dans le montage
+    # avec les droits de son proprietaire. Docker Desktop conserve le defaut sans privileges.
+    user: ${HORDINARY_EVAL_USER:-10001:10001}
     volumes:
       # Le montage est le point. `.dockerignore` tient les `results*.md` hors de l'image, et un
       # passage reel coute des appels factures : sans cette ligne le rapport s'ecrirait dans le

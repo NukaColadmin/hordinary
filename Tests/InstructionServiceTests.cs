@@ -19,6 +19,27 @@ namespace Hordinary.Tests;
 /// </summary>
 public class InstructionServiceTests
 {
+    [Fact]
+    public void Le_cache_change_quand_les_contraintes_actives_changent()
+    {
+        var digest = DomainDigest.From(Domain);
+        var modified = digest with { ActiveConstraints = ["forbid(BreakWindow)"] };
+        Assert.NotEqual(InstructionBroker.ContextHash(digest), InstructionBroker.ContextHash(modified));
+    }
+
+    [Fact]
+    public void Le_cache_change_quand_le_glossaire_change()
+    {
+        var digest = DomainDigest.From(Domain);
+        var glossary = digest.Glossary.ToDictionary(pair => pair.Key, pair => pair.Value);
+        glossary["armed"] = "Sens modifie";
+        Assert.NotEqual(InstructionBroker.ContextHash(digest), InstructionBroker.ContextHash(digest with { Glossary = glossary }));
+        Assert.Equal(InstructionBroker.ContextHash(digest), InstructionBroker.ContextHash(digest with
+        {
+            Glossary = digest.Glossary.Reverse().ToDictionary(pair => pair.Key, pair => pair.Value),
+        }));
+    }
+
     private static readonly PlanningDomain DeliveredDomain =
         PlanningDomain.FromJson(DemoMap.ReadConfig("planner_domain.json"));
 
@@ -260,7 +281,8 @@ public class InstructionServiceTests
     /// <summary>
     /// Un service qui ne repond pas n'empeche rien : le delai tombe, le courtier rend la main, et le
     /// joueur garde ses instructions pre-ecrites. Le budget de la mission n'est pas entame — une
-    /// requete sans reponse ne coute rien.
+    /// requete sans reponse ne rapporte aucun cout au jeu. Le service et le fournisseur gardent
+    /// leurs propres garde-fous : un timeout client ne prouve pas une absence de facturation.
     /// </summary>
     [Fact]
     public async Task Un_service_muet_n_empeche_ni_la_mission_ni_les_instructions_pre_ecrites()

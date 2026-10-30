@@ -21,8 +21,8 @@ CPython 3.12.10). Elle ne fait pas partie de `dotnet test` et se lance a part :
 
 ```bash
 cd service
-python -m venv .venv && ./.venv/Scripts/python.exe -m pip install -r requirements.txt
-./.venv/Scripts/python.exe -m pytest tests/ -q          # 62 tests
+python -m venv .venv && ./.venv/Scripts/python.exe -m pip install -r requirements.lock
+./.venv/Scripts/python.exe -m pytest tests/ -q          # 89 tests
 ./.venv/Scripts/python.exe -m evals.run --dry-run       # le harnais d'evaluation, sans reseau
 ```
 
@@ -161,7 +161,7 @@ retiré, le 16 est fait.
 ## État actuel
 
 Branche `main` : l'épuration du projet autour du livrable 15 y est fusionnée. Sur l'arbre
-de travail actuel, `dotnet test` donne **683 passés sur 683** (sous `planner.search: gbfs`, le réglage livré). Deux d'entre eux exigent que `instructions.enabled`
+de travail actuel, `dotnet test` donne **685 passés sur 685** (sous `planner.search: gbfs`, le réglage livré). Deux d'entre eux exigent que `instructions.enabled`
 reste à `false` dans le fichier livré : pour essayer le service de langage, lancer le jeu avec
 `-- --ia` ou `HORDINARY_IA=1` (`InstructionSettings.LocallyEnabled`), jamais en écrivant `true` dans
 un fichier versionné. **Toute ligne rouge est donc une
@@ -587,8 +587,8 @@ au joueur garde le mot qu'il a employé.
   dans `Specs/12-interface-survivants-et-van.md`. C'est le seul endroit du projet où une spec promet
   des tests (« deux générations avec la même graine produisent des rosters identiques ») qui n'ont pas
   de sujet ;
-* **le service Python tourne, et ses tests passent** : **62 sur 62** (`service/`, pytest, ~0,5 s), à
-  côté des 683 du .NET — soit **745 au total**. Le harnais d'évaluation se déroule de bout en bout
+* **le service Python tourne, et ses tests passent** : **89 sur 89** (`service/`, pytest), à
+  côté des 685 du .NET — soit **774 au total**. Le harnais d'évaluation se déroule de bout en bout
   (`python -m evals.run --dry-run`) et `uvicorn` sert `/health` et `/instruction`, qui refuse
   proprement avec `provider_unavailable` tant qu'aucune clé n'est configurée. L'exécution a levé
   **trois défauts qu'aucune relecture n'aurait donnés**, et c'est l'argument pour lancer plutôt que
@@ -598,10 +598,9 @@ au joueur garde le mot qu'il a employé.
   sans barres encadrantes, que GitHub aurait rendu en paragraphe. Le rapport s'écrit désormais
   **avant** d'être affiché : un passage réel coûte des appels facturés et ne doit pas se perdre sur
   un caractère que le terminal ignore ;
-* **les versions installées dépassent les planchers de `requirements.txt`** — `langgraph 1.2.11` et
-  `langchain-core 1.6.3` contre `>=0.2.40` et `>=0.3.15`, deux majeures d'écart. Le code s'est trouvé
-  compatible, mais les bornes ne décrivent plus ce qui a été éprouvé : consigner les versions qui
-  marchent reste à faire ;
+* **les versions testées sont figées dans `service/requirements.lock`**, utilisé pour les
+  installations, Docker et la CI. `requirements.txt` déclare les dépendances directes ; les mises
+  à jour du verrou doivent passer les tests et l'audit de vulnérabilités avant publication ;
 * `service/evals/results.md` — le tableau des modèles, des deux ablations et du **taux de faux
   acceptés** — demande une clé OpenRouter et des appels facturés. Le `--dry-run` valide **le harnais,
   pas les modèles** : son « 0 % de faux acceptés » vient d'un bouchon qui refuse tout.
@@ -714,7 +713,7 @@ au joueur garde le mot qu'il a employé.
   Python ni environnement virtuel. La clé passe par `-e OPENROUTER_API_KEY` sans valeur, donc n'entre
   ni dans l'image ni dans une ligne de commande. L'image n'emporte pas le dépôt : les trois tests qui
   comparent le digest à `tools/pddl/domain.pddl` s'y annoncent ignorés avec leur raison, et c'est le
-  passage depuis le dépôt qui fait foi (62 contre 59 + 3).
+  passage depuis le dépôt qui fait foi. Le conteneur ignore ces trois comparaisons seulement.
 
   `compose.yaml`, à la racine, réunit les quatre conteneurs du projet : le service, son harnais
   d'évaluation, Fast Downward et VAL. **Le jeu n'en dépend toujours d'aucun** — un `up` sans profil ne

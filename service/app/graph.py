@@ -309,7 +309,7 @@ def make_generate(provider: Provider, budget: Budget):
             return {
                 "refusal": (
                     RefusalFamily.BUDGET,
-                    f"Plafond de depense du service atteint ({budget.spent:.4f} / {budget.ceiling:.2f} USD).",
+                    "Quota du service atteint ou facturation indeterminee.",
                 ),
                 "constraint": None,
             }
@@ -326,14 +326,12 @@ def make_generate(provider: Provider, budget: Budget):
             )
 
         try:
-            completion = provider.complete(SYSTEM, user)
+            completion = budget.complete(provider, SYSTEM, user)
         except Exception as error:  # noqa: BLE001 — un fournisseur injoignable est un cas normal
             return {
-                "refusal": (RefusalFamily.PROVIDER, f"Fournisseur injoignable : {error}"),
+                "refusal": (RefusalFamily.PROVIDER, "Fournisseur indisponible. Verifiez le service."),
                 "constraint": None,
             }
-
-        budget.charge(completion.cost_usd)
 
         return {
             "raw": parse_json(completion.text),

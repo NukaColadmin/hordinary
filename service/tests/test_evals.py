@@ -7,6 +7,12 @@ trop laxiste publie un taux qui ne veut rien dire. Les deux se testent ici, sans
 
 from __future__ import annotations
 
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
 from evals.run import Case, Outcome, Report
 
 
@@ -80,3 +86,106 @@ def test_plusieurs_tirages_donnent_un_taux_moyen_et_la_frequence_de_chaque_echec
 
     # Un seul tirage : le rapport garde la forme des passages publies, sans frequence.
     assert Report(model="m", ablation="a", outcomes=[ratee]).failures()[0].startswith("- traduction")
+
+
+@pytest.mark.parametrize("panne", [True, False])
+def test_facturation_inconnue_interrompt_le_corpus_sans_publier_de_taux(monkeypatch, panne):
+    from evals import run as harness
+    from app.provider import Completion
+    from app.settings import Settings
+
+    class Provider:
+        calls = 0
+
+        def complete(self, *args):
+            self.calls += 1
+            if panne:
+                raise TimeoutError("erreur confidentielle")
+            return Completion('{"status":"rejected","reason":"out_of_scope","message":"refus"}', cost_known=False)
+
+    provider = Provider()
+    monkeypatch.setattr(harness, "OpenRouterProvider", lambda settings: provider)
+    checkpoints = []
+    report = harness.evaluate("essai", ablation="aucune", digest=harness.load_digest(),
+                              shots=0, dry=False, settings=Settings(), on_progress=checkpoints.append)
+    assert provider.calls == 1
+    assert len(report.outcomes) == 1
+    assert not report.completed
+    assert report.incomplete_reason
+    assert "INCOMPLET" in report.row()
+    assert "%" not in report.row()
+    assert len(checkpoints) == 1
+
+
+def test_reglage_de_reprise_effectivement_applique(monkeypatch, tmp_path):
+    from evals import run as harness
+    from app.provider import ScriptedProvider
+    from app.settings import Settings
+
+    corpus = tmp_path / "corpus.jsonl"
+    corpus.write_text(json.dumps({"id": "essai", "utterance": "Ne forcez aucune porte.",
+                                  "expect": "constraint", "constraint": "forbid(ForceDoor)"}), encoding="utf-8")
+    provider = ScriptedProvider(replies=['{}', '{"status":"constraint","constraint":{"form":"forbid","action_class":"ForceDoor"}}'])
+    monkeypatch.setattr(harness, "OpenRouterProvider", lambda settings: provider)
+    harness.evaluate("essai", ablation="aucune", digest=harness.load_digest(), shots=0,
+                     dry=False, path=corpus, settings=Settings(self_check_retries=0))
+    assert len(provider.seen) == 1
+
+
+def test_sorties_verifiees_avant_toute_evaluation(monkeypatch, tmp_path):
+    from evals import run as harness
+
+    def interdit(*args, **kwargs):
+        pytest.fail("Le fournisseur ne doit pas etre construit avant verification des sorties.")
+
+    monkeypatch.setattr(harness, "evaluate", interdit)
+    monkeypatch.setattr(sys, "argv", ["evals.run", "--out", str(tmp_path / "absent" / "rapport.md")])
+    with pytest.raises(SystemExit) as error:
+        harness.main()
+    assert error.value.code == 2
+
+
+def test_cli_conserve_le_point_de_reprise_et_arrete_les_tirages(monkeypatch, tmp_path):
+    from evals import run as harness
+    from app.provider import Completion
+
+    output = tmp_path / "rapport.md"
+    provider_calls = []
+
+    class Provider:
+        def complete(self, *args):
+            provider_calls.append(1)
+            # Le rapport et le manifeste existent deja avant l'appel facture.
+            assert "INCOMPLET" in output.read_text(encoding="utf-8")
+            assert json.loads(output.with_suffix(".manifest.json").read_text())["status"] == "running"
+            return Completion('{"status":"rejected","reason":"out_of_scope","message":"refus"}', cost_known=False)
+
+    monkeypatch.setattr(harness, "OpenRouterProvider", lambda settings: Provider())
+    monkeypatch.setattr(sys, "argv", ["evals.run", "--model", "essai", "--repeat", "3", "--out", str(output)])
+    assert harness.main() == 1
+    assert len(provider_calls) == 1
+    manifest = json.loads(output.with_suffix(".manifest.json").read_text())
+    assert manifest["status"] == "incomplete"
+    assert manifest["reports"][0]["observations"] == 1
+    assert "INCOMPLET" in output.read_text(encoding="utf-8")
+
+
+def test_verrou_windows_transitoire_ne_perd_pas_le_rapport(monkeypatch, tmp_path):
+    from evals import run as harness
+
+    original = Path.replace
+    attempts = []
+
+    def replace(source, target):
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise PermissionError("Verrou Windows transitoire")
+        return original(source, target)
+
+    monkeypatch.setattr(harness.sys, "platform", "win32")
+    monkeypatch.setattr(Path, "replace", replace)
+    monkeypatch.setattr(harness.time, "sleep", lambda delay: None)
+    output = tmp_path / "rapport.md"
+    harness._write_atomic(output, "rapport conserve")
+    assert output.read_text(encoding="utf-8") == "rapport conserve"
+    assert len(attempts) == 2

@@ -48,6 +48,12 @@ Lancer le jeu **fenêtré**, avec l'exécutable sans console :
 | `--demo=<scénario>` | lance une prise sans passer par l'écran |
 | `--sans-consignes` | joue la prise sans ses consignes : le contraste |
 
+En démonstration, le terrain et le scénario se choisissent dans deux menus. Sur une carte blanche,
+la saisie est visible directement ; les consignes pré-écrites et les détails se déplient au clic.
+Pendant la prise, seuls le chrono, la consigne et les fiches du groupe sont affichés au départ.
+`F5` ouvre le plan du survivant sélectionné, `F4` les scores, `F6` le diagnostic et `F7` le HUD
+détaillé. Les overlays `F1` à `F3` commencent masqués.
+
 Les touches utiles à l'image, une fois `--observateur` passé :
 
 | Touche | Ce qu'elle montre |
