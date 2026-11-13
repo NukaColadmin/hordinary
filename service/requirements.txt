@@ -21,17 +21,16 @@ certifi==2026.10.23
     #   -r requirements.in
     #   httpcore
     #   httpx
+    #   langchain-core
     #   langchain-openai
     #   requests
 charset-normalizer==3.5.1
     # via requests
 click==8.5.0
     # via uvicorn
-colorama==0.4.6
-    # via pytest
 distro==1.9.0
     # via langsmith
-fastapi==0.162.0
+fastapi==0.162.2
     # via -r requirements.in
 h11==0.16.0
     # via
@@ -67,7 +66,7 @@ jsonpatch==1.33
     # via langchain-core
 jsonpointer==3.1.1
     # via jsonpatch
-langchain-core==1.7.0
+langchain-core==1.7.7
     # via
     #   -r requirements.in
     #   langchain-openai
@@ -75,13 +74,13 @@ langchain-core==1.7.0
     #   langgraph-checkpoint
     #   langgraph-prebuilt
     #   langgraph-sdk
-langchain-openai==1.7.3
+langchain-openai==1.7.4
     # via -r requirements.in
 langchain-protocol==0.0.20
     # via
     #   langchain-core
     #   langgraph-sdk
-langgraph==1.2.18
+langgraph==1.2.20
     # via -r requirements.in
 langgraph-checkpoint==4.3.1
     # via
@@ -89,7 +88,7 @@ langgraph-checkpoint==4.3.1
     #   langgraph-prebuilt
 langgraph-prebuilt==1.1.0
     # via langgraph
-langgraph-sdk==0.4.10
+langgraph-sdk==0.4.14
     # via
     #   -r requirements.in
     #   langgraph
@@ -112,7 +111,7 @@ packaging==26.3
     #   pytest
 pluggy==1.6.0
     # via pytest
-pydantic==2.14.1
+pydantic==2.14.3
     # via
     #   -r requirements.in
     #   fastapi
@@ -120,11 +119,11 @@ pydantic==2.14.1
     #   langgraph
     #   langsmith
     #   openai
-pydantic-core==2.50.1
+pydantic-core==2.50.4
     # via pydantic
 pygments==2.21.0
     # via pytest
-pytest==9.1.1
+pytest==9.2.0
     # via -r requirements.in
 python-dotenv==1.2.3
     # via uvicorn
@@ -181,6 +180,8 @@ uuid-utils==0.17.1
     #   langsmith
 uvicorn==0.54.0
     # via -r requirements.in
+uvloop==0.23.0
+    # via uvicorn
 watchfiles==1.2.0
     # via uvicorn
 websockets==16.1.1

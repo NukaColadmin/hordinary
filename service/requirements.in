@@ -4,16 +4,16 @@
 # passe avec lui arrete. Ce fichier declare les dependances directes ; pip-compile genere
 # requirements.txt, qui fige les versions testees pour les installations, Docker et la CI.
 
-fastapi>=0.162.0
+fastapi>=0.162.2
 uvicorn[standard]>=0.54.0
-pydantic>=2.14.1
+pydantic>=2.14.3
 
-langgraph>=1.2.18
-langchain-core>=1.7.0
-langchain-openai>=1.7.3
+langgraph>=1.2.20
+langchain-core>=1.7.7
+langchain-openai>=1.7.4
 certifi>=2026.10.23
-langgraph-sdk>=0.4.10
+langgraph-sdk>=0.4.14
 
 # Tests et evaluation. httpx sert au client de test de FastAPI, pas au service lui-meme.
-pytest>=9.1.1
+pytest>=9.2.0
 httpx>=0.28.1
